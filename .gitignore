@@ -1,0 +1,28 @@
+# Expo
+.expo/
+*.jks
+*.p12
+*.key
+*.mobileprovision
+*.orig.*
+
+# NPM
+node_modules/
+npm-debug.log
+package-lock.json
+yarn.lock
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Build artifacts
+build/
+dist/
+web-build/

@@ -1,27 +1,19 @@
-import Papa from 'papaparse';
-import { Student, DayOfWeek } from '../types';
-import { v4 as uuidv4 } from 'uuid';
+import { format, parse, isWithinInterval, getDay } from 'date-fns';
+import { DayOfWeek } from '../types';
 
-export const parseCSV = (csvData: string): Promise<Student[]> => {
-  return new Promise((resolve, reject) => {
-    Papa.parse(csvData, {
-      header: true,
-      skipEmptyLines: true,
-      complete: (results) => {
-        const students: Student[] = results.data.map((row: any) => ({
-          id: uuidv4(),
-          name: row.name,
-          grade: row.grade,
-          scheduledDays: row.scheduledDays.split(',').map((day: string) => day.trim() as DayOfWeek),
-          scheduledStartTime: row.scheduledStartTime,
-          scheduledEndTime: row.scheduledEndTime,
-          fee: row.fee ? parseInt(row.fee, 10) : undefined,
-        }));
-        resolve(students);
-      },
-      error: (error) => {
-        reject(error);
-      },
-    });
-  });
+export const getCurrentDate = () => format(new Date(), 'yyyy-MM-dd');
+export const getCurrentTime = () => format(new Date(), 'HH:mm');
+
+export const getDayOfWeek = (date: Date): DayOfWeek => {
+  const days: DayOfWeek[] = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  return days[getDay(date)];
+};
+
+export const isTimeWithinRange = (time: string, startTime: string, endTime: string): boolean => {
+  const today = format(new Date(), 'yyyy-MM-dd');
+  const timeDate = parse(`${today} ${time}`, 'yyyy-MM-dd HH:mm', new Date());
+  const startDate = parse(`${today} ${startTime}`, 'yyyy-MM-dd HH:mm', new Date());
+  const endDate = parse(`${today} ${endTime}`, 'yyyy-MM-dd HH:mm', new Date());
+
+  return isWithinInterval(timeDate, { start: startDate, end: endDate });
 };

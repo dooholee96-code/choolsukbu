@@ -1,4 +1,5 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
+import { View, ActivityIndicator } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createStackNavigator } from '@react-navigation/stack';
@@ -48,12 +49,28 @@ function TabNavigator() {
 }
 
 export default function App() {
+  // DB 준비 상태를 추적하는 변수 추가
+  const [isDBReady, setIsDBReady] = useState(false);
+
   useEffect(() => {
     initDB()
-      .then(() => console.log('Database initialized successfully'))
+      .then(() => {
+        console.log('Database initialized successfully');
+        setIsDBReady(true); // DB 준비 완료 표시
+      })
       .catch((err) => console.error('Database initialization failed:', err));
   }, []);
 
+  // DB가 아직 준비되지 않았다면 로딩 화면 표시
+  if (!isDBReady) {
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+        <ActivityIndicator size="large" color={theme.colors.primary} />
+      </View>
+    );
+  }
+
+  // DB가 준비되면 정상적으로 화면 렌더링
   return (
     <ThemeProvider theme={theme}>
       <DataProvider>

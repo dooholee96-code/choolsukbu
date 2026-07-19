@@ -1,3 +1,4 @@
+import 'react-native-gesture-handler'; // ⭐️ 반드시 1번 줄에 추가해 주세요!
 import React, { useEffect, useState } from 'react';
 import { View, ActivityIndicator } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';

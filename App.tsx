@@ -11,7 +11,7 @@ import { ThemeProvider } from 'styled-components/native';
 import HomeScreen from './src/screens/HomeScreen';
 import StudentsScreen from './src/screens/StudentsScreen';
 import MakeupScreen from './src/screens/MakeupScreen';
-import AddStudentModal from './src/screens/AddStudentModal';
+import StudentFormModal from './src/screens/StudentFormModal';
 import { theme } from './src/constants/theme';
 import { initDB } from './src/db';
 import { DataProvider } from './src/hooks/useData';
@@ -60,8 +60,8 @@ function RootNavigator() {
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       <Stack.Screen name="Main" component={TabNavigator} />
       <Stack.Screen
-        name="AddStudentModal"
-        component={AddStudentModal}
+        name="StudentFormModal"
+        component={StudentFormModal}
         options={{ presentation: modalPresentation }}
       />
     </Stack.Navigator>

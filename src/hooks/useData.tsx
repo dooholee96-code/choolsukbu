@@ -11,6 +11,9 @@ interface DataContextType {
   todayAttendances: Attendance[];
   makeups: MakeUp[];
   addStudent: (student: Student) => Promise<void>;
+  updateStudent: (student: Student) => Promise<void>;
+  /** 원생과 그에 딸린 출결·보충 기록을 함께 삭제한다 */
+  deleteStudent: (studentId: string) => Promise<void>;
   checkInStudent: (studentId: string, status: 'scheduled' | 'unexpected') => Promise<void>;
   /** 결석 기록 + 같은 날짜의 보충 건 생성 */
   markAbsent: (studentId: string) => Promise<void>;
@@ -102,6 +105,53 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         await refreshData();
       } catch (error) {
         logger.error('Error adding student:', error);
+        throw error;
+      }
+    },
+    [db, refreshData]
+  );
+
+  const updateStudent = useCallback(
+    async (student: Student) => {
+      try {
+        await db.runAsync(
+          'UPDATE students SET name = ?, grade = ?, scheduledDays = ?, scheduledStartTime = ?, scheduledEndTime = ?, fee = ? WHERE id = ?;',
+          student.name,
+          student.grade,
+          JSON.stringify(student.scheduledDays),
+          student.scheduledStartTime,
+          student.scheduledEndTime,
+          student.fee ?? null,
+          student.id
+        );
+        await refreshData();
+      } catch (error) {
+        logger.error('Error updating student:', error);
+        throw error;
+      }
+    },
+    [db, refreshData]
+  );
+
+  /**
+   * 원생과 그에 딸린 기록을 지운다.
+   *
+   * attendance와 makeup이 students를 참조하는데 ON DELETE CASCADE가 없고
+   * initDB에서 PRAGMA foreign_keys를 켜두었으므로, 자식 행을 먼저 지우지 않으면
+   * 기록이 하나라도 있는 원생은 제약 위반으로 삭제 자체가 실패한다.
+   * 셋 중 일부만 지워진 상태를 막기 위해 한 트랜잭션으로 묶는다.
+   */
+  const deleteStudent = useCallback(
+    async (studentId: string) => {
+      try {
+        await db.withTransactionAsync(async () => {
+          await db.runAsync('DELETE FROM attendance WHERE studentId = ?;', studentId);
+          await db.runAsync('DELETE FROM makeup WHERE studentId = ?;', studentId);
+          await db.runAsync('DELETE FROM students WHERE id = ?;', studentId);
+        });
+        await refreshData();
+      } catch (error) {
+        logger.error('Error deleting student:', error);
         throw error;
       }
     },
@@ -293,6 +343,8 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       todayAttendances,
       makeups,
       addStudent,
+      updateStudent,
+      deleteStudent,
       checkInStudent,
       markAbsent,
       undoTodayAttendance,
@@ -306,6 +358,8 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       todayAttendances,
       makeups,
       addStudent,
+      updateStudent,
+      deleteStudent,
       checkInStudent,
       markAbsent,
       undoTodayAttendance,

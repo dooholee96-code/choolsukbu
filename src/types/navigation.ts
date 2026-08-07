@@ -8,7 +8,8 @@ export type TabParamList = {
 
 export type RootStackParamList = {
   Main: NavigatorScreenParams<TabParamList> | undefined;
-  AddStudentModal: undefined;
+  /** studentId가 있으면 수정, 없으면 신규 등록 */
+  StudentFormModal: { studentId?: string } | undefined;
 };
 
 declare global {

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import styled from 'styled-components/native';
 import { View, ScrollView, Platform, KeyboardAvoidingView } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { format } from 'date-fns';
@@ -10,8 +10,9 @@ import Button from '../components/common/Button';
 import Chip from '../components/common/Chip';
 import { DayOfWeek, Student } from '../types';
 import { createId } from '../utils/id';
+import type { RootStackParamList } from '../types/navigation';
 import { logger } from '../utils/logger';
-import { notify } from '../utils/dialog';
+import { confirm, notify } from '../utils/dialog';
 
 const Root = styled.View`
   flex: 1;
@@ -93,21 +94,35 @@ const timeAt = (hours: number, minutes = 0) => {
   return date;
 };
 
-const AddStudentModal: React.FC = () => {
+/** 'HH:mm' 을 피커가 요구하는 Date로. 값이 이상하면 기본 시각으로 떨어진다. */
+const timeFrom = (value: string | undefined, fallbackHour: number) => {
+  const match = /^(\d{1,2}):(\d{2})$/.exec(value ?? '');
+  if (!match) return timeAt(fallbackHour);
+  return timeAt(Number(match[1]), Number(match[2]));
+};
+
+const StudentFormModal: React.FC = () => {
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
-  const { addStudent } = useData();
+  const { params } = useRoute<RouteProp<RootStackParamList, 'StudentFormModal'>>();
+  const { students, addStudent, updateStudent, deleteStudent } = useData();
 
-  const [name, setName] = useState('');
-  const [grade, setGrade] = useState('');
-  const [selectedDays, setSelectedDays] = useState<DayOfWeek[]>([]);
-  // 기본값을 둘 다 new Date()로 두면 시작과 종료가 같아져 구간 길이가 0이 되고,
-  // 사용자가 시간을 건드리지 않으면 모든 등원이 '예외'로 기록된다.
-  const [startTime, setStartTime] = useState(() => timeAt(16));
-  const [endTime, setEndTime] = useState(() => timeAt(18));
+  // 수정 대상. 신규 등록이면 undefined다.
+  const editing = params?.studentId
+    ? students.find((s) => s.id === params.studentId)
+    : undefined;
+  const isEditing = Boolean(editing);
+
+  const [name, setName] = useState(editing?.name ?? '');
+  const [grade, setGrade] = useState(editing?.grade ?? '');
+  const [selectedDays, setSelectedDays] = useState<DayOfWeek[]>(editing?.scheduledDays ?? []);
+  // 신규 등록의 기본값을 둘 다 new Date()로 두면 시작과 종료가 같아져 구간 길이가
+  // 0이 되고, 사용자가 시간을 건드리지 않으면 모든 등원이 '예외'로 기록된다.
+  const [startTime, setStartTime] = useState(() => timeFrom(editing?.scheduledStartTime, 16));
+  const [endTime, setEndTime] = useState(() => timeFrom(editing?.scheduledEndTime, 18));
   const [showStartTimePicker, setShowStartTimePicker] = useState(false);
   const [showEndTimePicker, setShowEndTimePicker] = useState(false);
-  const [fee, setFee] = useState('');
+  const [fee, setFee] = useState(editing?.fee != null ? String(editing.fee) : '');
   const [isSaving, setIsSaving] = useState(false);
 
   const toggleDay = (day: DayOfWeek) => {
@@ -126,8 +141,8 @@ const AddStudentModal: React.FC = () => {
     const orderedDays = DAYS.filter((day) => selectedDays.includes(day));
     const parsedFee = Number(fee.replace(/[^0-9]/g, ''));
 
-    const newStudent: Student = {
-      id: createId(),
+    const nextStudent: Student = {
+      id: editing?.id ?? createId(),
       name: name.trim(),
       grade: grade.trim(),
       scheduledDays: orderedDays,
@@ -138,14 +153,34 @@ const AddStudentModal: React.FC = () => {
 
     setIsSaving(true);
     try {
-      await addStudent(newStudent);
+      await (isEditing ? updateStudent(nextStudent) : addStudent(nextStudent));
       navigation.goBack();
     } catch (error) {
-      logger.error('Failed to add student', error);
-      notify('저장 실패', '원생을 추가하지 못했습니다. 다시 시도해 주세요.');
+      logger.error('Failed to save student', error);
+      notify('저장 실패', '원생 정보를 저장하지 못했습니다. 다시 시도해 주세요.');
     } finally {
       setIsSaving(false);
     }
+  };
+
+  const handleDelete = () => {
+    if (!editing) return;
+
+    confirm({
+      title: '원생 삭제',
+      message: `${editing.name} 학생을 삭제할까요?\n출결 기록과 보충 건도 함께 삭제되며 되돌릴 수 없습니다.`,
+      confirmLabel: '삭제',
+      destructive: true,
+      onConfirm: async () => {
+        try {
+          await deleteStudent(editing.id);
+          navigation.goBack();
+        } catch (error) {
+          logger.error('Failed to delete student', error);
+          notify('삭제 실패', '원생을 삭제하지 못했습니다. 다시 시도해 주세요.');
+        }
+      },
+    });
   };
 
   /**
@@ -206,7 +241,7 @@ const AddStudentModal: React.FC = () => {
           keyboardShouldPersistTaps="handled"
         >
           <Form>
-            <TitleText>Add New Student</TitleText>
+            <TitleText>{isEditing ? '원생 정보 수정' : 'Add New Student'}</TitleText>
 
             <Label>Name</Label>
             <StyledTextInput
@@ -264,13 +299,18 @@ const AddStudentModal: React.FC = () => {
 
             <Actions>
               <Button
-                title={isSaving ? '저장 중…' : 'Save Student'}
+                title={isSaving ? '저장 중…' : isEditing ? '저장' : 'Save Student'}
                 onPress={handleSave}
                 disabled={isSaving}
               />
               <View>
                 <Button title="Cancel" variant="secondary" onPress={() => navigation.goBack()} />
               </View>
+              {isEditing && (
+                <View>
+                  <Button title="원생 삭제" variant="danger" onPress={handleDelete} />
+                </View>
+              )}
             </Actions>
           </Form>
         </ScrollView>
@@ -279,4 +319,4 @@ const AddStudentModal: React.FC = () => {
   );
 };
 
-export default AddStudentModal;
+export default StudentFormModal;

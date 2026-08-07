@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import styled, { useTheme } from 'styled-components/native';
 import { FlatList, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
@@ -67,6 +67,11 @@ const StudentsScreen: React.FC = () => {
 
   const rows = useMemo(() => chunk(students, columns), [students, columns]);
 
+  const handleEdit = useCallback(
+    (student: Student) => navigation.navigate('StudentFormModal', { studentId: student.id }),
+    [navigation]
+  );
+
   return (
     <Screen>
       <Header>
@@ -90,7 +95,7 @@ const StudentsScreen: React.FC = () => {
           </RoundButton>
           <RoundButton
             $variant="primary"
-            onPress={() => navigation.navigate('AddStudentModal')}
+            onPress={() => navigation.navigate('StudentFormModal')}
             accessibilityRole="button"
             accessibilityLabel="원생 추가"
           >
@@ -109,7 +114,9 @@ const StudentsScreen: React.FC = () => {
             items={item}
             columns={columns}
             keyExtractor={(student) => student.id}
-            renderItem={(student) => <StudentCard student={student} showFee={showFee} />}
+            renderItem={(student) => (
+              <StudentCard student={student} showFee={showFee} onPress={handleEdit} />
+            )}
           />
         )}
         ListEmptyComponent={<EmptyText>등록된 원생이 없습니다.</EmptyText>}

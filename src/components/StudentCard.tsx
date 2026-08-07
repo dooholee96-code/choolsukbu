@@ -19,6 +19,8 @@ interface StudentCardProps {
   onMarkAbsent?: (student: Student) => void;
   /** 이미 기록된 카드에서 오늘 기록을 되돌린다. */
   onUndo?: (student: Student) => void;
+  /** 카드 자체를 눌렀을 때. 원생 정보 수정 진입에 쓴다. */
+  onPress?: (student: Student) => void;
   showFee?: boolean; // 금액 표시 여부 제어
 }
 
@@ -154,24 +156,30 @@ const getInitials = (name: string) => {
   return initials;
 };
 
+const PressableCard = styled.TouchableOpacity`
+  flex-grow: 1;
+`;
+
 const StudentCard: React.FC<StudentCardProps> = ({
   student,
   attendance,
   onCheckIn,
   onMarkAbsent,
   onUndo,
+  onPress,
   showFee = false,
 }) => {
   const handleCheckIn = useCallback(() => onCheckIn?.(student), [onCheckIn, student]);
   const handleMarkAbsent = useCallback(() => onMarkAbsent?.(student), [onMarkAbsent, student]);
   const handleUndo = useCallback(() => onUndo?.(student), [onUndo, student]);
+  const handlePress = useCallback(() => onPress?.(student), [onPress, student]);
 
   // 이 색은 styled 템플릿 밖(JSX prop)에서 쓰이므로 훅으로 직접 꺼내야 한다.
   // 이전 코드는 import 없이 전역 theme을 참조해서 이 카드가 그려지는 순간
   // ReferenceError로 화면이 통째로 죽었다.
   const theme = useTheme();
 
-  return (
+  const card = (
     <CardContainer>
       <InfoContainer>
         <Avatar>
@@ -233,6 +241,19 @@ const StudentCard: React.FC<StudentCardProps> = ({
         )}
       </StatusContainer>
     </CardContainer>
+  );
+
+  if (!onPress) return card;
+
+  return (
+    <PressableCard
+      onPress={handlePress}
+      activeOpacity={0.7}
+      accessibilityRole="button"
+      accessibilityLabel={`${student.name} 정보 수정`}
+    >
+      {card}
+    </PressableCard>
   );
 };
 

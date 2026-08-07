@@ -81,7 +81,7 @@ npx expo run:ios --device --configuration Release
 ```
 App.tsx                     루트. DB 초기화 게이트 + 네비게이터
 src/
-  screens/                  Home(오늘) · Students(원생) · Makeup(보충) · AddStudentModal
+  screens/                  Home(오늘) · Students(원생) · Makeup(보충) · StudentFormModal
   components/
     StudentCard.tsx · MakeupCard.tsx · ErrorBoundary.tsx
     common/                 Screen(반응형 셸) · GridRow(그리드 한 행) · Button · Chip
@@ -123,9 +123,21 @@ src/
 잘못 누른 기록은 카드의 **취소**로 되돌릴 수 있다. 다만 이미 날짜를 잡았거나
 완료한 보충은 별도 판단이 들어간 기록이라 취소해도 남는다.
 
+## 원생 관리
+
+`StudentFormModal` 하나가 등록과 수정을 겸한다. `studentId` 파라미터가 있으면 수정 모드다.
+원생 탭에서 카드를 누르면 수정으로 들어가고, 그 안에서 삭제할 수 있다.
+
+삭제는 출결 기록과 보충 건을 **함께 지운다.** `attendance`와 `makeup`이 `students`를
+참조하는데 `ON DELETE CASCADE`가 없고 `PRAGMA foreign_keys`가 켜져 있어서,
+자식 행을 먼저 지우지 않으면 기록이 하나라도 있는 원생은 제약 위반으로 삭제가 실패한다.
+세 삭제는 한 트랜잭션으로 묶여 있다.
+
+> 삭제는 되돌릴 수 없다. 퇴원생의 기록을 남겨야 한다면 삭제 대신 보관 상태를
+> 두는 편이 맞지만, 아직 그런 개념은 없다.
+
 ## 아직 없는 기능
 
-- 원생 수정·삭제 (추가만 가능)
 - 출결 이력 조회 (오늘 데이터만 표시)
 - **데이터 백업·내보내기** — `utils/csv.ts`에 파서만 있고 UI가 없다. 앱을 삭제하면 데이터가 전부 사라지므로 실사용 전에 갖추는 것을 권한다.
 - 앱 잠금 — 미성년자 이름·학년·수강료를 다루는데 기기를 든 사람 누구나 열람할 수 있다.

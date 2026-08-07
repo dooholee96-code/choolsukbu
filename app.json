@@ -6,6 +6,7 @@
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "ios": {
+      "bundleIdentifier": "com.dooholee96.choolsukbu",
       "supportsTablet": true,
       "requireFullScreen": false,
       "infoPlist": {
@@ -19,6 +20,7 @@
       }
     },
     "android": {
+      "package": "com.dooholee96.choolsukbu",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/android-icon-foreground.png",

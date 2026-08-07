@@ -101,6 +101,16 @@
     background: rgba(255,255,255,.9);
   }
 
+  /* ===== 텍스트 편집 모드 ===== */
+  body.edit-mode .nd { cursor: text; }
+  body.edit-mode .nd [data-f] { outline: 1px dashed rgba(59,130,246,.55); outline-offset: 2px; border-radius: 4px; }
+  body.edit-mode .nd .n-desc:empty {
+    display: block; min-width: 90px; min-height: 1.2em;
+    outline: 1px dashed rgba(59,130,246,.55);
+  }
+  body.edit-mode .nd .n-desc:empty::before { content: '설명 입력'; color: #94a3b8; font-size: 11px; }
+  body.edit-mode .guide { display: none !important; }
+
   .header { color:#fff; box-shadow:0 4px 12px rgba(0,0,0,.12); }
   .bg-edu { background:#2563eb; }
   .bg-hub { background:#16a34a; }
@@ -189,16 +199,17 @@
   <div class="tb-sep"></div>
 
   <div class="tb-group">
+    <button class="tb-btn" id="editBtn" onclick="toggleEditMode()" title="모든 글자를 클릭해서 바로 고칠 수 있습니다 (이동 잠금)">✏️ 텍스트 편집</button>
     <button class="tb-btn" onclick="resetLayout()">↺ 초기 배치 복원</button>
     <button class="tb-btn primary" onclick="saveAsImage()">📸 PPT용 이미지 저장</button>
   </div>
-  <span class="tb-status" id="status">객체를 끌어 이동 · 더블클릭하면 글자 수정</span>
+  <span class="tb-status" id="status">객체를 끌어 이동 · 글자는 더블클릭하거나 ✏️ 텍스트 편집</span>
 </div>
 
 <!-- ===================== 슬라이드 ===================== -->
 <div class="presentation-slide" id="slide-container">
-  <h1 class="title editable-text" contenteditable="true">교육청-대학교 협력 체계 도식</h1>
-  <p class="subtitle editable-text" contenteditable="true">3개 축 · 3단 동급 편제 · 소통 채널 및 보고 · 결재 라인</p>
+  <h1 class="title" data-k="title" contenteditable="true">교육청-대학교 협력 체계 도식</h1>
+  <p class="subtitle" data-k="subtitle" contenteditable="true">3개 축 · 3단 동급 편제 · 소통 채널 및 보고 · 결재 라인</p>
 
   <div class="canvas" id="canvas">
     <div class="guide h" id="guideH"></div>
@@ -216,16 +227,16 @@
       <g id="edges"></g>
     </svg>
 
-    <div class="peer-note editable-text" id="peerNote" contenteditable="true" style="left:1152px; top:494px;">※ 3개 기관 서로 동급</div>
+    <div class="peer-note" id="peerNote" data-k="peerNote" contenteditable="true" style="left:1152px; top:494px;">※ 3개 기관 서로 동급</div>
   </div>
 
   <!-- 범례 (간략) -->
   <div class="legend-bar">
-    <span class="lg"><svg width="30" height="10"><line x1="1" y1="5" x2="29" y2="5" stroke="#64748b" stroke-width="3"/></svg><span contenteditable="true">동급 소통</span></span>
-    <span class="lg"><svg width="30" height="10"><line x1="1" y1="5" x2="29" y2="5" stroke="#16a34a" stroke-width="3" stroke-dasharray="6 4"/></svg><span contenteditable="true">교육협력관 소통</span></span>
-    <span class="lg"><svg width="30" height="10"><line x1="1" y1="5" x2="29" y2="5" stroke="#1d4ed8" stroke-width="3" stroke-dasharray="6 4"/></svg><span contenteditable="true">교육협력과 소통</span></span>
-    <span class="lg"><svg width="30" height="10"><line x1="1" y1="5" x2="29" y2="5" stroke="#7c3aed" stroke-width="3.5"/></svg><span contenteditable="true">보고 · 결재</span></span>
-    <span class="lg"><span class="swatch"></span><span contenteditable="true">실무협의체 (핵심 4객체)</span></span>
+    <span class="lg"><svg width="30" height="10"><line x1="1" y1="5" x2="29" y2="5" stroke="#64748b" stroke-width="3"/></svg><span data-k="lg1" contenteditable="true">동급 소통</span></span>
+    <span class="lg"><svg width="30" height="10"><line x1="1" y1="5" x2="29" y2="5" stroke="#16a34a" stroke-width="3" stroke-dasharray="6 4"/></svg><span data-k="lg2" contenteditable="true">교육협력관 소통</span></span>
+    <span class="lg"><svg width="30" height="10"><line x1="1" y1="5" x2="29" y2="5" stroke="#1d4ed8" stroke-width="3" stroke-dasharray="6 4"/></svg><span data-k="lg3" contenteditable="true">교육협력과 소통</span></span>
+    <span class="lg"><svg width="30" height="10"><line x1="1" y1="5" x2="29" y2="5" stroke="#7c3aed" stroke-width="3.5"/></svg><span data-k="lg4" contenteditable="true">보고 · 결재</span></span>
+    <span class="lg"><span class="swatch"></span><span data-k="lg5" contenteditable="true">실무협의체 (핵심 4객체)</span></span>
   </div>
 </div>
 
@@ -341,15 +352,27 @@ const byId = id => nodes.find(n => n.id === id);
 const clone = o => JSON.parse(JSON.stringify(o));
 
 /* ============================ 초기화 ============================ */
+/* 슬라이드 안의 고정 텍스트(제목 · 부제 · 범례 등) */
+const staticTexts = () => document.querySelectorAll('[data-k]');
+let DEFAULT_TEXTS = {};
+
 function init() {
+  staticTexts().forEach(el => DEFAULT_TEXTS[el.dataset.k] = el.innerHTML);
+
   const saved = localStorage.getItem(STORE_KEY);
   nodes = clone(DEFAULT_NODES);
   if (saved) {
     try {
       const data = JSON.parse(saved);
-      nodes.forEach(n => { if (data[n.id]) Object.assign(n, data[n.id]); });
+      nodes.forEach(n => { if (data.nodes && data.nodes[n.id]) Object.assign(n, data.nodes[n.id]); });
+      if (data.texts) staticTexts().forEach(el => {
+        if (data.texts[el.dataset.k] != null) el.innerHTML = data.texts[el.dataset.k];
+      });
     } catch (e) { /* 저장본이 깨졌으면 기본 배치 사용 */ }
   }
+  // 고정 텍스트도 고치면 바로 저장
+  staticTexts().forEach(el => el.addEventListener('blur', persist));
+
   buildNodes();
   layout();
 }
@@ -478,49 +501,93 @@ function drawGroup() {
 
 /* ============================ 드래그 / 선택 / 편집 ============================ */
 function attachInteractions(el, n) {
+  // 드래그 — pointer capture 대신 window 리스너를 쓴다.
+  // (capture 를 걸면 click/dblclick 대상이 노드로 바뀌어 글자 편집이 막힌다)
   el.addEventListener('pointerdown', e => {
-    if (e.target.isContentEditable) return;
+    if (editMode || e.target.isContentEditable || e.button !== 0) return;
     select(n.id);
     const start = { mx:e.clientX, my:e.clientY, x:n.x, y:n.y };
-    el.setPointerCapture(e.pointerId);
-    el.classList.add('dragging');
+    let moved = false;
 
     const onMove = ev => {
-      let nx = start.x + (ev.clientX - start.mx);
-      let ny = start.y + (ev.clientY - start.my);
+      const dx = ev.clientX - start.mx, dy = ev.clientY - start.my;
+      if (!moved) {
+        if (Math.abs(dx) < 3 && Math.abs(dy) < 3) return;   // 클릭과 드래그를 구분하는 여유값
+        moved = true;
+        el.classList.add('dragging');
+      }
+      let nx = start.x + dx, ny = start.y + dy;
       if (!ev.shiftKey) ({ nx, ny } = snap(n, nx, ny));
       n.x = Math.max(0, Math.min(canvas.clientWidth  - n.w, Math.round(nx)));
       n.y = Math.max(0, Math.min(canvas.clientHeight - n.h, Math.round(ny)));
       layout();
     };
-    const onUp = ev => {
-      el.releasePointerCapture(ev.pointerId);
+    const onUp = () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
       el.classList.remove('dragging');
-      el.removeEventListener('pointermove', onMove);
-      el.removeEventListener('pointerup', onUp);
       hideGuides();
-      persist();
+      if (moved) persist();
     };
-    el.addEventListener('pointermove', onMove);
-    el.addEventListener('pointerup', onUp);
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
   });
 
-  // 더블클릭 → 글자 수정
-  el.addEventListener('dblclick', e => {
-    const f = e.target.closest('[data-f]');
-    if (!f) return;
-    f.setAttribute('contenteditable', 'true');
-    f.focus();
-    document.getSelection().selectAllChildren(f);
-    const done = () => {
-      f.removeAttribute('contenteditable');
-      n[f.dataset.f] = f.innerHTML;
-      f.removeEventListener('blur', done);
-      persist(); layout();
-    };
-    f.addEventListener('blur', done);
-    f.addEventListener('keydown', ev => { if (ev.key === 'Escape') f.blur(); });
+  // 더블클릭 → 해당 글자만 바로 수정
+  el.querySelectorAll('[data-f]').forEach(f => {
+    f.addEventListener('dblclick', ev => { ev.stopPropagation(); beginEdit(n, f); });
   });
+}
+
+/* 한 칸 편집 시작 */
+function beginEdit(n, f) {
+  if (f.getAttribute('contenteditable') === 'true' && document.activeElement === f) return;
+  f.setAttribute('contenteditable', 'true');
+  f.focus();
+  const r = document.createRange(); r.selectNodeContents(f);
+  const sel = document.getSelection(); sel.removeAllRanges(); sel.addRange(r);
+
+  const done = () => {
+    f.removeEventListener('blur', done);
+    f.removeEventListener('keydown', onKey);
+    if (!editMode) f.removeAttribute('contenteditable');
+    n[f.dataset.f] = f.innerHTML.trim();
+    persist();
+  };
+  const onKey = ev => {
+    if (ev.key === 'Escape') { ev.preventDefault(); f.blur(); }
+    if (ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); f.blur(); }  // Shift+Enter 는 줄바꿈
+  };
+  f.addEventListener('blur', done);
+  f.addEventListener('keydown', onKey);
+}
+
+/* 텍스트 편집 모드 — 모든 글자를 클릭 한 번으로 수정 (이동 잠금) */
+let editMode = false;
+function toggleEditMode() {
+  editMode = !editMode;
+  document.body.classList.toggle('edit-mode', editMode);
+  const btn = document.getElementById('editBtn');
+  btn.textContent = editMode ? '✅ 편집 완료' : '✏️ 텍스트 편집';
+  btn.classList.toggle('primary', editMode);
+
+  canvas.querySelectorAll('[data-f]').forEach(f => {
+    if (editMode) f.setAttribute('contenteditable', 'true');
+    else f.removeAttribute('contenteditable');
+  });
+  if (editMode) { select(null); flash('텍스트 편집 모드 — 아무 글자나 클릭해 수정하세요 (객체 이동 잠금)'); }
+  else { harvestTexts(); flash('편집 내용을 저장했습니다'); }
+}
+
+/* 화면의 글자를 데이터 모델로 회수 */
+function harvestTexts() {
+  nodes.forEach(n => {
+    const el = canvas.querySelector(`.nd[data-id="${n.id}"]`);
+    if (!el) return;
+    n.t = el.querySelector('.n-title').innerHTML.trim();
+    n.d = el.querySelector('.n-desc').innerHTML.trim();
+  });
+  layout(); persist();
 }
 
 /* 정렬 스냅 — 다른 객체의 중심 / 위 / 아래 모서리에 자동으로 맞춤 */
@@ -557,7 +624,7 @@ function select(id) {
   canvas.querySelectorAll('.nd').forEach(el => el.classList.toggle('sel', el.dataset.id === id));
   const n = byId(id);
   document.getElementById('fsVal').textContent = n ? n.fs + 'px' : '–';
-  statusEl.textContent = n ? `선택: ${n.t.replace(/<[^>]+>/g,' ')}  ·  Shift를 누른 채 끌면 스냅 해제` : '';
+  statusEl.textContent = n ? `선택: ${n.t.replace(/<[^>]+>/g,' ')}  ·  Shift를 누른 채 끌면 스냅 해제` : HINT;
 }
 canvas.addEventListener('pointerdown', e => {
   if (e.target === canvas) { selected = null; canvas.querySelectorAll('.nd').forEach(el=>el.classList.remove('sel')); document.getElementById('fsVal').textContent='–'; }
@@ -623,28 +690,33 @@ function bumpAllFont(delta) {
 
 /* ============================ 저장 / 복원 ============================ */
 function persist() {
-  const data = {};
-  nodes.forEach(n => data[n.id] = { x:n.x, y:n.y, w:n.w, h:n.h, fs:n.fs, ds:n.ds, t:n.t, d:n.d });
+  const data = { nodes: {}, texts: {} };
+  nodes.forEach(n => data.nodes[n.id] = { x:n.x, y:n.y, w:n.w, h:n.h, fs:n.fs, ds:n.ds, t:n.t, d:n.d });
+  staticTexts().forEach(el => data.texts[el.dataset.k] = el.innerHTML);
   localStorage.setItem(STORE_KEY, JSON.stringify(data));
 }
 function resetLayout() {
   if (!confirm('배치 · 글자 · 폰트 크기를 모두 초기 상태로 되돌립니다. 계속할까요?')) return;
   localStorage.removeItem(STORE_KEY);
   nodes = clone(DEFAULT_NODES);
+  staticTexts().forEach(el => { if (DEFAULT_TEXTS[el.dataset.k] != null) el.innerHTML = DEFAULT_TEXTS[el.dataset.k]; });
   buildNodes(); layout(); select(null);
   flash('초기 배치로 복원했습니다');
 }
+const HINT = '객체를 끌어 이동 · 글자는 더블클릭하거나 ✏️ 텍스트 편집';
 let flashTimer;
 function flash(msg) {
   statusEl.textContent = msg;
   clearTimeout(flashTimer);
-  flashTimer = setTimeout(() => { statusEl.textContent = '객체를 끌어 이동 · 더블클릭하면 글자 수정'; }, 2200);
+  flashTimer = setTimeout(() => { statusEl.textContent = HINT; }, 2600);
 }
 
 /* ============================ 이미지 저장 ============================ */
 function saveAsImage() {
   const slide = document.getElementById('slide-container');
   const prevSel = selected;
+  if (editMode) toggleEditMode();          // 편집 테두리가 이미지에 찍히지 않도록
+  if (document.activeElement) document.activeElement.blur();
   select(null);
   hideGuides();
   flash('캡처 중…');

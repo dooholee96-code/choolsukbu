@@ -3,10 +3,12 @@ import { Student, Attendance, MakeUp, DayOfWeek } from '../types';
 import { getDB } from '../db';
 import { createId } from '../utils/id';
 import { getCurrentDate, getCurrentTime } from '../utils/date';
+import { logger } from '../utils/logger';
 
 interface DataContextType {
   students: Student[];
-  attendances: Attendance[];
+  /** 오늘 날짜의 checkIn 기록만. 전체 이력은 DB에만 있다. */
+  todayAttendances: Attendance[];
   makeups: MakeUp[];
   addStudent: (student: Student) => Promise<void>;
   checkInStudent: (studentId: string, status: 'scheduled' | 'unexpected') => Promise<void>;
@@ -35,7 +37,7 @@ const parseScheduledDays = (raw: unknown): DayOfWeek[] => {
 
 export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [students, setStudents] = useState<Student[]>([]);
-  const [attendances, setAttendances] = useState<Attendance[]>([]);
+  const [todayAttendances, setTodayAttendances] = useState<Attendance[]>([]);
   const [makeups, setMakeups] = useState<MakeUp[]>([]);
   const db = getDB();
 
@@ -51,13 +53,25 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }))
       );
 
-      const allAttendances = await db.getAllAsync<Attendance>('SELECT * FROM attendance;');
-      setAttendances(allAttendances);
+      // 화면이 쓰는 것은 오늘 기록뿐인데 이전에는 출결 테이블 전체를
+      // 메모리에 올렸고, refreshData는 쓰기가 일어날 때마다 호출된다.
+      // 원생 50명이면 연 1만 행 규모로 누적되므로 체크인 한 번의 비용이
+      // 누적 이력에 비례해 늘어난다. 오늘 날짜로 범위를 좁혀 비용을 고정한다.
+      // (idx_attendance_date 인덱스를 탄다. 이력 조회 기능은 필요할 때
+      //  별도 쿼리로 가져오면 된다 — DB에는 그대로 남아 있다.)
+      const todayRecords = await db.getAllAsync<Attendance>(
+        'SELECT * FROM attendance WHERE date = ? AND type = ?;',
+        getCurrentDate(),
+        'checkIn'
+      );
+      setTodayAttendances(todayRecords);
 
-      const allMakeups = await db.getAllAsync<MakeUp>('SELECT * FROM makeup;');
-      setMakeups(allMakeups);
+      const pendingMakeups = await db.getAllAsync<MakeUp>(
+        'SELECT * FROM makeup WHERE completed = 0;'
+      );
+      setMakeups(pendingMakeups);
     } catch (error) {
-      console.error('Error fetching data:', error);
+      logger.error('Error fetching data:', error);
     }
   }, [db]);
 
@@ -80,7 +94,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         );
         await refreshData();
       } catch (error) {
-        console.error('Error adding student:', error);
+        logger.error('Error adding student:', error);
         throw error;
       }
     },
@@ -122,7 +136,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         );
         await refreshData();
       } catch (error) {
-        console.error('Error checking in:', error);
+        logger.error('Error checking in:', error);
         throw error;
       }
     },
@@ -131,8 +145,8 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // 값 객체를 매 렌더 새로 만들면 모든 소비 화면이 함께 리렌더된다.
   const value = useMemo(
-    () => ({ students, attendances, makeups, addStudent, checkInStudent, refreshData }),
-    [students, attendances, makeups, addStudent, checkInStudent, refreshData]
+    () => ({ students, todayAttendances, makeups, addStudent, checkInStudent, refreshData }),
+    [students, todayAttendances, makeups, addStudent, checkInStudent, refreshData]
   );
 
   return <DataContext.Provider value={value}>{children}</DataContext.Provider>;

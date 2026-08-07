@@ -1,4 +1,3 @@
-import 'react-native-gesture-handler'; // ⭐️ 반드시 1번 줄에 추가해 주세요!
 import React, { useCallback, useEffect, useState } from 'react';
 import { View, ActivityIndicator, Text, TouchableOpacity } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
@@ -16,6 +15,8 @@ import AddStudentModal from './src/screens/AddStudentModal';
 import { theme } from './src/constants/theme';
 import { initDB } from './src/db';
 import { DataProvider } from './src/hooks/useData';
+import ErrorBoundary from './src/components/ErrorBoundary';
+import { logger } from './src/utils/logger';
 import { useResponsive } from './src/hooks/useResponsive';
 import type { RootStackParamList, TabParamList } from './src/types/navigation';
 
@@ -85,7 +86,7 @@ export default function App() {
     initDB()
       .then(() => setDBState('ready'))
       .catch((error) => {
-        console.error('Database initialization failed:', error);
+        logger.error('Database initialization failed:', error);
         setDBState('error');
       });
   }, []);
@@ -123,15 +124,17 @@ export default function App() {
   }
 
   return (
-    <SafeAreaProvider>
-      <ThemeProvider theme={theme}>
-        <DataProvider>
-          <StatusBar style="dark" />
-          <NavigationContainer>
-            <RootNavigator />
-          </NavigationContainer>
-        </DataProvider>
-      </ThemeProvider>
-    </SafeAreaProvider>
+    <ErrorBoundary>
+      <SafeAreaProvider>
+        <ThemeProvider theme={theme}>
+          <DataProvider>
+            <StatusBar style="dark" />
+            <NavigationContainer>
+              <RootNavigator />
+            </NavigationContainer>
+          </DataProvider>
+        </ThemeProvider>
+      </SafeAreaProvider>
+    </ErrorBoundary>
   );
 }

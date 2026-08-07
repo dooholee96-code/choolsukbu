@@ -6,7 +6,7 @@ import { useResponsive } from '../hooks/useResponsive';
 import Screen from '../components/common/Screen';
 import GridRow from '../components/common/GridRow';
 import StudentCard from '../components/StudentCard';
-import { getCurrentDate, getDayOfWeek, isTimeWithinRange, getCurrentTime } from '../utils/date';
+import { getDayOfWeek, isTimeWithinRange, getCurrentTime } from '../utils/date';
 import { chunk } from '../utils/array';
 import { Student, Attendance } from '../types';
 
@@ -90,25 +90,25 @@ interface Section {
 }
 
 const HomeScreen: React.FC = () => {
-  const { students, attendances, checkInStudent } = useData();
+  const { students, todayAttendances, checkInStudent } = useData();
   const { columns, sizeClass } = useResponsive();
 
-  const today = getCurrentDate();
   const dayOfWeek = getDayOfWeek(new Date());
 
-  /** 오늘 등원 기록을 학생별로 하나씩. 같은 날 기록이 여러 개면 가장 늦은 것을 쓴다. */
+  /**
+   * 등원 기록을 학생별로 하나씩. 같은 날 기록이 여러 개면 가장 늦은 것을 쓴다.
+   * 날짜와 type 필터는 쿼리에서 이미 걸렀다.
+   */
   const attendanceByStudent = useMemo(() => {
     const map = new Map<string, Attendance>();
-    for (const record of attendances) {
-      if (record.date !== today || record.type !== 'checkIn') continue;
-
+    for (const record of todayAttendances) {
       const previous = map.get(record.studentId);
       if (!previous || record.time > previous.time) {
         map.set(record.studentId, record);
       }
     }
     return map;
-  }, [attendances, today]);
+  }, [todayAttendances]);
 
   const scheduledStudents = useMemo(
     () => students.filter((s) => s.scheduledDays.includes(dayOfWeek)),
@@ -222,7 +222,7 @@ const HomeScreen: React.FC = () => {
               <StudentCard
                 student={student}
                 attendance={attendanceByStudent.get(student.id)}
-                onCheckIn={section.checkable ? () => handleCheckIn(student) : undefined}
+                onCheckIn={section.checkable ? handleCheckIn : undefined}
               />
             )}
           />

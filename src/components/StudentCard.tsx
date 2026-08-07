@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useCallback } from 'react';
 import styled, { useTheme } from 'styled-components/native';
 import { Student, Attendance } from '../types';
 import Button from './common/Button';
@@ -10,7 +10,11 @@ type Status = Attendance['status'];
 interface StudentCardProps {
   student: Student;
   attendance?: Attendance;
-  onCheckIn?: () => void;
+  /**
+   * 학생을 인자로 받는다. 부모가 () => handleCheckIn(student) 로 감싸면
+   * 매 렌더 새 함수가 만들어져 React.memo가 항상 miss 난다.
+   */
+  onCheckIn?: (student: Student) => void;
   showFee?: boolean; // 금액 표시 여부 제어
 }
 
@@ -135,6 +139,8 @@ const StudentCard: React.FC<StudentCardProps> = ({
   onCheckIn,
   showFee = false,
 }) => {
+  const handleCheckIn = useCallback(() => onCheckIn?.(student), [onCheckIn, student]);
+
   // 이 색은 styled 템플릿 밖(JSX prop)에서 쓰이므로 훅으로 직접 꺼내야 한다.
   // 이전 코드는 import 없이 전역 theme을 참조해서 이 카드가 그려지는 순간
   // ReferenceError로 화면이 통째로 죽었다.
@@ -175,11 +181,15 @@ const StudentCard: React.FC<StudentCardProps> = ({
             />
           </>
         ) : (
-          onCheckIn && <Button title="Check In" size="compact" onPress={onCheckIn} />
+          onCheckIn && <Button title="Check In" size="compact" onPress={handleCheckIn} />
         )}
       </StatusContainer>
     </CardContainer>
   );
 };
 
-export default StudentCard;
+/**
+ * 원생 수가 늘면 컨텍스트가 한 번 바뀔 때마다 모든 카드가 다시 그려진다.
+ * 카드는 props가 그대로면 결과도 같으므로 memo로 끊는다.
+ */
+export default React.memo(StudentCard);

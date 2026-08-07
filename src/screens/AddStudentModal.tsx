@@ -10,6 +10,7 @@ import Button from '../components/common/Button';
 import Chip from '../components/common/Chip';
 import { DayOfWeek, Student } from '../types';
 import { createId } from '../utils/id';
+import { logger } from '../utils/logger';
 
 const Root = styled.View`
   flex: 1;
@@ -139,7 +140,7 @@ const AddStudentModal: React.FC = () => {
       await addStudent(newStudent);
       navigation.goBack();
     } catch (error) {
-      console.error(error);
+      logger.error('Failed to add student', error);
       Alert.alert('저장 실패', '원생을 추가하지 못했습니다. 다시 시도해 주세요.');
     } finally {
       setIsSaving(false);

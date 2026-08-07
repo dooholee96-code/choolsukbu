@@ -7,32 +7,28 @@
 <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.8/dist/web/static/pretendard.css" />
 <script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
 <style>
-  :root {
-    --slate: #64748b;
-    --rose: #e11d48;
-  }
+  :root { --rose: #e11d48; }
   * { box-sizing: border-box; }
   body {
     font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, 'Apple SD Gothic Neo', 'Noto Sans KR', 'Malgun Gothic', sans-serif;
     background-color: #e2e8f0;
     margin: 0;
-    padding: 78px 40px 60px;
-    display: flex;
-    justify-content: center;
-    align-items: flex-start;
+    padding: 78px 40px 96px;
+    display: flex; justify-content: center; align-items: flex-start;
   }
 
-  /* ================= 툴바 ================= */
-  .toolbar {
-    position: fixed; top: 0; left: 0; right: 0;
-    height: 58px;
+  /* ================= 상단 툴바 / 하단 속성바 ================= */
+  .bar {
+    position: fixed; left: 0; right: 0;
     background: #0f172a;
     display: flex; align-items: center; gap: 10px;
     padding: 0 18px;
     z-index: 2000;
-    box-shadow: 0 3px 12px rgba(0,0,0,0.25);
     overflow-x: auto;
   }
+  .toolbar { top: 0; height: 58px; box-shadow: 0 3px 12px rgba(0,0,0,.25); }
+  .propbar { bottom: 0; min-height: 76px; background: #111c33; box-shadow: 0 -3px 12px rgba(0,0,0,.25); flex-wrap: wrap; padding: 10px 18px; }
+
   .tb-group { display: flex; align-items: center; gap: 6px; }
   .tb-sep { width: 1px; height: 26px; background: #334155; margin: 0 6px; flex-shrink: 0; }
   .tb-label { color: #94a3b8; font-size: 12px; font-weight: 700; white-space: nowrap; }
@@ -40,139 +36,104 @@
     background: #1e293b; color: #e2e8f0;
     border: 1px solid #334155; border-radius: 8px;
     padding: 8px 13px; font-size: 13px; font-weight: 700;
-    cursor: pointer; white-space: nowrap;
-    font-family: inherit;
+    cursor: pointer; white-space: nowrap; font-family: inherit;
   }
   .tb-btn:hover { background: #334155; }
   .tb-btn:active { transform: translateY(1px); }
   .tb-btn.primary { background: #3b82f6; border-color: #3b82f6; color: #fff; }
-  .tb-btn.primary:hover { background: #2563eb; }
+  .tb-btn.on { background: #3b82f6; border-color: #60a5fa; color: #fff; }
+  .tb-btn.danger { background: #7f1d1d; border-color: #b91c1c; color: #fecaca; }
   .tb-btn.icon { padding: 8px 12px; font-size: 15px; min-width: 38px; }
-  .tb-btn:disabled { opacity: .4; cursor: not-allowed; }
   .tb-status { color: #64748b; font-size: 12px; font-weight: 600; margin-left: auto; white-space: nowrap; padding-left: 12px; }
+
+  .pb-hint { color: #64748b; font-size: 13px; font-weight: 600; }
+  .pb-sec { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  [hidden] { display: none !important; }   /* .pb-sec 의 display 가 [hidden] 을 덮지 않도록 */
+  .pb-title { color: #f1f5f9; font-size: 13px; font-weight: 800; margin-right: 4px; white-space: nowrap; }
+  .sw { width: 26px; height: 26px; border-radius: 7px; border: 2px solid #334155; cursor: pointer; padding: 0; }
+  .sw.on { border-color: #fff; }
+  input[type=range] { width: 130px; accent-color: #3b82f6; }
 
   /* ================= 슬라이드 ================= */
   .presentation-slide {
-    background: #fff;
-    width: 1440px;
-    border-radius: 16px;
-    box-shadow: 0 20px 50px rgba(0,0,0,.1);
-    padding: 32px 60px 28px;
-    position: relative;
+    background: #fff; width: 1440px;
+    border-radius: 16px; box-shadow: 0 20px 50px rgba(0,0,0,.1);
+    padding: 32px 60px 28px; position: relative;
     display: flex; flex-direction: column;
   }
   .title { text-align:center; font-size:34px; font-weight:800; color:#1e293b; margin:0 0 4px; letter-spacing:-1px; }
   .subtitle { text-align:center; font-size:15px; font-weight:600; color:#64748b; margin:0 0 16px; }
 
-  .canvas {
-    position: relative;
-    width: 1320px; height: 700px;
-    flex-shrink: 0;
-    touch-action: none;
-  }
-  svg.wires {
-    position:absolute; inset:0; width:100%; height:100%;
-    z-index: 2; pointer-events: none; overflow: visible;
-  }
+  .canvas { position: relative; width: 1320px; height: 700px; flex-shrink: 0; touch-action: none; }
+  svg.wires { position:absolute; inset:0; width:100%; height:100%; z-index:2; pointer-events:none; overflow:visible; }
+  svg.wires .hit { pointer-events: stroke; cursor: pointer; }
 
   /* ================= 노드 ================= */
-  .nd {
-    position: absolute;
-    display: flex; flex-direction: column;
-    align-items: center; justify-content: center;
+  .nd { position: absolute; z-index: 3; cursor: grab; user-select: none; }
+  .nd .shape { position: absolute; inset: 0; overflow: visible; pointer-events: none; }
+  .nd-body {
+    position: relative; z-index: 1; width: 100%; height: 100%;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
     text-align: center; line-height: 1.35;
-    border-radius: 14px;
-    border: 2px solid transparent;
-    padding: 6px 12px;
-    z-index: 3;
-    cursor: grab;
-    user-select: none;
-    box-shadow: 0 4px 8px rgba(0,0,0,.06);
-    transition: box-shadow .15s;
   }
-  .nd.dragging { cursor: grabbing; z-index: 50; box-shadow: 0 12px 26px rgba(0,0,0,.22); }
-  .nd.sel { outline: 3px solid #3b82f6; outline-offset: 3px; }
+  .nd.dragging { cursor: grabbing; z-index: 50; }
+  .nd.sel .shape { filter: drop-shadow(0 0 0 #3b82f6); }
+  .nd.sel::after {
+    content:''; position:absolute; inset:-6px;
+    border: 3px solid #3b82f6; border-radius: 12px; pointer-events: none;
+  }
   .nd .n-title { font-weight: 800; letter-spacing: -0.4px; }
   .nd .n-desc  { font-weight: 600; opacity: .9; margin-top: 5px; }
   .nd .n-desc:empty { display: none; }
-  [contenteditable="true"] { cursor: text; user-select: text; }
-  [contenteditable="true"]:focus {
-    outline: 2px solid #3b82f6; border-radius: 4px;
-    background: rgba(255,255,255,.9);
-  }
 
-  /* ===== 텍스트 편집 모드 ===== */
+  [contenteditable="true"] { cursor: text; user-select: text; }
+  [contenteditable="true"]:focus { outline: 2px solid #3b82f6; border-radius: 4px; background: rgba(255,255,255,.9); }
+
+  /* 텍스트 편집 모드 */
   body.edit-mode .nd { cursor: text; }
   body.edit-mode .nd [data-f] { outline: 1px dashed rgba(59,130,246,.55); outline-offset: 2px; border-radius: 4px; }
-  body.edit-mode .nd .n-desc:empty {
-    display: block; min-width: 90px; min-height: 1.2em;
-    outline: 1px dashed rgba(59,130,246,.55);
-  }
+  body.edit-mode .nd .n-desc:empty { display: block; min-width: 90px; min-height: 1.2em; outline: 1px dashed rgba(59,130,246,.55); }
   body.edit-mode .nd .n-desc:empty::before { content: '설명 입력'; color: #94a3b8; font-size: 11px; }
   body.edit-mode .guide { display: none !important; }
+  /* 연결선 추가 모드 */
+  body.linking .nd { cursor: crosshair; }
 
-  .header { color:#fff; box-shadow:0 4px 12px rgba(0,0,0,.12); }
-  .bg-edu { background:#2563eb; }
-  .bg-hub { background:#16a34a; }
-  .bg-uni { background:#ea580c; }
-
-  .edu-node { background:#eff6ff; color:#1e40af; border-color:#bfdbfe; }
-  .hub-node { background:#f0fdf4; color:#166534; border-color:#bbf7d0; }
-  .uni-node { background:#fff7ed; color:#9a3412; border-color:#fed7aa; }
-  .sub-node { background:#f8fafc; color:#475569; border-color:#cbd5e1; }
-
-  .tier { background:#f1f5f9; border-left:5px solid #94a3b8; border-radius:8px; }
-  .tier .n-title { color:#334155; }
-  .tier .n-desc  { color:#64748b; }
-  .tier-1 { border-left-color:#2563eb; }
-  .tier-2 { border-left-color:#16a34a; }
-  .tier-3 { border-left-color:#ea580c; }
-  .tier-x { border-left-color:#94a3b8; }
-
-  /* 실무협의체 강조 */
-  .council { background:#fff1f2 !important; border:3px dashed var(--rose) !important; color:#9f1239 !important; }
   .badge {
     position:absolute; top:-14px;
     color:#fff; font-size:12.5px; font-weight:800;
     padding:5px 12px; border-radius:20px;
     letter-spacing:-0.5px; white-space:nowrap;
-    z-index: 4; pointer-events:none;
+    z-index:4; pointer-events:none;
   }
   .badge.r { right:-10px; background:var(--rose); box-shadow:0 4px 8px rgba(225,29,72,.4); }
   .badge.l { left:-10px;  background:#0891b2; box-shadow:0 4px 8px rgba(8,145,178,.35); }
 
-  /* 실무협의체 ③ 그룹 (교육협력관 + 주무관 2명 = 1객체) */
   #councilGroup {
     position:absolute; z-index:1;
     background: rgba(255,241,242,.85);
-    border: 3px dashed var(--rose);
-    border-radius: 18px;
+    border: 3px dashed var(--rose); border-radius: 18px;
   }
   #councilGroup .badge { top:-15px; left:-6px; right:auto; background:var(--rose); box-shadow:0 4px 8px rgba(225,29,72,.4); }
 
-  /* 정렬 가이드 */
   .guide { position:absolute; background:#f43f5e; z-index:60; pointer-events:none; display:none; }
   .guide.h { left:0; width:100%; height:1px; }
   .guide.v { top:0; height:100%; width:1px; }
 
   .peer-note { position:absolute; z-index:3; font-size:13px; font-weight:700; color:#64748b; }
 
-  /* ================= 범례 (간략) ================= */
+  /* ================= 범례 ================= */
   .legend-bar {
-    display:flex; align-items:center; justify-content:center;
-    flex-wrap:wrap; gap:10px 28px;
-    margin-top:14px; padding:12px 18px;
-    border-top:2px solid #e2e8f0;
+    display:flex; align-items:center; justify-content:center; flex-wrap:wrap;
+    gap:10px 28px; margin-top:14px; padding:12px 18px; border-top:2px solid #e2e8f0;
   }
   .lg { display:inline-flex; align-items:center; gap:8px; font-size:13px; font-weight:700; color:#475569; }
   .swatch { display:inline-block; width:24px; height:14px; flex-shrink:0; background:#fff1f2; border:2px dashed var(--rose); border-radius:5px; }
-
 </style>
 </head>
 <body>
 
-<!-- ===================== 툴바 ===================== -->
-<div class="toolbar">
+<!-- ===================== 상단 툴바 ===================== -->
+<div class="bar toolbar">
   <span class="tb-label">정렬</span>
   <div class="tb-group">
     <button class="tb-btn" onclick="alignRows()" title="같은 급(행)의 객체들을 수평으로 맞춥니다">⇔ 동급 수평 정렬</button>
@@ -181,29 +142,25 @@
   </div>
   <div class="tb-sep"></div>
 
-  <span class="tb-label">선택 객체 폰트</span>
+  <span class="tb-label">폰트</span>
   <div class="tb-group">
-    <button class="tb-btn icon" id="fsDown" onclick="bumpFont('title',-1)">가﹣</button>
+    <button class="tb-btn icon" onclick="bumpFont('title',-1)">가﹣</button>
     <span class="tb-label" id="fsVal">–</span>
-    <button class="tb-btn icon" id="fsUp" onclick="bumpFont('title',1)">가﹢</button>
+    <button class="tb-btn icon" onclick="bumpFont('title',1)">가﹢</button>
     <button class="tb-btn" onclick="bumpFont('desc',-1)">설명﹣</button>
     <button class="tb-btn" onclick="bumpFont('desc',1)">설명﹢</button>
-  </div>
-  <div class="tb-sep"></div>
-
-  <span class="tb-label">전체 폰트</span>
-  <div class="tb-group">
-    <button class="tb-btn icon" onclick="bumpAllFont(-1)">﹣</button>
-    <button class="tb-btn icon" onclick="bumpAllFont(1)">﹢</button>
+    <button class="tb-btn icon" onclick="bumpAllFont(-1)" title="전체 폰트 축소">전체﹣</button>
+    <button class="tb-btn icon" onclick="bumpAllFont(1)" title="전체 폰트 확대">전체﹢</button>
   </div>
   <div class="tb-sep"></div>
 
   <div class="tb-group">
-    <button class="tb-btn" id="editBtn" onclick="toggleEditMode()" title="모든 글자를 클릭해서 바로 고칠 수 있습니다 (이동 잠금)">✏️ 텍스트 편집</button>
-    <button class="tb-btn" onclick="resetLayout()">↺ 초기 배치 복원</button>
+    <button class="tb-btn" id="editBtn" onclick="toggleEditMode()" title="모든 글자를 클릭 한 번으로 수정 (이동 잠금)">✏️ 텍스트 편집</button>
+    <button class="tb-btn" id="linkBtn" onclick="toggleLinking()" title="객체 두 개를 차례로 클릭하면 화살표가 생깁니다">🔗 연결선 추가</button>
+    <button class="tb-btn" onclick="resetLayout()">↺ 초기 상태로</button>
     <button class="tb-btn primary" onclick="saveAsImage()">📸 PPT용 이미지 저장</button>
   </div>
-  <span class="tb-status" id="status">객체를 끌어 이동 · 글자는 더블클릭하거나 ✏️ 텍스트 편집</span>
+  <span class="tb-status" id="status"></span>
 </div>
 
 <!-- ===================== 슬라이드 ===================== -->
@@ -218,25 +175,66 @@
     <div id="councilGroup"><span class="badge" contenteditable="false">실무협의체 ③ (1객체)</span></div>
 
     <svg class="wires" id="wires" xmlns="http://www.w3.org/2000/svg">
-      <defs>
-        <marker id="ar-slate" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#64748b"/></marker>
-        <marker id="ar-green" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#16a34a"/></marker>
-        <marker id="ar-blue"  viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#1d4ed8"/></marker>
-        <marker id="ar-report" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#7c3aed"/></marker>
-      </defs>
+      <defs id="defs"></defs>
       <g id="edges"></g>
     </svg>
 
     <div class="peer-note" id="peerNote" data-k="peerNote" contenteditable="true" style="left:1152px; top:494px;">※ 3개 기관 서로 동급</div>
   </div>
 
-  <!-- 범례 (간략) -->
   <div class="legend-bar">
     <span class="lg"><svg width="30" height="10"><line x1="1" y1="5" x2="29" y2="5" stroke="#64748b" stroke-width="3"/></svg><span data-k="lg1" contenteditable="true">동급 소통</span></span>
     <span class="lg"><svg width="30" height="10"><line x1="1" y1="5" x2="29" y2="5" stroke="#16a34a" stroke-width="3" stroke-dasharray="6 4"/></svg><span data-k="lg2" contenteditable="true">교육협력관 소통</span></span>
     <span class="lg"><svg width="30" height="10"><line x1="1" y1="5" x2="29" y2="5" stroke="#1d4ed8" stroke-width="3" stroke-dasharray="6 4"/></svg><span data-k="lg3" contenteditable="true">교육협력과 소통</span></span>
     <span class="lg"><svg width="30" height="10"><line x1="1" y1="5" x2="29" y2="5" stroke="#7c3aed" stroke-width="3.5"/></svg><span data-k="lg4" contenteditable="true">보고 · 결재</span></span>
     <span class="lg"><span class="swatch"></span><span data-k="lg5" contenteditable="true">실무협의체 (핵심 4객체)</span></span>
+  </div>
+</div>
+
+<!-- ===================== 하단 속성바 ===================== -->
+<div class="bar propbar" id="propbar">
+  <span class="pb-hint" id="pbHint">객체를 클릭하면 <b>도형·크기</b>를, 화살표를 클릭하면 <b>방향·선 모양·곡률</b>을 바꿀 수 있습니다.</span>
+
+  <!-- 객체 속성 -->
+  <div class="pb-sec" id="pbNode" hidden>
+    <span class="pb-title" id="pbNodeName">객체</span>
+    <span class="tb-label">도형</span>
+    <div class="tb-group" id="shapeBtns"></div>
+    <div class="tb-sep"></div>
+    <span class="tb-label">크기</span>
+    <button class="tb-btn icon" onclick="resizeNode(-20,0)">폭﹣</button>
+    <button class="tb-btn icon" onclick="resizeNode(20,0)">폭﹢</button>
+    <button class="tb-btn icon" onclick="resizeNode(0,-12)">높이﹣</button>
+    <button class="tb-btn icon" onclick="resizeNode(0,12)">높이﹢</button>
+  </div>
+
+  <!-- 화살표 속성 -->
+  <div class="pb-sec" id="pbEdge" hidden>
+    <span class="pb-title" id="pbEdgeName">화살표</span>
+    <span class="tb-label">방향</span>
+    <div class="tb-group" id="dirBtns"></div>
+    <div class="tb-sep"></div>
+    <span class="tb-label">연결면</span>
+    <div class="tb-group" id="sideBtns"></div>
+    <div class="tb-sep"></div>
+    <span class="tb-label">선</span>
+    <div class="tb-group" id="lineBtns"></div>
+    <div class="tb-sep"></div>
+    <span class="tb-label">굵기</span>
+    <button class="tb-btn icon" onclick="bumpEdgeWidth(-0.5)">﹣</button>
+    <span class="tb-label" id="ewVal">–</span>
+    <button class="tb-btn icon" onclick="bumpEdgeWidth(0.5)">﹢</button>
+    <div class="tb-sep"></div>
+    <span class="tb-label">색</span>
+    <div class="tb-group" id="colorBtns"></div>
+    <div class="tb-sep"></div>
+    <div class="tb-group">
+      <span class="tb-label">곡률</span>
+      <input type="range" id="bendRange" min="-140" max="140" step="4" value="0" oninput="setBend(this.value)">
+      <button class="tb-btn icon" onclick="setBend(0); document.getElementById('bendRange').value=0;" title="곡률 초기화">0</button>
+      <div class="tb-sep"></div>
+      <button class="tb-btn danger" onclick="deleteEdge()">🗑 삭제</button>
+    </div>
   </div>
 </div>
 
@@ -259,262 +257,373 @@
 
 <script>
 /* ============================================================
-   데이터 모델
-   row : 동급(수평 정렬 그룹)   col : 축(수직 정렬 그룹)
+   색 팔레트 — 도형을 SVG 로 그리므로 색은 여기서만 관리합니다.
+   ============================================================ */
+const PALETTE = {
+  hedu: { fill:'#2563eb', stroke:'#2563eb', text:'#ffffff' },
+  hhub: { fill:'#16a34a', stroke:'#16a34a', text:'#ffffff' },
+  huni: { fill:'#ea580c', stroke:'#ea580c', text:'#ffffff' },
+  edu:  { fill:'#eff6ff', stroke:'#bfdbfe', text:'#1e40af' },
+  hub:  { fill:'#f0fdf4', stroke:'#bbf7d0', text:'#166534' },
+  uni:  { fill:'#fff7ed', stroke:'#fed7aa', text:'#9a3412' },
+  sub:  { fill:'#f8fafc', stroke:'#cbd5e1', text:'#475569' },
+  tier: { fill:'#f1f5f9', stroke:'#e2e8f0', text:'#334155' },
+};
+const COUNCIL = { fill:'#fff1f2', stroke:'#e11d48', text:'#9f1239', dash:'8 5', w:3 };
+
+const SHAPES = [
+  { id:'round',   name:'▢ 둥근'   },
+  { id:'rect',    name:'▭ 사각'   },
+  { id:'pill',    name:'⬭ 캡슐'   },
+  { id:'ellipse', name:'◯ 타원'   },
+  { id:'diamond', name:'◇ 마름모' },
+  { id:'hex',     name:'⬡ 육각'   },
+];
+const SHAPE_PAD = { round:'6px 12px', rect:'6px 12px', pill:'6px 22px', ellipse:'6px 12%', diamond:'6px 20%', hex:'6px 30px' };
+
+/* ============================================================
+   노드 —  row: 동급(수평 정렬 그룹)   col: 축(수직 정렬 그룹)
    ============================================================ */
 const DEFAULT_NODES = [
-  // 헤더
-  { id:'h-edu', row:'h', col:'l', x:128, y:0,  w:300, h:54, cls:'header bg-edu', t:'교육청',            fs:23, ds:13 },
-  { id:'h-hub', row:'h', col:'m', x:568, y:0,  w:300, h:54, cls:'header bg-hub', t:'교육협력과 (주관부서)', fs:22, ds:13 },
-  { id:'h-uni', row:'h', col:'r', x:1008,y:0,  w:300, h:54, cls:'header bg-uni', t:'대학교',            fs:23, ds:13 },
+  { id:'h-edu', row:'h', col:'l', x:128, y:0,  w:300, h:54, pal:'hedu', shape:'round', t:'교육청',              fs:23, ds:13 },
+  { id:'h-hub', row:'h', col:'m', x:568, y:0,  w:300, h:54, pal:'hhub', shape:'round', t:'교육협력과 (주관부서)', fs:22, ds:13 },
+  { id:'h-uni', row:'h', col:'r', x:1008,y:0,  w:300, h:54, pal:'huni', shape:'round', t:'대학교',              fs:23, ds:13 },
 
-  // 급(위계) 라벨
-  { id:'t1', row:'1', col:'g', x:0, y:86,  w:108, h:90,  cls:'tier tier-1', t:'1급',  d:'방향성 설정',        fs:20, ds:12 },
-  { id:'t2', row:'2', col:'g', x:0, y:222, w:108, h:108, cls:'tier tier-2', t:'2급',  d:'정책 반영<br>교육협력', fs:20, ds:12 },
-  { id:'t3', row:'3', col:'g', x:0, y:376, w:108, h:108, cls:'tier tier-3', t:'3급',  d:'사업 수행',          fs:20, ds:12 },
-  { id:'tx', row:'s', col:'g', x:0, y:524, w:108, h:56,  cls:'tier tier-x', t:'번외', d:'하위 체계',          fs:17, ds:11 },
+  { id:'t1', row:'1', col:'g', x:0, y:86,  w:108, h:90,  pal:'tier', shape:'round', accent:'#2563eb', t:'1급',  d:'방향성 설정',        fs:20, ds:12 },
+  { id:'t2', row:'2', col:'g', x:0, y:222, w:108, h:108, pal:'tier', shape:'round', accent:'#16a34a', t:'2급',  d:'정책 반영<br>교육협력', fs:20, ds:12 },
+  { id:'t3', row:'3', col:'g', x:0, y:376, w:108, h:108, pal:'tier', shape:'round', accent:'#ea580c', t:'3급',  d:'사업 수행',          fs:20, ds:12 },
+  { id:'tx', row:'s', col:'g', x:0, y:524, w:108, h:56,  pal:'tier', shape:'round', accent:'#94a3b8', t:'번외', d:'하위 체계',          fs:17, ds:11 },
 
-  // 1급
-  { id:'n-gam',   row:'1', col:'l', x:128, y:86,  w:300, h:90, cls:'edu-node',          t:'교육감', fs:21, ds:14 },
-  { id:'n-gwa',   row:'1', col:'m', x:568, y:86,  w:300, h:90, cls:'hub-node council',  t:'교육협력과', d:'(주무부서 · 방향성 설정)', fs:21, ds:14,
+  { id:'n-gam',   row:'1', col:'l', x:128, y:86,  w:300, h:90, pal:'edu', shape:'round', t:'교육감', fs:21, ds:14 },
+  { id:'n-gwa',   row:'1', col:'m', x:568, y:86,  w:300, h:90, pal:'hub', shape:'round', council:true,
+    t:'교육협력과', d:'(주무부서 · 방향성 설정)', fs:21, ds:14,
     badges:[{p:'l',x:'중개 · 마중물'},{p:'r',x:'실무협의체 ②'}] },
-  { id:'n-chong', row:'1', col:'r', x:1008,y:86,  w:300, h:90, cls:'uni-node',          t:'총장', fs:21, ds:14 },
+  { id:'n-chong', row:'1', col:'r', x:1008,y:86,  w:300, h:90, pal:'uni', shape:'round', t:'총장', fs:21, ds:14 },
 
-  // 2급
-  { id:'n-kuk',   row:'2', col:'l', x:128, y:222, w:300, h:108, cls:'edu-node',         t:'국 · 과장', fs:21, ds:14 },
-  { id:'n-gwan',  row:'2', col:'m', x:568, y:222, w:300, h:108, cls:'hub-node',         t:'교육협력관', d:'(정책 반영 · 교육협력 / 전방위 허브)', fs:21, ds:14 },
-  { id:'n-boj',   row:'2', col:'r', x:1008,y:222, w:300, h:108, cls:'uni-node council', t:'본부 · 보직교수', fs:21, ds:14,
-    badges:[{p:'r',x:'실무협의체 ④'}] },
+  { id:'n-kuk',   row:'2', col:'l', x:128, y:222, w:300, h:108, pal:'edu', shape:'round', t:'국 · 과장', fs:21, ds:14 },
+  { id:'n-gwan',  row:'2', col:'m', x:568, y:222, w:300, h:108, pal:'hub', shape:'round',
+    t:'교육협력관', d:'(정책 반영 · 교육협력 / 전방위 허브)', fs:21, ds:14 },
+  { id:'n-boj',   row:'2', col:'r', x:1008,y:222, w:300, h:108, pal:'uni', shape:'round', council:true,
+    t:'본부 · 보직교수', fs:21, ds:14, badges:[{p:'r',x:'실무협의체 ④'}] },
 
-  // 3급
-  { id:'n-eduw',  row:'3', col:'l', x:128, y:376, w:300, h:108, cls:'edu-node council', t:'실무부서 (교육청)', fs:21, ds:14,
-    badges:[{p:'r',x:'실무협의체 ①'}] },
-  { id:'n-mu',    row:'3', col:'m', x:568, y:376, w:300, h:108, cls:'hub-node',         t:'주무관 (2명)', d:'(교육협력관 소속 · 사업 수행)', fs:21, ds:14 },
-  { id:'n-uniw',  row:'3', col:'r', x:1008,y:376, w:300, h:108, cls:'uni-node',         t:'실무부서 (대학교)', fs:21, ds:14 },
+  { id:'n-eduw',  row:'3', col:'l', x:128, y:376, w:300, h:108, pal:'edu', shape:'round', council:true,
+    t:'실무부서 (교육청)', fs:21, ds:14, badges:[{p:'r',x:'실무협의체 ①'}] },
+  { id:'n-mu',    row:'3', col:'m', x:568, y:376, w:300, h:108, pal:'hub', shape:'round',
+    t:'주무관 (2명)', d:'(교육협력관 소속 · 사업 수행)', fs:21, ds:14 },
+  { id:'n-uniw',  row:'3', col:'r', x:1008,y:376, w:300, h:108, pal:'uni', shape:'round', t:'실무부서 (대학교)', fs:21, ds:14 },
 
-  // 번외 (하위 체계 · 서로 동급)
-  { id:'s-1', row:'s', col:'s1', x:308, y:524, w:220, h:56, cls:'sub-node', t:'교육지원청', fs:19, ds:12 },
-  { id:'s-2', row:'s', col:'s2', x:608, y:524, w:220, h:56, cls:'sub-node', t:'직속기관',   fs:19, ds:12 },
-  { id:'s-3', row:'s', col:'s3', x:908, y:524, w:220, h:56, cls:'sub-node', t:'고등학교',   fs:19, ds:12 },
-
-  // 교육지원청 하위
-  { id:'s-sch', row:'s2', col:'s1', x:308, y:618, w:220, h:56, cls:'sub-node', t:'학교', fs:19, ds:12 },
+  { id:'s-1',   row:'s',  col:'s1', x:308, y:524, w:220, h:56, pal:'sub', shape:'round', t:'교육지원청', fs:19, ds:12 },
+  { id:'s-2',   row:'s',  col:'s2', x:608, y:524, w:220, h:56, pal:'sub', shape:'round', t:'직속기관',   fs:19, ds:12 },
+  { id:'s-3',   row:'s',  col:'s3', x:908, y:524, w:220, h:56, pal:'sub', shape:'round', t:'고등학교',   fs:19, ds:12 },
+  { id:'s-sch', row:'s2', col:'s1', x:308, y:618, w:220, h:56, pal:'sub', shape:'round', t:'학교',       fs:19, ds:12 },
 ];
 
-/* 연결선 정의 — 노드를 옮기면 자동으로 다시 그려집니다 */
-const EDGES = [
-  // 동급 간 직접 소통
-  { a:'n-gam',  b:'n-gwa',   k:'peer' },
-  { a:'n-gwa',  b:'n-chong', k:'peer' },
-  { a:'n-kuk',  b:'n-gwan',  k:'peer' },
-  { a:'n-gwan', b:'n-boj',   k:'peer' },
-  { a:'n-eduw', b:'n-mu',    k:'peer' },
-  { a:'n-mu',   b:'n-uniw',  k:'peer' },
-  // 교육협력관 전방위 소통
-  { a:'n-gwan', b:'n-gam',   k:'hub' },
-  { a:'n-gwan', b:'n-eduw',  k:'hub' },
-  { a:'n-gwan', b:'n-chong', k:'hub' },
-  // 교육협력과 소통 라인
-  { a:'n-gwa',  b:'n-kuk',   k:'gate' },
-  // 내부 보고 · 결재 (상향 단방향)
-  { a:'n-mu',   b:'n-gwan',  k:'report', label:'보고 · 결재' },
-  { a:'n-gwan', b:'n-gwa',   k:'report', label:'보고 · 결재' },
-  // 교육지원청 하위
-  { a:'s-1',    b:'s-sch',   k:'tree' },
-];
-/* 하위 체계 분기 (1 : N 트리) */
-const TREE = { from:'n-mu', to:['s-1','s-2','s-3'] };
-
-const STYLE = {
-  peer:   { stroke:'#64748b', w:3,   dash:'',     s:'url(#ar-slate)', e:'url(#ar-slate)' },
-  hub:    { stroke:'#16a34a', w:2.5, dash:'7 5',  s:'url(#ar-green)', e:'url(#ar-green)' },
-  gate:   { stroke:'#1d4ed8', w:2.5, dash:'7 5',  s:'url(#ar-blue)',  e:'url(#ar-blue)'  },
-  report: { stroke:'#7c3aed', w:3.5, dash:'',     s:'',               e:'url(#ar-report)' },
-  tree:   { stroke:'#94a3b8', w:3,   dash:'',     s:'',               e:'url(#ar-slate)' },
+/* ============================================================
+   화살표
+   dir  : both(양방향) / fwd(정방향) / back(역방향) / none(없음)
+   route: curve(곡선) / ortho(직각)
+   side : auto(자동) / h(가로) / v(세로) — 선이 어느 면에서 나갈지
+   bend : 곡률 (-140 ~ 140)
+   ============================================================ */
+const KIND = {
+  peer:   { color:'#64748b', w:3,   dash:'',    dir:'both', route:'curve', side:'auto' },
+  hub:    { color:'#16a34a', w:2.5, dash:'7 5', dir:'both', route:'curve', side:'auto' },
+  gate:   { color:'#1d4ed8', w:2.5, dash:'7 5', dir:'both', route:'curve', side:'auto' },
+  report: { color:'#7c3aed', w:3.5, dash:'',    dir:'fwd',  route:'curve', side:'v'    },
+  tree:   { color:'#94a3b8', w:3,   dash:'',    dir:'fwd',  route:'ortho', side:'v'    },
 };
+const DEFAULT_EDGES = [
+  { id:'e1',  a:'n-gam',  b:'n-gwa',   k:'peer' },
+  { id:'e2',  a:'n-gwa',  b:'n-chong', k:'peer' },
+  { id:'e3',  a:'n-kuk',  b:'n-gwan',  k:'peer' },
+  { id:'e4',  a:'n-gwan', b:'n-boj',   k:'peer' },
+  { id:'e5',  a:'n-eduw', b:'n-mu',    k:'peer' },
+  { id:'e6',  a:'n-mu',   b:'n-uniw',  k:'peer' },
+  { id:'e7',  a:'n-gwan', b:'n-gam',   k:'hub' },
+  { id:'e8',  a:'n-gwan', b:'n-eduw',  k:'hub' },
+  { id:'e9',  a:'n-gwan', b:'n-chong', k:'hub' },
+  { id:'e10', a:'n-gwa',  b:'n-kuk',   k:'gate' },
+  { id:'e11', a:'n-mu',   b:'n-gwan',  k:'report', label:'보고 · 결재' },
+  { id:'e12', a:'n-gwan', b:'n-gwa',   k:'report', label:'보고 · 결재' },
+  { id:'e13', a:'n-mu',   b:'s-1',     k:'tree' },
+  { id:'e14', a:'n-mu',   b:'s-2',     k:'tree' },
+  { id:'e15', a:'n-mu',   b:'s-3',     k:'tree' },
+  { id:'e16', a:'s-1',    b:'s-sch',   k:'tree' },
+];
+const EDGE_COLORS = ['#64748b','#16a34a','#1d4ed8','#7c3aed','#e11d48','#ea580c','#0f172a'];
 
 const COUNCIL_GROUP = ['n-gwan','n-mu'];
-const STORE_KEY = 'edu-uni-diagram-v3';
-const SNAP = 8, GAP = 4;
-const SVGNS = 'http://www.w3.org/2000/svg';
+const STORE_KEY = 'edu-uni-diagram-v4';
+const SNAP = 8, GAP = 4, SVGNS = 'http://www.w3.org/2000/svg';
 
-let nodes = [];
-let selected = null;
+let nodes = [], edges = [];
+let selNode = null, selEdge = null;
+let editMode = false, linking = false, linkFrom = null;
 
-const canvas = document.getElementById('canvas');
-const edgesG = document.getElementById('edges');
-const groupEl = document.getElementById('councilGroup');
-const guideH = document.getElementById('guideH');
-const guideV = document.getElementById('guideV');
+const canvas   = document.getElementById('canvas');
+const edgesG   = document.getElementById('edges');
+const defs     = document.getElementById('defs');
+const groupEl  = document.getElementById('councilGroup');
+const guideH   = document.getElementById('guideH');
+const guideV   = document.getElementById('guideV');
 const statusEl = document.getElementById('status');
 
-const byId = id => nodes.find(n => n.id === id);
+const byId  = id => nodes.find(n => n.id === id);
+const edgeById = id => edges.find(e => e.id === id);
 const clone = o => JSON.parse(JSON.stringify(o));
+const svgEl = (tag, attrs) => {
+  const e = document.createElementNS(SVGNS, tag);
+  for (const k in attrs) if (attrs[k] !== '' && attrs[k] != null) e.setAttribute(k, attrs[k]);
+  return e;
+};
 
 /* ============================ 초기화 ============================ */
-/* 슬라이드 안의 고정 텍스트(제목 · 부제 · 범례 등) */
 const staticTexts = () => document.querySelectorAll('[data-k]');
 let DEFAULT_TEXTS = {};
 
 function init() {
   staticTexts().forEach(el => DEFAULT_TEXTS[el.dataset.k] = el.innerHTML);
+  nodes = clone(DEFAULT_NODES);
+  edges = clone(DEFAULT_EDGES).map(materializeEdge);
 
   const saved = localStorage.getItem(STORE_KEY);
-  nodes = clone(DEFAULT_NODES);
   if (saved) {
     try {
       const data = JSON.parse(saved);
-      nodes.forEach(n => { if (data.nodes && data.nodes[n.id]) Object.assign(n, data.nodes[n.id]); });
+      if (data.nodes) nodes.forEach(n => { if (data.nodes[n.id]) Object.assign(n, data.nodes[n.id]); });
+      if (Array.isArray(data.edges) && data.edges.length) edges = data.edges.map(materializeEdge);
       if (data.texts) staticTexts().forEach(el => {
         if (data.texts[el.dataset.k] != null) el.innerHTML = data.texts[el.dataset.k];
       });
-    } catch (e) { /* 저장본이 깨졌으면 기본 배치 사용 */ }
+    } catch (e) { /* 저장본이 깨졌으면 기본값 사용 */ }
   }
-  // 고정 텍스트도 고치면 바로 저장
   staticTexts().forEach(el => el.addEventListener('blur', persist));
 
+  buildShapeButtons();
+  buildEdgeButtons();
   buildNodes();
   layout();
+  flash(HINT);
+}
+
+/* 화살표에 기본값을 채워 넣어 이후에는 개별 속성만 다루도록 한다 */
+function materializeEdge(e) {
+  const d = KIND[e.k] || KIND.peer;
+  return {
+    id: e.id, a: e.a, b: e.b, k: e.k, label: e.label || '',
+    color: e.color ?? d.color, w: e.w ?? d.w, dash: e.dash ?? d.dash,
+    dir: e.dir ?? d.dir, route: e.route ?? d.route, side: e.side ?? d.side ?? 'auto', bend: e.bend ?? 0,
+  };
 }
 
 function buildNodes() {
   canvas.querySelectorAll('.nd').forEach(el => el.remove());
   nodes.forEach(n => {
     const el = document.createElement('div');
-    el.className = 'nd ' + n.cls;
+    el.className = 'nd';
     el.dataset.id = n.id;
     el.innerHTML =
-      (n.badges || []).map(b => `<span class="badge ${b.p}" contenteditable="false">${b.x}</span>`).join('') +
-      `<div class="n-title" data-f="t">${n.t}</div>` +
-      `<div class="n-desc" data-f="d">${n.d || ''}</div>`;
+      `<svg class="shape"></svg>` +
+      `<div class="nd-body">` +
+        (n.badges || []).map(b => `<span class="badge ${b.p}" contenteditable="false">${b.x}</span>`).join('') +
+        `<div class="n-title" data-f="t">${n.t}</div>` +
+        `<div class="n-desc" data-f="d">${n.d || ''}</div>` +
+      `</div>`;
     attachInteractions(el, n);
     canvas.appendChild(el);
   });
+  if (editMode) canvas.querySelectorAll('[data-f]').forEach(f => f.setAttribute('contenteditable','true'));
 }
 
-/* ============================ 렌더 ============================ */
+/* ============================ 도형 그리기 ============================ */
+function shapePath(shape, w, h, i) {
+  const W = w - i, H = h - i;
+  switch (shape) {
+    case 'diamond': return `M${w/2},${i} L${W},${h/2} L${w/2},${H} L${i},${h/2} Z`;
+    case 'hex': {
+      const c = Math.min(30, w * 0.16);
+      return `M${i + c},${i} L${W - c},${i} L${W},${h/2} L${W - c},${H} L${i + c},${H} L${i},${h/2} Z`;
+    }
+    default: return '';
+  }
+}
+
+function drawShape(n, el) {
+  const svg = el.querySelector('.shape');
+  svg.setAttribute('viewBox', `0 0 ${n.w} ${n.h}`);
+  svg.setAttribute('width', n.w);
+  svg.setAttribute('height', n.h);
+  svg.innerHTML = '';
+
+  const pal = PALETTE[n.pal] || PALETTE.sub;
+  const fill   = n.council ? COUNCIL.fill   : pal.fill;
+  const stroke = n.council ? COUNCIL.stroke : pal.stroke;
+  const sw     = n.council ? COUNCIL.w : 2;
+  const dash   = n.council ? COUNCIL.dash : '';
+  const i      = sw / 2;
+  const common = { fill, stroke, 'stroke-width': sw, 'stroke-dasharray': dash };
+
+  let node;
+  if (n.shape === 'ellipse') {
+    node = svgEl('ellipse', { cx:n.w/2, cy:n.h/2, rx:n.w/2 - i, ry:n.h/2 - i, ...common });
+  } else if (n.shape === 'diamond' || n.shape === 'hex') {
+    node = svgEl('path', { d: shapePath(n.shape, n.w, n.h, i), 'stroke-linejoin':'round', ...common });
+  } else {
+    const rx = n.shape === 'rect' ? 0 : n.shape === 'pill' ? (n.h - sw) / 2 : 14;
+    node = svgEl('rect', { x:i, y:i, width:n.w - sw, height:n.h - sw, rx, ry:rx, ...common });
+  }
+  svg.appendChild(node);
+
+  // 급(위계) 라벨의 왼쪽 강조 막대 — 사각 계열에서만
+  if (n.accent && (n.shape === 'round' || n.shape === 'rect')) {
+    svg.appendChild(svgEl('rect', {
+      x:i, y:i + 2, width:5, height:n.h - sw - 4,
+      rx: n.shape === 'rect' ? 0 : 3, fill:n.accent
+    }));
+  }
+
+  const body = el.querySelector('.nd-body');
+  body.style.color = n.council ? COUNCIL.text : pal.text;
+  body.style.padding = SHAPE_PAD[n.shape] || SHAPE_PAD.round;
+}
+
+/* ============================ 레이아웃 ============================ */
 function layout() {
   nodes.forEach(n => {
     const el = canvas.querySelector(`.nd[data-id="${n.id}"]`);
     if (!el) return;
-    el.style.left = n.x + 'px';
-    el.style.top = n.y + 'px';
-    el.style.width = n.w + 'px';
-    el.style.height = n.h + 'px';
+    el.style.left = n.x + 'px'; el.style.top = n.y + 'px';
+    el.style.width = n.w + 'px'; el.style.height = n.h + 'px';
     el.querySelector('.n-title').style.fontSize = n.fs + 'px';
     el.querySelector('.n-desc').style.fontSize = n.ds + 'px';
+    drawShape(n, el);
   });
   drawEdges();
   drawGroup();
 }
 
-function rect(n) { return { x:n.x, y:n.y, w:n.w, h:n.h, cx:n.x + n.w/2, cy:n.y + n.h/2 }; }
+const rect = n => ({ x:n.x, y:n.y, w:n.w, h:n.h, cx:n.x + n.w/2, cy:n.y + n.h/2 });
 
 /* 두 노드의 상대 위치에 따라 맞닿는 면을 자동 선택 */
-function anchors(A, B) {
+function anchors(A, B, side) {
   const dx = B.cx - A.cx, dy = B.cy - A.cy;
-  if (Math.abs(dx) >= Math.abs(dy)) {              // 좌우 연결
+  const horiz = side === 'h' ? true : side === 'v' ? false : Math.abs(dx) >= Math.abs(dy);
+  if (horiz) {
     const s = dx >= 0 ? 1 : -1;
-    return {
-      p1: { x: A.cx + s * (A.w/2 + GAP), y: A.cy },
-      p2: { x: B.cx - s * (B.w/2 + GAP), y: B.cy },
-      dir: 'h'
-    };
+    return { p1:{ x:A.cx + s*(A.w/2 + GAP), y:A.cy }, p2:{ x:B.cx - s*(B.w/2 + GAP), y:B.cy }, dir:'h' };
   }
-  const s = dy >= 0 ? 1 : -1;                       // 상하 연결
-  return {
-    p1: { x: A.cx, y: A.cy + s * (A.h/2 + GAP) },
-    p2: { x: B.cx, y: B.cy - s * (B.h/2 + GAP) },
-    dir: 'v'
+  const s = dy >= 0 ? 1 : -1;
+  return { p1:{ x:A.cx, y:A.cy + s*(A.h/2 + GAP) }, p2:{ x:B.cx, y:B.cy - s*(B.h/2 + GAP) }, dir:'v' };
+}
+
+function edgeGeom(ed) {
+  const A = byId(ed.a), B = byId(ed.b);
+  if (!A || !B) return null;
+  const { p1, p2, dir } = anchors(rect(A), rect(B), ed.side);
+
+  if (ed.route === 'ortho') {
+    const d = dir === 'v'
+      ? `M${p1.x},${p1.y} V${(p1.y + p2.y)/2} H${p2.x} V${p2.y}`
+      : `M${p1.x},${p1.y} H${(p1.x + p2.x)/2} V${p2.y} H${p2.x}`;
+    return { d, mid:{ x:(p1.x + p2.x)/2, y:(p1.y + p2.y)/2 }, dir };
+  }
+
+  let c1, c2;
+  if (dir === 'h') { const m = (p1.x + p2.x)/2; c1 = { x:m, y:p1.y }; c2 = { x:m, y:p2.y }; }
+  else             { const m = (p1.y + p2.y)/2; c1 = { x:p1.x, y:m }; c2 = { x:p2.x, y:m }; }
+
+  const bend = ed.bend || 0;
+  if (bend) {
+    const vx = p2.x - p1.x, vy = p2.y - p1.y, len = Math.hypot(vx, vy) || 1;
+    const nx = -vy/len, ny = vx/len;
+    c1 = { x:c1.x + nx*bend, y:c1.y + ny*bend };
+    c2 = { x:c2.x + nx*bend, y:c2.y + ny*bend };
+  }
+  const mid = {
+    x: (p1.x + 3*c1.x + 3*c2.x + p2.x) / 8,
+    y: (p1.y + 3*c1.y + 3*c2.y + p2.y) / 8,
   };
+  return { d:`M${p1.x},${p1.y} C${c1.x},${c1.y} ${c2.x},${c2.y} ${p2.x},${p2.y}`, mid, dir };
 }
 
-function curve(p1, p2, dir) {
-  if (dir === 'h') {
-    const m = (p1.x + p2.x) / 2;
-    return `M${p1.x},${p1.y} C${m},${p1.y} ${m},${p2.y} ${p2.x},${p2.y}`;
+const markerCache = new Set();
+function markerFor(color) {
+  const id = 'ar-' + color.replace('#','');
+  if (!markerCache.has(id)) {
+    const m = svgEl('marker', { id, viewBox:'0 0 10 10', refX:9, refY:5,
+      markerWidth:6, markerHeight:6, orient:'auto-start-reverse' });
+    m.appendChild(svgEl('path', { d:'M0,0 L10,5 L0,10 z', fill:color }));
+    defs.appendChild(m);
+    markerCache.add(id);
   }
-  const m = (p1.y + p2.y) / 2;
-  return `M${p1.x},${p1.y} C${p1.x},${m} ${p2.x},${m} ${p2.x},${p2.y}`;
-}
-
-function svgEl(tag, attrs) {
-  const e = document.createElementNS(SVGNS, tag);
-  for (const k in attrs) if (attrs[k] !== '' && attrs[k] != null) e.setAttribute(k, attrs[k]);
-  return e;
+  return `url(#${id})`;
 }
 
 function drawEdges() {
   edgesG.innerHTML = '';
+  edges.forEach(ed => {
+    const g = edgeGeom(ed);
+    if (!g) return;
+    const mk = markerFor(ed.color);
 
-  EDGES.forEach(ed => {
-    const A = rect(byId(ed.a)), B = rect(byId(ed.b));
-    const { p1, p2, dir } = anchors(A, B);
-    const st = STYLE[ed.k];
+    if (ed.id === selEdge) {
+      edgesG.appendChild(svgEl('path', {
+        d:g.d, fill:'none', stroke:'#3b82f6', 'stroke-width':Number(ed.w) + 9,
+        'stroke-opacity':0.28, 'stroke-linecap':'round'
+      }));
+    }
     edgesG.appendChild(svgEl('path', {
-      d: curve(p1, p2, dir), fill: 'none',
-      stroke: st.stroke, 'stroke-width': st.w, 'stroke-dasharray': st.dash,
-      'marker-start': st.s, 'marker-end': st.e
+      d:g.d, fill:'none', stroke:ed.color, 'stroke-width':ed.w, 'stroke-dasharray':ed.dash,
+      'marker-start': (ed.dir === 'both' || ed.dir === 'back') ? mk : '',
+      'marker-end':   (ed.dir === 'both' || ed.dir === 'fwd')  ? mk : ''
     }));
+    // 클릭 판정용(보이지 않는 굵은 선)
+    const hit = svgEl('path', { class:'hit', d:g.d, fill:'none', stroke:'transparent', 'stroke-width':16 });
+    hit.dataset.eid = ed.id;
+    hit.addEventListener('pointerdown', ev => { ev.stopPropagation(); selectEdge(ed.id); });
+    edgesG.appendChild(hit);
+
     if (ed.label) {
       const t = svgEl('text', {
-        x: (p1.x + p2.x)/2 + (dir === 'v' ? 14 : 0),
-        y: (p1.y + p2.y)/2 + (dir === 'h' ? -9 : -6),
-        'text-anchor': dir === 'v' ? 'start' : 'middle',
-        'font-size': 12, 'font-weight': 800, fill: st.stroke,
-        'font-family': 'Pretendard, sans-serif',
-        stroke: '#ffffff', 'stroke-width': 5, 'stroke-linejoin': 'round',
-        'paint-order': 'stroke fill'
+        x:g.mid.x + (g.dir === 'v' ? 14 : 0),
+        y:g.mid.y + (g.dir === 'h' ? -9 : -6),
+        'text-anchor': g.dir === 'v' ? 'start' : 'middle',
+        'font-size':12, 'font-weight':800, fill:ed.color,
+        'font-family':'Pretendard, sans-serif',
+        stroke:'#ffffff', 'stroke-width':5, 'stroke-linejoin':'round', 'paint-order':'stroke fill'
       });
       t.textContent = ed.label;
       edgesG.appendChild(t);
     }
   });
-
-  // 하위 체계 분기 (트리)
-  const src = rect(byId(TREE.from));
-  const tg = TREE.to.map(id => rect(byId(id)));
-  const topY = Math.min(...tg.map(t => t.y));
-  const midY = (src.y + src.h + topY) / 2;
-  const st = STYLE.tree;
-  const line = d => edgesG.appendChild(svgEl('path', { d, fill:'none', stroke:st.stroke, 'stroke-width':st.w }));
-  line(`M${src.cx},${src.y + src.h + GAP} V${midY}`);
-  line(`M${Math.min(...tg.map(t=>t.cx))},${midY} H${Math.max(...tg.map(t=>t.cx))}`);
-  tg.forEach(t => edgesG.appendChild(svgEl('path', {
-    d: `M${t.cx},${midY} V${t.y - GAP}`, fill:'none',
-    stroke: st.stroke, 'stroke-width': st.w, 'marker-end': st.e
-  })));
 }
 
 function drawGroup() {
-  const rs = COUNCIL_GROUP.map(id => rect(byId(id)));
+  const rs = COUNCIL_GROUP.map(id => byId(id)).filter(Boolean).map(rect);
+  if (!rs.length) { groupEl.hidden = true; return; }
+  groupEl.hidden = false;
   const pad = 22;
-  const x1 = Math.min(...rs.map(r => r.x)) - pad;
-  const y1 = Math.min(...rs.map(r => r.y)) - pad;
-  const x2 = Math.max(...rs.map(r => r.x + r.w)) + pad;
-  const y2 = Math.max(...rs.map(r => r.y + r.h)) + pad;
-  groupEl.style.left = x1 + 'px';
-  groupEl.style.top = y1 + 'px';
-  groupEl.style.width = (x2 - x1) + 'px';
-  groupEl.style.height = (y2 - y1) + 'px';
+  const x1 = Math.min(...rs.map(r => r.x)) - pad, y1 = Math.min(...rs.map(r => r.y)) - pad;
+  const x2 = Math.max(...rs.map(r => r.x + r.w)) + pad, y2 = Math.max(...rs.map(r => r.y + r.h)) + pad;
+  groupEl.style.left = x1 + 'px'; groupEl.style.top = y1 + 'px';
+  groupEl.style.width = (x2 - x1) + 'px'; groupEl.style.height = (y2 - y1) + 'px';
 }
 
-/* ============================ 드래그 / 선택 / 편집 ============================ */
+/* ============================ 드래그 / 편집 ============================ */
 function attachInteractions(el, n) {
-  // 드래그 — pointer capture 대신 window 리스너를 쓴다.
-  // (capture 를 걸면 click/dblclick 대상이 노드로 바뀌어 글자 편집이 막힌다)
   el.addEventListener('pointerdown', e => {
+    if (linking) { e.stopPropagation(); pickLink(n.id); return; }
     if (editMode || e.target.isContentEditable || e.button !== 0) return;
-    select(n.id);
+    e.stopPropagation();
+    selectNode(n.id);
     const start = { mx:e.clientX, my:e.clientY, x:n.x, y:n.y };
     let moved = false;
 
     const onMove = ev => {
       const dx = ev.clientX - start.mx, dy = ev.clientY - start.my;
       if (!moved) {
-        if (Math.abs(dx) < 3 && Math.abs(dy) < 3) return;   // 클릭과 드래그를 구분하는 여유값
-        moved = true;
-        el.classList.add('dragging');
+        if (Math.abs(dx) < 3 && Math.abs(dy) < 3) return;   // 클릭과 드래그 구분
+        moved = true; el.classList.add('dragging');
       }
       let nx = start.x + dx, ny = start.y + dy;
       if (!ev.shiftKey) ({ nx, ny } = snap(n, nx, ny));
@@ -525,21 +634,18 @@ function attachInteractions(el, n) {
     const onUp = () => {
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
-      el.classList.remove('dragging');
-      hideGuides();
+      el.classList.remove('dragging'); hideGuides();
       if (moved) persist();
     };
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onUp);
   });
 
-  // 더블클릭 → 해당 글자만 바로 수정
   el.querySelectorAll('[data-f]').forEach(f => {
     f.addEventListener('dblclick', ev => { ev.stopPropagation(); beginEdit(n, f); });
   });
 }
 
-/* 한 칸 편집 시작 */
 function beginEdit(n, f) {
   if (f.getAttribute('contenteditable') === 'true' && document.activeElement === f) return;
   f.setAttribute('contenteditable', 'true');
@@ -548,38 +654,32 @@ function beginEdit(n, f) {
   const sel = document.getSelection(); sel.removeAllRanges(); sel.addRange(r);
 
   const done = () => {
-    f.removeEventListener('blur', done);
-    f.removeEventListener('keydown', onKey);
+    f.removeEventListener('blur', done); f.removeEventListener('keydown', onKey);
     if (!editMode) f.removeAttribute('contenteditable');
     n[f.dataset.f] = f.innerHTML.trim();
     persist();
   };
   const onKey = ev => {
     if (ev.key === 'Escape') { ev.preventDefault(); f.blur(); }
-    if (ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); f.blur(); }  // Shift+Enter 는 줄바꿈
+    if (ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); f.blur(); }
   };
   f.addEventListener('blur', done);
   f.addEventListener('keydown', onKey);
 }
 
-/* 텍스트 편집 모드 — 모든 글자를 클릭 한 번으로 수정 (이동 잠금) */
-let editMode = false;
 function toggleEditMode() {
   editMode = !editMode;
   document.body.classList.toggle('edit-mode', editMode);
   const btn = document.getElementById('editBtn');
   btn.textContent = editMode ? '✅ 편집 완료' : '✏️ 텍스트 편집';
   btn.classList.toggle('primary', editMode);
-
   canvas.querySelectorAll('[data-f]').forEach(f => {
-    if (editMode) f.setAttribute('contenteditable', 'true');
-    else f.removeAttribute('contenteditable');
+    if (editMode) f.setAttribute('contenteditable','true'); else f.removeAttribute('contenteditable');
   });
-  if (editMode) { select(null); flash('텍스트 편집 모드 — 아무 글자나 클릭해 수정하세요 (객체 이동 잠금)'); }
+  if (editMode) { if (linking) toggleLinking(); clearSelection(); flash('텍스트 편집 모드 — 아무 글자나 클릭해 수정하세요 (객체 이동 잠금)'); }
   else { harvestTexts(); flash('편집 내용을 저장했습니다'); }
 }
 
-/* 화면의 글자를 데이터 모델로 회수 */
 function harvestTexts() {
   nodes.forEach(n => {
     const el = canvas.querySelector(`.nd[data-id="${n.id}"]`);
@@ -590,7 +690,7 @@ function harvestTexts() {
   layout(); persist();
 }
 
-/* 정렬 스냅 — 다른 객체의 중심 / 위 / 아래 모서리에 자동으로 맞춤 */
+/* ============================ 스냅 ============================ */
 function snap(n, nx, ny) {
   let gx = null, gy = null;
   const cx = nx + n.w/2, cy = ny + n.h/2;
@@ -598,45 +698,204 @@ function snap(n, nx, ny) {
     if (o.id === n.id) continue;
     const r = rect(o);
     if (gy === null) {
-      if (Math.abs(cy - r.cy) < SNAP)               { ny = r.cy - n.h/2; gy = r.cy; }
-      else if (Math.abs(ny - r.y) < SNAP)           { ny = r.y;          gy = r.y; }
-      else if (Math.abs(ny + n.h - (r.y+r.h)) < SNAP){ ny = r.y+r.h-n.h; gy = r.y+r.h; }
+      if (Math.abs(cy - r.cy) < SNAP)                 { ny = r.cy - n.h/2;  gy = r.cy; }
+      else if (Math.abs(ny - r.y) < SNAP)             { ny = r.y;           gy = r.y; }
+      else if (Math.abs(ny + n.h - (r.y+r.h)) < SNAP) { ny = r.y+r.h-n.h;   gy = r.y+r.h; }
     }
     if (gx === null) {
-      if (Math.abs(cx - r.cx) < SNAP)               { nx = r.cx - n.w/2; gx = r.cx; }
-      else if (Math.abs(nx - r.x) < SNAP)           { nx = r.x;          gx = r.x; }
-      else if (Math.abs(nx + n.w - (r.x+r.w)) < SNAP){ nx = r.x+r.w-n.w; gx = r.x+r.w; }
+      if (Math.abs(cx - r.cx) < SNAP)                 { nx = r.cx - n.w/2;  gx = r.cx; }
+      else if (Math.abs(nx - r.x) < SNAP)             { nx = r.x;           gx = r.x; }
+      else if (Math.abs(nx + n.w - (r.x+r.w)) < SNAP) { nx = r.x+r.w-n.w;   gx = r.x+r.w; }
     }
   }
-  showGuide(guideH, gy, 'top');
-  showGuide(guideV, gx, 'left');
+  showGuide(guideH, gy, 'top'); showGuide(guideV, gx, 'left');
   return { nx, ny };
 }
 function showGuide(el, v, prop) {
   if (v === null) { el.style.display = 'none'; return; }
-  el.style.display = 'block';
-  el.style[prop] = v + 'px';
+  el.style.display = 'block'; el.style[prop] = v + 'px';
 }
-function hideGuides() { guideH.style.display = 'none'; guideV.style.display = 'none'; }
+const hideGuides = () => { guideH.style.display = 'none'; guideV.style.display = 'none'; };
 
-function select(id) {
-  selected = id;
+/* ============================ 선택 / 속성바 ============================ */
+function selectNode(id) {
+  selNode = id; selEdge = null;
   canvas.querySelectorAll('.nd').forEach(el => el.classList.toggle('sel', el.dataset.id === id));
+  refreshProps(); drawEdges();
   const n = byId(id);
-  document.getElementById('fsVal').textContent = n ? n.fs + 'px' : '–';
-  statusEl.textContent = n ? `선택: ${n.t.replace(/<[^>]+>/g,' ')}  ·  Shift를 누른 채 끌면 스냅 해제` : HINT;
+  if (n) flash(`선택: ${plain(n.t)}  ·  Shift 를 누른 채 끌면 스냅 해제`);
 }
-canvas.addEventListener('pointerdown', e => {
-  if (e.target === canvas) { selected = null; canvas.querySelectorAll('.nd').forEach(el=>el.classList.remove('sel')); document.getElementById('fsVal').textContent='–'; }
+function selectEdge(id) {
+  selEdge = id; selNode = null;
+  canvas.querySelectorAll('.nd').forEach(el => el.classList.remove('sel'));
+  refreshProps(); drawEdges();
+  const e = edgeById(id);
+  if (e) flash(`선택한 화살표: ${plain(byId(e.a).t)} → ${plain(byId(e.b).t)}`);
+}
+function clearSelection() {
+  selNode = selEdge = null;
+  canvas.querySelectorAll('.nd').forEach(el => el.classList.remove('sel'));
+  refreshProps(); drawEdges();
+}
+const plain = s => (s || '').replace(/<[^>]+>/g, ' ').trim();
+
+canvas.addEventListener('pointerdown', e => { if (e.target === canvas || e.target.closest('svg.wires') === null) clearSelection(); });
+
+function refreshProps() {
+  const pn = document.getElementById('pbNode'), pe = document.getElementById('pbEdge');
+  const hint = document.getElementById('pbHint');
+  const n = byId(selNode), e = edgeById(selEdge);
+
+  pn.hidden = !n; pe.hidden = !e; hint.hidden = !!(n || e);
+  document.getElementById('fsVal').textContent = n ? n.fs + 'px' : '–';
+
+  if (n) {
+    document.getElementById('pbNodeName').textContent = plain(n.t);
+    document.querySelectorAll('#shapeBtns .tb-btn').forEach(b => b.classList.toggle('on', b.dataset.shape === n.shape));
+  }
+  if (e) {
+    document.getElementById('pbEdgeName').textContent = `${plain(byId(e.a).t)} → ${plain(byId(e.b).t)}`;
+    document.querySelectorAll('#dirBtns .tb-btn').forEach(b => b.classList.toggle('on', b.dataset.dir === e.dir));
+    document.querySelectorAll('#sideBtns .tb-btn').forEach(b => b.classList.toggle('on', b.dataset.side === e.side));
+    document.querySelectorAll('#lineBtns .tb-btn').forEach(b => {
+      if (b.dataset.dash != null) b.classList.toggle('on', (e.dash ? 'dash' : 'solid') === b.dataset.dash);
+      if (b.dataset.route != null) b.classList.toggle('on', e.route === b.dataset.route);
+    });
+    document.querySelectorAll('#colorBtns .sw').forEach(b => b.classList.toggle('on', b.dataset.color === e.color));
+    document.getElementById('ewVal').textContent = e.w + 'px';
+    document.getElementById('bendRange').value = e.bend || 0;
+    document.getElementById('bendRange').disabled = e.route === 'ortho';
+  }
+}
+
+function buildShapeButtons() {
+  const wrap = document.getElementById('shapeBtns');
+  wrap.innerHTML = '';
+  SHAPES.forEach(s => {
+    const b = document.createElement('button');
+    b.className = 'tb-btn'; b.dataset.shape = s.id; b.textContent = s.name;
+    b.onclick = () => setShape(s.id);
+    wrap.appendChild(b);
+  });
+}
+function buildEdgeButtons() {
+  const dirs = [ ['both','⟷ 양방향'], ['fwd','→ 정방향'], ['back','← 역방향'], ['none','— 없음'] ];
+  const dw = document.getElementById('dirBtns'); dw.innerHTML = '';
+  dirs.forEach(([v, label]) => {
+    const b = document.createElement('button');
+    b.className = 'tb-btn'; b.dataset.dir = v; b.textContent = label;
+    b.onclick = () => setEdgeProp('dir', v);
+    dw.appendChild(b);
+  });
+
+  const sw = document.getElementById('sideBtns'); sw.innerHTML = '';
+  [['auto','자동'], ['h','가로'], ['v','세로']].forEach(([v, label]) => {
+    const b = document.createElement('button');
+    b.className = 'tb-btn'; b.dataset.side = v; b.textContent = label;
+    b.onclick = () => setEdgeProp('side', v);
+    sw.appendChild(b);
+  });
+
+  const lw = document.getElementById('lineBtns'); lw.innerHTML = '';
+  [['solid','실선',''], ['dash','점선','7 5']].forEach(([v, label, dash]) => {
+    const b = document.createElement('button');
+    b.className = 'tb-btn'; b.dataset.dash = v; b.textContent = label;
+    b.onclick = () => setEdgeProp('dash', dash);
+    lw.appendChild(b);
+  });
+  [['curve','곡선'], ['ortho','직각']].forEach(([v, label]) => {
+    const b = document.createElement('button');
+    b.className = 'tb-btn'; b.dataset.route = v; b.textContent = label;
+    b.onclick = () => setEdgeProp('route', v);
+    lw.appendChild(b);
+  });
+
+  const cw = document.getElementById('colorBtns'); cw.innerHTML = '';
+  EDGE_COLORS.forEach(c => {
+    const b = document.createElement('button');
+    b.className = 'sw'; b.dataset.color = c; b.style.background = c;
+    b.onclick = () => setEdgeProp('color', c);
+    cw.appendChild(b);
+  });
+}
+
+/* ============================ 도형 · 크기 ============================ */
+function setShape(shape) {
+  const n = byId(selNode);
+  if (!n) return flash('먼저 객체를 클릭해 선택하세요');
+  n.shape = shape;
+  layout(); persist(); refreshProps();
+}
+function resizeNode(dw, dh) {
+  const n = byId(selNode);
+  if (!n) return flash('먼저 객체를 클릭해 선택하세요');
+  n.w = Math.max(80,  Math.min(canvas.clientWidth  - n.x, n.w + dw));
+  n.h = Math.max(40,  Math.min(canvas.clientHeight - n.y, n.h + dh));
+  layout(); persist();
+}
+
+/* ============================ 화살표 조정 ============================ */
+function setEdgeProp(key, val) {
+  const e = edgeById(selEdge);
+  if (!e) return flash('먼저 화살표를 클릭해 선택하세요');
+  e[key] = val;
+  if (key === 'route' && val === 'ortho') e.bend = 0;
+  layout(); persist(); refreshProps();
+}
+function bumpEdgeWidth(d) {
+  const e = edgeById(selEdge);
+  if (!e) return flash('먼저 화살표를 클릭해 선택하세요');
+  e.w = Math.round(Math.max(1, Math.min(10, e.w + d)) * 10) / 10;
+  layout(); persist(); refreshProps();
+}
+function setBend(v) {
+  const e = edgeById(selEdge);
+  if (!e) return;
+  e.bend = Number(v); e.route = 'curve';
+  layout(); persist();
+}
+function deleteEdge() {
+  const e = edgeById(selEdge);
+  if (!e) return flash('먼저 화살표를 클릭해 선택하세요');
+  edges = edges.filter(x => x.id !== e.id);
+  selEdge = null; layout(); persist(); refreshProps();
+  flash('화살표를 삭제했습니다');
+}
+
+/* 연결선 추가 — 객체 두 개를 차례로 클릭 */
+function toggleLinking() {
+  linking = !linking; linkFrom = null;
+  document.body.classList.toggle('linking', linking);
+  const b = document.getElementById('linkBtn');
+  b.classList.toggle('on', linking);
+  b.textContent = linking ? '✖ 연결 취소' : '🔗 연결선 추가';
+  if (linking) { if (editMode) toggleEditMode(); clearSelection(); flash('시작 객체를 클릭하세요'); }
+  else flash(HINT);
+}
+function pickLink(id) {
+  if (!linkFrom) { linkFrom = id; flash(`시작: ${plain(byId(id).t)}  ·  이제 도착 객체를 클릭하세요`); return; }
+  if (linkFrom === id) { flash('같은 객체입니다. 다른 객체를 클릭하세요'); return; }
+  const ne = materializeEdge({ id:'e' + Date.now().toString(36), a:linkFrom, b:id, k:'peer' });
+  edges.push(ne);
+  linkFrom = null;
+  toggleLinking();
+  layout(); persist(); selectEdge(ne.id);
+  flash('화살표를 추가했습니다 — 아래에서 방향과 선 모양을 바꿀 수 있습니다');
+}
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && linking) toggleLinking();
+  if ((e.key === 'Delete' || e.key === 'Backspace') && selEdge && !document.activeElement.isContentEditable) {
+    e.preventDefault(); deleteEdge();
+  }
 });
 
-/* ============================ 정렬 명령 ============================ */
+/* ============================ 정렬 ============================ */
 function groupBy(key) {
   const m = {};
   nodes.forEach(n => (m[n[key]] = m[n[key]] || []).push(n));
   return m;
 }
-function alignRows() {                       // 동급(행) 수평 정렬 — 중심선을 맞춤
+function alignRows() {
   Object.values(groupBy('row')).forEach(g => {
     if (g.length < 2) return;
     const cy = g.reduce((s,n) => s + n.y + n.h/2, 0) / g.length;
@@ -644,7 +903,7 @@ function alignRows() {                       // 동급(행) 수평 정렬 — �
   });
   layout(); persist(); flash('동급 수평 정렬 완료');
 }
-function alignCols() {                       // 축(열) 수직 정렬 — 중심선을 맞춤
+function alignCols() {
   Object.values(groupBy('col')).forEach(g => {
     if (g.length < 2) return;
     const cx = g.reduce((s,n) => s + n.x + n.w/2, 0) / g.length;
@@ -652,9 +911,9 @@ function alignCols() {                       // 축(열) 수직 정렬 — 중�
   });
   layout(); persist(); flash('축 수직 정렬 완료');
 }
-function distributeRows() {                  // 행 간 세로 간격 균등
+function distributeRows() {
   const rows = Object.entries(groupBy('row'))
-    .map(([k, g]) => ({ k, g, top: Math.min(...g.map(n=>n.y)), bot: Math.max(...g.map(n=>n.y+n.h)) }))
+    .map(([k, g]) => ({ g, top:Math.min(...g.map(n=>n.y)), bot:Math.max(...g.map(n=>n.y+n.h)) }))
     .sort((a,b) => a.top - b.top);
   if (rows.length < 3) return;
   const first = rows[0], last = rows[rows.length-1];
@@ -671,61 +930,64 @@ function distributeRows() {                  // 행 간 세로 간격 균등
 
 /* ============================ 폰트 ============================ */
 function bumpFont(which, delta) {
-  const n = byId(selected);
+  const n = byId(selNode);
   if (!n) return flash('먼저 객체를 클릭해 선택하세요');
   if (which === 'title') n.fs = Math.max(9, Math.min(44, n.fs + delta));
   else                   n.ds = Math.max(8, Math.min(30, n.ds + delta));
-  document.getElementById('fsVal').textContent = n.fs + 'px';
-  layout(); persist();
+  layout(); persist(); refreshProps();
 }
 function bumpAllFont(delta) {
   nodes.forEach(n => {
-    n.fs = Math.max(9,  Math.min(44, n.fs + delta));
-    n.ds = Math.max(8,  Math.min(30, n.ds + delta));
+    n.fs = Math.max(9, Math.min(44, n.fs + delta));
+    n.ds = Math.max(8, Math.min(30, n.ds + delta));
   });
-  const n = byId(selected);
-  if (n) document.getElementById('fsVal').textContent = n.fs + 'px';
-  layout(); persist();
+  layout(); persist(); refreshProps();
 }
 
 /* ============================ 저장 / 복원 ============================ */
 function persist() {
-  const data = { nodes: {}, texts: {} };
-  nodes.forEach(n => data.nodes[n.id] = { x:n.x, y:n.y, w:n.w, h:n.h, fs:n.fs, ds:n.ds, t:n.t, d:n.d });
+  const data = { nodes:{}, texts:{}, edges };
+  nodes.forEach(n => data.nodes[n.id] = {
+    x:n.x, y:n.y, w:n.w, h:n.h, fs:n.fs, ds:n.ds, t:n.t, d:n.d, shape:n.shape
+  });
   staticTexts().forEach(el => data.texts[el.dataset.k] = el.innerHTML);
   localStorage.setItem(STORE_KEY, JSON.stringify(data));
 }
 function resetLayout() {
-  if (!confirm('배치 · 글자 · 폰트 크기를 모두 초기 상태로 되돌립니다. 계속할까요?')) return;
+  if (!confirm('배치 · 도형 · 화살표 · 글자를 모두 초기 상태로 되돌립니다. 계속할까요?')) return;
   localStorage.removeItem(STORE_KEY);
   nodes = clone(DEFAULT_NODES);
+  edges = clone(DEFAULT_EDGES).map(materializeEdge);
   staticTexts().forEach(el => { if (DEFAULT_TEXTS[el.dataset.k] != null) el.innerHTML = DEFAULT_TEXTS[el.dataset.k]; });
-  buildNodes(); layout(); select(null);
-  flash('초기 배치로 복원했습니다');
+  buildNodes(); clearSelection(); layout();
+  flash('초기 상태로 복원했습니다');
 }
-const HINT = '객체를 끌어 이동 · 글자는 더블클릭하거나 ✏️ 텍스트 편집';
+
+const HINT = '객체·화살표를 클릭하면 아래에서 모양을 바꿀 수 있습니다 · 글자는 더블클릭';
 let flashTimer;
 function flash(msg) {
   statusEl.textContent = msg;
   clearTimeout(flashTimer);
-  flashTimer = setTimeout(() => { statusEl.textContent = HINT; }, 2600);
+  flashTimer = setTimeout(() => { statusEl.textContent = HINT; }, 2800);
 }
 
 /* ============================ 이미지 저장 ============================ */
 function saveAsImage() {
+  if (typeof html2canvas === 'undefined') {
+    flash('이미지 저장 기능을 불러오지 못했습니다 — 인터넷 연결 후 새로고침하세요');
+    return;
+  }
   const slide = document.getElementById('slide-container');
-  const prevSel = selected;
-  if (editMode) toggleEditMode();          // 편집 테두리가 이미지에 찍히지 않도록
+  if (editMode) toggleEditMode();
+  if (linking) toggleLinking();
   if (document.activeElement) document.activeElement.blur();
-  select(null);
-  hideGuides();
+  clearSelection(); hideGuides();
   flash('캡처 중…');
-  html2canvas(slide, { scale: 2, useCORS: true, backgroundColor: '#ffffff' }).then(cv => {
+  html2canvas(slide, { scale:2, useCORS:true, backgroundColor:'#ffffff' }).then(cv => {
     const link = document.createElement('a');
     link.download = '교육청_대학교_협력체계_도식.png';
     link.href = cv.toDataURL('image/png');
     link.click();
-    if (prevSel) select(prevSel);
     flash('이미지를 저장했습니다');
   });
 }

@@ -174,11 +174,6 @@ const HomeScreen: React.FC = () => {
     [dayOfWeek, checkInStudent]
   );
 
-  const totalExpectedRevenue = useMemo(
-    () => students.reduce((sum, student) => sum + (student.fee || 0), 0),
-    [students]
-  );
-
   return (
     <Screen>
       <SectionList<Student[], Section>
@@ -193,14 +188,14 @@ const HomeScreen: React.FC = () => {
               <TitleText>Today's Attendance</TitleText>
             </Header>
 
+            {/* 금액은 홈에서 다루지 않는다. 수강료는 원생 탭의 토글과
+                이후 월계표 화면에서만 노출한다. */}
             <SummaryCard>
-              <SummaryTitle>EXPECTED MONTHLY REVENUE</SummaryTitle>
-              <SummaryValue>₩{totalExpectedRevenue.toLocaleString()}</SummaryValue>
+              <SummaryTitle>CHECKED IN TODAY</SummaryTitle>
+              <SummaryValue>
+                {attendanceByStudent.size} / {scheduledStudents.length}
+              </SummaryValue>
               <StatsContainer $spread={sizeClass === 'compact'}>
-                <StatItem>
-                  <StatLabel>Students</StatLabel>
-                  <StatValue>{students.length}</StatValue>
-                </StatItem>
                 <StatItem>
                   <StatLabel>Scheduled</StatLabel>
                   <StatValue>{scheduledStudents.length}</StatValue>
@@ -208,6 +203,10 @@ const HomeScreen: React.FC = () => {
                 <StatItem>
                   <StatLabel>Checked In</StatLabel>
                   <StatValue>{attendanceByStudent.size}</StatValue>
+                </StatItem>
+                <StatItem>
+                  <StatLabel>Remaining</StatLabel>
+                  <StatValue>{pending.length}</StatValue>
                 </StatItem>
               </StatsContainer>
             </SummaryCard>

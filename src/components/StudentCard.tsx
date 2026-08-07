@@ -14,8 +14,14 @@ interface StudentCardProps {
   showFee?: boolean; // 금액 표시 여부 제어
 }
 
+/*
+ * flex-grow만 준다. 'flex: 1'은 flex-basis까지 0으로 만드는데,
+ * 부모 Cell의 높이가 콘텐츠에서 결정되는 구조라 basis 0이면
+ * 카드 높이가 0으로 무너지고 내용이 밖으로 넘친다.
+ * flex-basis를 auto로 남겨야 자연 높이를 잡은 뒤 한 행에서 높이가 맞춰진다.
+ */
 const CardContainer = styled.View`
-  flex: 1;
+  flex-grow: 1;
   background-color: ${({ theme }) => theme.colors.cardBackground};
   padding: ${({ theme }) => theme.spacing.medium}px;
   border-radius: ${({ theme }) => theme.borderRadius.medium}px;

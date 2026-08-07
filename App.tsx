@@ -1,9 +1,11 @@
 import 'react-native-gesture-handler'; // ⭐️ 반드시 1번 줄에 추가해 주세요!
-import React, { useEffect, useState } from 'react';
-import { View, ActivityIndicator } from 'react-native';
+import React, { useCallback, useEffect, useState } from 'react';
+import { View, ActivityIndicator, Text, TouchableOpacity } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { createStackNavigator } from '@react-navigation/stack';
+import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { ThemeProvider } from 'styled-components/native';
 
@@ -14,28 +16,25 @@ import AddStudentModal from './src/screens/AddStudentModal';
 import { theme } from './src/constants/theme';
 import { initDB } from './src/db';
 import { DataProvider } from './src/hooks/useData';
+import { useResponsive } from './src/hooks/useResponsive';
+import type { RootStackParamList, TabParamList } from './src/types/navigation';
 
-const Tab = createBottomTabNavigator();
-const Stack = createStackNavigator();
+const Tab = createBottomTabNavigator<TabParamList>();
+const Stack = createNativeStackNavigator<RootStackParamList>();
+
+const TAB_ICONS: Record<keyof TabParamList, [keyof typeof Ionicons.glyphMap, keyof typeof Ionicons.glyphMap]> = {
+  Today: ['home', 'home-outline'],
+  Students: ['people', 'people-outline'],
+  Makeup: ['book', 'book-outline'],
+};
 
 function TabNavigator() {
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
         tabBarIcon: ({ focused, color, size }) => {
-          let iconName: keyof typeof Ionicons.glyphMap;
-
-          if (route.name === 'Today') {
-            iconName = focused ? 'home' : 'home-outline';
-          } else if (route.name === 'Students') {
-            iconName = focused ? 'people' : 'people-outline';
-          } else if (route.name === 'Makeup') {
-            iconName = focused ? 'book' : 'book-outline';
-          } else {
-            iconName = 'help'; // Fallback icon
-          }
-
-          return <Ionicons name={iconName} size={size} color={color} />;
+          const [active, inactive] = TAB_ICONS[route.name] ?? ['help', 'help'];
+          return <Ionicons name={focused ? active : inactive} size={size} color={color} />;
         },
         tabBarActiveTintColor: theme.colors.primary,
         tabBarInactiveTintColor: theme.colors.textSecondary,
@@ -49,43 +48,90 @@ function TabNavigator() {
   );
 }
 
-export default function App() {
-  // DB 준비 상태를 추적하는 변수 추가
-  const [isDBReady, setIsDBReady] = useState(false);
+function RootNavigator() {
+  const { sizeClass } = useResponsive();
 
-  useEffect(() => {
+  // iPad처럼 넓은 창에서는 모달이 화면 전체를 덮지 않도록 form sheet로 띄운다.
+  // Stage Manager로 창을 좁히면 compact가 되어 다시 전체 모달로 돌아간다.
+  const modalPresentation = sizeClass === 'compact' ? 'modal' : 'formSheet';
+
+  return (
+    <Stack.Navigator screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="Main" component={TabNavigator} />
+      <Stack.Screen
+        name="AddStudentModal"
+        component={AddStudentModal}
+        options={{ presentation: modalPresentation }}
+      />
+    </Stack.Navigator>
+  );
+}
+
+type DBState = 'loading' | 'ready' | 'error';
+
+const centered = {
+  flex: 1,
+  justifyContent: 'center',
+  alignItems: 'center',
+  padding: 24,
+  backgroundColor: theme.colors.background,
+} as const;
+
+export default function App() {
+  const [dbState, setDBState] = useState<DBState>('loading');
+
+  const setupDatabase = useCallback(() => {
+    setDBState('loading');
     initDB()
-      .then(() => {
-        console.log('Database initialized successfully');
-        setIsDBReady(true); // DB 준비 완료 표시
-      })
-      .catch((err) => console.error('Database initialization failed:', err));
+      .then(() => setDBState('ready'))
+      .catch((error) => {
+        console.error('Database initialization failed:', error);
+        setDBState('error');
+      });
   }, []);
 
-  // DB가 아직 준비되지 않았다면 로딩 화면 표시
-  if (!isDBReady) {
+  useEffect(setupDatabase, [setupDatabase]);
+
+  if (dbState !== 'ready') {
+    // 이전에는 초기화가 실패해도 상태를 바꾸지 않아 스피너에 영구히 갇혔다.
     return (
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-        <ActivityIndicator size="large" color={theme.colors.primary} />
+      <View style={centered}>
+        {dbState === 'loading' ? (
+          <ActivityIndicator size="large" color={theme.colors.primary} />
+        ) : (
+          <>
+            <Text style={{ color: theme.colors.textPrimary, fontSize: 16, textAlign: 'center' }}>
+              데이터베이스를 열지 못했습니다.
+            </Text>
+            <TouchableOpacity
+              onPress={setupDatabase}
+              accessibilityRole="button"
+              style={{
+                marginTop: 16,
+                paddingVertical: 12,
+                paddingHorizontal: 24,
+                borderRadius: theme.borderRadius.medium,
+                backgroundColor: theme.colors.primary,
+              }}
+            >
+              <Text style={{ color: 'white', fontWeight: 'bold' }}>다시 시도</Text>
+            </TouchableOpacity>
+          </>
+        )}
       </View>
     );
   }
 
-  // DB가 준비되면 정상적으로 화면 렌더링
   return (
-    <ThemeProvider theme={theme}>
-      <DataProvider>
-        <NavigationContainer>
-          <Stack.Navigator screenOptions={{ headerShown: false }}>
-            <Stack.Screen name="Main" component={TabNavigator} />
-            <Stack.Screen
-              name="AddStudentModal"
-              component={AddStudentModal}
-              options={{ presentation: 'modal' }}
-            />
-          </Stack.Navigator>
-        </NavigationContainer>
-      </DataProvider>
-    </ThemeProvider>
+    <SafeAreaProvider>
+      <ThemeProvider theme={theme}>
+        <DataProvider>
+          <StatusBar style="dark" />
+          <NavigationContainer>
+            <RootNavigator />
+          </NavigationContainer>
+        </DataProvider>
+      </ThemeProvider>
+    </SafeAreaProvider>
   );
 }

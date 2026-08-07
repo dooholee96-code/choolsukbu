@@ -1,18 +1,25 @@
 import React, { useState } from 'react';
 import styled from 'styled-components/native';
-import { View, TextInput, Alert, ScrollView, Platform } from 'react-native';
+import { View, Alert, ScrollView, Platform, KeyboardAvoidingView } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
+import { format } from 'date-fns';
 import { useData } from '../hooks/useData';
 import Button from '../components/common/Button';
 import Chip from '../components/common/Chip';
 import { DayOfWeek, Student } from '../types';
-import { v4 as uuidv4 } from 'uuid';
-import DateTimePicker from '@react-native-community/datetimepicker';
-import { format } from 'date-fns';
+import { createId } from '../utils/id';
 
-const Container = styled.View`
+const Root = styled.View`
   flex: 1;
   background-color: ${({ theme }) => theme.colors.background};
+`;
+
+const Form = styled.View`
+  width: 100%;
+  max-width: 560px;
+  align-self: center;
   padding: ${({ theme }) => theme.spacing.medium}px;
 `;
 
@@ -39,11 +46,21 @@ const StyledTextInput = styled.TextInput`
   border-width: 1px;
   border-color: ${({ theme }) => theme.colors.border};
   font-size: 16px;
+  color: ${({ theme }) => theme.colors.textPrimary};
 `;
 
 const ChipContainer = styled.View`
   flex-direction: row;
   flex-wrap: wrap;
+`;
+
+const TimeRow = styled.View`
+  flex-direction: row;
+  gap: 12px;
+`;
+
+const TimeField = styled.View`
+  flex: 1;
 `;
 
 const TimePickerButton = styled.TouchableOpacity`
@@ -60,134 +77,203 @@ const TimePickerText = styled.Text`
   color: ${({ theme }) => theme.colors.textPrimary};
 `;
 
+const Actions = styled.View`
+  margin-top: ${({ theme }) => theme.spacing.large}px;
+  gap: 12px;
+`;
+
+const DAYS: DayOfWeek[] = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+/** 오늘 날짜의 특정 시각. 피커는 Date를 요구하지만 날짜 부분은 쓰지 않는다. */
+const timeAt = (hours: number, minutes = 0) => {
+  const date = new Date();
+  date.setHours(hours, minutes, 0, 0);
+  return date;
+};
+
 const AddStudentModal: React.FC = () => {
   const navigation = useNavigation();
+  const insets = useSafeAreaInsets();
   const { addStudent } = useData();
 
   const [name, setName] = useState('');
   const [grade, setGrade] = useState('');
   const [selectedDays, setSelectedDays] = useState<DayOfWeek[]>([]);
-  const [startTime, setStartTime] = useState(new Date());
-  const [endTime, setEndTime] = useState(new Date());
+  // 기본값을 둘 다 new Date()로 두면 시작과 종료가 같아져 구간 길이가 0이 되고,
+  // 사용자가 시간을 건드리지 않으면 모든 등원이 '예외'로 기록된다.
+  const [startTime, setStartTime] = useState(() => timeAt(16));
+  const [endTime, setEndTime] = useState(() => timeAt(18));
   const [showStartTimePicker, setShowStartTimePicker] = useState(false);
   const [showEndTimePicker, setShowEndTimePicker] = useState(false);
   const [fee, setFee] = useState('');
-
-  const days: DayOfWeek[] = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  const [isSaving, setIsSaving] = useState(false);
 
   const toggleDay = (day: DayOfWeek) => {
-    if (selectedDays.includes(day)) {
-      setSelectedDays(selectedDays.filter((d) => d !== day));
-    } else {
-      setSelectedDays([...selectedDays, day]);
-    }
+    setSelectedDays((previous) =>
+      previous.includes(day) ? previous.filter((d) => d !== day) : [...previous, day]
+    );
   };
 
   const handleSave = async () => {
-    if (!name || !grade || selectedDays.length === 0) {
-      Alert.alert('Error', 'Please fill in all required fields.');
+    if (!name.trim() || !grade.trim() || selectedDays.length === 0) {
+      Alert.alert('입력 확인', '이름, 학년, 수업 요일을 모두 입력해 주세요.');
       return;
     }
 
+    // 요일은 선택 순서가 아니라 주간 순서로 저장한다.
+    const orderedDays = DAYS.filter((day) => selectedDays.includes(day));
+    const parsedFee = Number(fee.replace(/[^0-9]/g, ''));
+
     const newStudent: Student = {
-      id: uuidv4(),
-      name,
-      grade,
-      scheduledDays: selectedDays,
+      id: createId(),
+      name: name.trim(),
+      grade: grade.trim(),
+      scheduledDays: orderedDays,
       scheduledStartTime: format(startTime, 'HH:mm'),
       scheduledEndTime: format(endTime, 'HH:mm'),
-      fee: fee ? parseInt(fee, 10) : undefined,
+      fee: parsedFee > 0 ? parsedFee : undefined,
     };
 
+    setIsSaving(true);
     try {
       await addStudent(newStudent);
       navigation.goBack();
     } catch (error) {
       console.error(error);
-      Alert.alert('Error', 'Failed to add student.');
+      Alert.alert('저장 실패', '원생을 추가하지 못했습니다. 다시 시도해 주세요.');
+    } finally {
+      setIsSaving(false);
     }
   };
 
-  const onStartTimeChange = (event: any, selectedDate?: Date) => {
-    const currentDate = selectedDate || startTime;
-    setShowStartTimePicker(Platform.OS === 'ios');
-    setStartTime(currentDate);
-  };
+  /**
+   * Android는 피커를 취소해도 onChange가 불린다. event.type을 보지 않으면
+   * 취소한 값이 그대로 반영되므로 'dismissed'는 걸러낸다.
+   */
+  const makeTimeChangeHandler =
+    (setTime: (date: Date) => void, setVisible: (visible: boolean) => void) =>
+    (event: DateTimePickerEvent, selectedDate?: Date) => {
+      if (Platform.OS !== 'ios') setVisible(false);
+      if (event.type === 'dismissed' || !selectedDate) return;
+      setTime(selectedDate);
+    };
 
-  const onEndTimeChange = (event: any, selectedDate?: Date) => {
-    const currentDate = selectedDate || endTime;
-    setShowEndTimePicker(Platform.OS === 'ios');
-    setEndTime(currentDate);
+  const renderTimeField = (
+    label: string,
+    value: Date,
+    setValue: (date: Date) => void,
+    isVisible: boolean,
+    setVisible: (visible: boolean) => void
+  ) => {
+    const onChange = makeTimeChangeHandler(setValue, setVisible);
+
+    return (
+      <TimeField>
+        {/* iOS는 compact 피커 자체가 탭 가능한 칩이라 상시 렌더한다.
+            토글 방식이면 피커가 나타날 때 아래 내용이 밀려 레이아웃이 흔들린다. */}
+        {Platform.OS === 'ios' ? (
+          <DateTimePicker
+            value={value}
+            mode="time"
+            display="compact"
+            onChange={onChange}
+            accessibilityLabel={label}
+          />
+        ) : (
+          <>
+            <TimePickerButton onPress={() => setVisible(true)} accessibilityLabel={label}>
+              <TimePickerText>{format(value, 'h:mm a')}</TimePickerText>
+            </TimePickerButton>
+            {isVisible && (
+              <DateTimePicker value={value} mode="time" display="default" onChange={onChange} />
+            )}
+          </>
+        )}
+      </TimeField>
+    );
   };
 
   return (
-    <ScrollView contentContainerStyle={{ flexGrow: 1 }}>
-      <Container>
-        <TitleText>Add New Student</TitleText>
+    <Root>
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        <ScrollView
+          contentContainerStyle={{ paddingTop: insets.top + 16, paddingBottom: insets.bottom + 32 }}
+          keyboardShouldPersistTaps="handled"
+        >
+          <Form>
+            <TitleText>Add New Student</TitleText>
 
-        <Label>Name</Label>
-        <StyledTextInput value={name} onChangeText={setName} placeholder="Enter name" />
-
-        <Label>Grade</Label>
-        <StyledTextInput value={grade} onChangeText={setGrade} placeholder="Enter grade" />
-
-        <Label>Scheduled Days</Label>
-        <ChipContainer>
-          {days.map((day) => (
-            <Chip
-              key={day}
-              label={day}
-              selected={selectedDays.includes(day)}
-              onPress={() => toggleDay(day)}
+            <Label>Name</Label>
+            <StyledTextInput
+              value={name}
+              onChangeText={setName}
+              placeholder="이름"
+              returnKeyType="next"
             />
-          ))}
-        </ChipContainer>
 
-        <Label>Scheduled Time</Label>
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-          <View style={{ flex: 1, marginRight: 8 }}>
-            <TimePickerButton onPress={() => setShowStartTimePicker(true)}>
-              <TimePickerText>{format(startTime, 'h:mm a')}</TimePickerText>
-            </TimePickerButton>
-            {showStartTimePicker && (
-              <DateTimePicker
-                value={startTime}
-                mode="time"
-                is24Hour={false}
-                display="default"
-                onChange={onStartTimeChange}
+            <Label>Grade</Label>
+            <StyledTextInput
+              value={grade}
+              onChangeText={setGrade}
+              placeholder="학년"
+              returnKeyType="next"
+            />
+
+            <Label>Scheduled Days</Label>
+            <ChipContainer>
+              {DAYS.map((day) => (
+                <Chip
+                  key={day}
+                  label={day}
+                  selected={selectedDays.includes(day)}
+                  onPress={() => toggleDay(day)}
+                />
+              ))}
+            </ChipContainer>
+
+            <Label>Scheduled Time</Label>
+            <TimeRow>
+              {renderTimeField(
+                '수업 시작 시각',
+                startTime,
+                setStartTime,
+                showStartTimePicker,
+                setShowStartTimePicker
+              )}
+              {renderTimeField(
+                '수업 종료 시각',
+                endTime,
+                setEndTime,
+                showEndTimePicker,
+                setShowEndTimePicker
+              )}
+            </TimeRow>
+
+            <Label>Monthly Fee (Optional)</Label>
+            <StyledTextInput
+              value={fee}
+              onChangeText={(text) => setFee(text.replace(/[^0-9]/g, ''))}
+              placeholder="월 수강료"
+              keyboardType="number-pad"
+            />
+
+            <Actions>
+              <Button
+                title={isSaving ? '저장 중…' : 'Save Student'}
+                onPress={handleSave}
+                disabled={isSaving}
               />
-            )}
-          </View>
-          <View style={{ flex: 1, marginLeft: 8 }}>
-            <TimePickerButton onPress={() => setShowEndTimePicker(true)}>
-              <TimePickerText>{format(endTime, 'h:mm a')}</TimePickerText>
-            </TimePickerButton>
-            {showEndTimePicker && (
-              <DateTimePicker
-                value={endTime}
-                mode="time"
-                is24Hour={false}
-                display="default"
-                onChange={onEndTimeChange}
-              />
-            )}
-          </View>
-        </View>
-
-        <Label>Monthly Fee (Optional)</Label>
-        <StyledTextInput
-          value={fee}
-          onChangeText={setFee}
-          placeholder="Enter fee"
-          keyboardType="numeric"
-        />
-
-        <View style={{ marginTop: 24 }}>
-          <Button title="Save Student" onPress={handleSave} />
-        </View>
-      </Container>
-    </ScrollView>
+              <View>
+                <Button title="Cancel" variant="secondary" onPress={() => navigation.goBack()} />
+              </View>
+            </Actions>
+          </Form>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </Root>
   );
 };
 

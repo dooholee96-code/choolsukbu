@@ -12,6 +12,13 @@ interface DataContextType {
   makeups: MakeUp[];
   addStudent: (student: Student) => Promise<void>;
   checkInStudent: (studentId: string, status: 'scheduled' | 'unexpected') => Promise<void>;
+  /** 결석 기록 + 같은 날짜의 보충 건 생성 */
+  markAbsent: (studentId: string) => Promise<void>;
+  /** 오늘 정규 수업 기록을 취소한다 (오입력 복구) */
+  undoTodayAttendance: (studentId: string) => Promise<void>;
+  scheduleMakeup: (makeupId: string, makeUpDate: string) => Promise<void>;
+  completeMakeup: (makeupId: string) => Promise<void>;
+  deleteMakeup: (makeupId: string) => Promise<void>;
   refreshData: () => Promise<void>;
 }
 
@@ -101,42 +108,178 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     [db, refreshData]
   );
 
+  /**
+   * 오늘 정규 수업에 대한 기록이 이미 있는지 본다.
+   * 출석과 결석은 같은 자리를 두고 다투는 값이므로 type으로만 판정한다.
+   */
+  const findTodayRecord = useCallback(
+    (studentId: string, date: string) =>
+      db.getFirstAsync<{ id: string }>(
+        'SELECT id FROM attendance WHERE studentId = ? AND date = ? AND type = ? LIMIT 1;',
+        studentId,
+        date,
+        'checkIn'
+      ),
+    [db]
+  );
+
   const checkInStudent = useCallback(
     async (studentId: string, status: 'scheduled' | 'unexpected') => {
       const date = getCurrentDate();
 
       try {
-        // 같은 날 중복 체크인 방지. UI가 버튼을 숨기더라도 연타나
+        // 같은 날 중복 기록 방지. UI가 버튼을 숨기더라도 연타나
         // 화면 복귀 타이밍에 따라 두 번 눌릴 수 있다.
-        const existing = await db.getFirstAsync<{ id: string }>(
-          'SELECT id FROM attendance WHERE studentId = ? AND date = ? AND type = ? LIMIT 1;',
-          studentId,
-          date,
-          'checkIn'
-        );
-        if (existing) return;
-
-        const newAttendance: Attendance = {
-          id: createId(),
-          studentId,
-          date,
-          time: getCurrentTime(),
-          status,
-          type: 'checkIn',
-        };
+        if (await findTodayRecord(studentId, date)) return;
 
         await db.runAsync(
           'INSERT INTO attendance (id, studentId, date, time, status, type) VALUES (?, ?, ?, ?, ?, ?);',
-          newAttendance.id,
-          newAttendance.studentId,
-          newAttendance.date,
-          newAttendance.time,
-          newAttendance.status,
-          newAttendance.type
+          createId(),
+          studentId,
+          date,
+          getCurrentTime(),
+          status,
+          'checkIn'
         );
         await refreshData();
       } catch (error) {
         logger.error('Error checking in:', error);
+        throw error;
+      }
+    },
+    [db, refreshData, findTodayRecord]
+  );
+
+  /**
+   * 결석 처리. 출결에 absent를 남기고 같은 날짜로 보충 건을 연다.
+   * 보충은 결석에서만 생기므로 두 기록은 항상 함께 만들어져야 한다.
+   * 하나만 남는 상태를 막기 위해 트랜잭션으로 묶는다.
+   */
+  const markAbsent = useCallback(
+    async (studentId: string) => {
+      const date = getCurrentDate();
+
+      try {
+        if (await findTodayRecord(studentId, date)) return;
+
+        await db.withTransactionAsync(async () => {
+          await db.runAsync(
+            'INSERT INTO attendance (id, studentId, date, time, status, type) VALUES (?, ?, ?, ?, ?, ?);',
+            createId(),
+            studentId,
+            date,
+            getCurrentTime(),
+            'absent',
+            'checkIn'
+          );
+          await db.runAsync(
+            'INSERT INTO makeup (id, studentId, originalDate, makeUpDate, completed) VALUES (?, ?, ?, ?, 0);',
+            createId(),
+            studentId,
+            date,
+            null
+          );
+        });
+        await refreshData();
+      } catch (error) {
+        logger.error('Error marking absent:', error);
+        throw error;
+      }
+    },
+    [db, refreshData, findTodayRecord]
+  );
+
+  /**
+   * 오늘 기록 취소. 잘못 누른 것을 되돌리는 경로가 없으면
+   * 출결 화면에서 실수 하나가 그대로 남는다.
+   * 결석을 취소하면 그때 열린 보충 건도 같이 지운다. 다만 이미 보충일을
+   * 잡았거나 완료한 건은 별개의 판단이 들어간 기록이므로 건드리지 않는다.
+   */
+  const undoTodayAttendance = useCallback(
+    async (studentId: string) => {
+      const date = getCurrentDate();
+
+      try {
+        await db.withTransactionAsync(async () => {
+          await db.runAsync(
+            'DELETE FROM attendance WHERE studentId = ? AND date = ? AND type = ?;',
+            studentId,
+            date,
+            'checkIn'
+          );
+          await db.runAsync(
+            'DELETE FROM makeup WHERE studentId = ? AND originalDate = ? AND completed = 0 AND makeUpDate IS NULL;',
+            studentId,
+            date
+          );
+        });
+        await refreshData();
+      } catch (error) {
+        logger.error('Error undoing attendance:', error);
+        throw error;
+      }
+    },
+    [db, refreshData]
+  );
+
+  /** 보충 예정일 지정. 'YYYY-MM-DD'. */
+  const scheduleMakeup = useCallback(
+    async (makeupId: string, makeUpDate: string) => {
+      try {
+        await db.runAsync('UPDATE makeup SET makeUpDate = ? WHERE id = ?;', makeUpDate, makeupId);
+        await refreshData();
+      } catch (error) {
+        logger.error('Error scheduling makeup:', error);
+        throw error;
+      }
+    },
+    [db, refreshData]
+  );
+
+  /**
+   * 보충 완료. 완료 표시와 함께 보충 수업 출결을 남겨 실제 수업이
+   * 있었다는 사실이 출결 기록에도 드러나게 한다.
+   */
+  const completeMakeup = useCallback(
+    async (makeupId: string) => {
+      const date = getCurrentDate();
+
+      try {
+        const target = await db.getFirstAsync<MakeUp>('SELECT * FROM makeup WHERE id = ?;', makeupId);
+        if (!target || target.completed) return;
+
+        await db.withTransactionAsync(async () => {
+          await db.runAsync(
+            'UPDATE makeup SET completed = 1, makeUpDate = COALESCE(makeUpDate, ?) WHERE id = ?;',
+            date,
+            makeupId
+          );
+          await db.runAsync(
+            'INSERT INTO attendance (id, studentId, date, time, status, type) VALUES (?, ?, ?, ?, ?, ?);',
+            createId(),
+            target.studentId,
+            date,
+            getCurrentTime(),
+            'scheduled',
+            'makeUp'
+          );
+        });
+        await refreshData();
+      } catch (error) {
+        logger.error('Error completing makeup:', error);
+        throw error;
+      }
+    },
+    [db, refreshData]
+  );
+
+  const deleteMakeup = useCallback(
+    async (makeupId: string) => {
+      try {
+        await db.runAsync('DELETE FROM makeup WHERE id = ?;', makeupId);
+        await refreshData();
+      } catch (error) {
+        logger.error('Error deleting makeup:', error);
         throw error;
       }
     },
@@ -145,8 +288,32 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // 값 객체를 매 렌더 새로 만들면 모든 소비 화면이 함께 리렌더된다.
   const value = useMemo(
-    () => ({ students, todayAttendances, makeups, addStudent, checkInStudent, refreshData }),
-    [students, todayAttendances, makeups, addStudent, checkInStudent, refreshData]
+    () => ({
+      students,
+      todayAttendances,
+      makeups,
+      addStudent,
+      checkInStudent,
+      markAbsent,
+      undoTodayAttendance,
+      scheduleMakeup,
+      completeMakeup,
+      deleteMakeup,
+      refreshData,
+    }),
+    [
+      students,
+      todayAttendances,
+      makeups,
+      addStudent,
+      checkInStudent,
+      markAbsent,
+      undoTodayAttendance,
+      scheduleMakeup,
+      completeMakeup,
+      deleteMakeup,
+      refreshData,
+    ]
   );
 
   return <DataContext.Provider value={value}>{children}</DataContext.Provider>;

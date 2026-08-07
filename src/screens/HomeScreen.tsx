@@ -8,6 +8,7 @@ import GridRow from '../components/common/GridRow';
 import StudentCard from '../components/StudentCard';
 import { getDayOfWeek, isTimeWithinRange, getCurrentTime } from '../utils/date';
 import { chunk } from '../utils/array';
+import { confirm } from '../utils/dialog';
 import { Student, Attendance } from '../types';
 
 const Header = styled.View`
@@ -90,7 +91,8 @@ interface Section {
 }
 
 const HomeScreen: React.FC = () => {
-  const { students, todayAttendances, checkInStudent } = useData();
+  const { students, todayAttendances, checkInStudent, markAbsent, undoTodayAttendance } =
+    useData();
   const { columns, sizeClass } = useResponsive();
 
   const dayOfWeek = getDayOfWeek(new Date());
@@ -122,23 +124,31 @@ const HomeScreen: React.FC = () => {
    * 정상(scheduled)으로 체크인한 학생이 어느 목록에도 잡히지 않고 사라졌다.
    * 등원 유형은 체크인 시점에 이미 결정되므로 그 status로 그대로 나눈다.
    */
-  const { pending, checkedInOnSchedule, unexpectedArrivals } = useMemo(() => {
+  const { pending, checkedInOnSchedule, unexpectedArrivals, absentStudents } = useMemo(() => {
     const pendingList = scheduledStudents.filter((s) => !attendanceByStudent.has(s.id));
     const onSchedule: Student[] = [];
     const unexpected: Student[] = [];
+    const absent: Student[] = [];
 
     for (const student of students) {
       const record = attendanceByStudent.get(student.id);
       if (!record) continue;
-      (record.status === 'scheduled' ? onSchedule : unexpected).push(student);
+
+      if (record.status === 'absent') absent.push(student);
+      else if (record.status === 'scheduled') onSchedule.push(student);
+      else unexpected.push(student);
     }
 
     return {
       pending: pendingList,
       checkedInOnSchedule: onSchedule,
       unexpectedArrivals: unexpected,
+      absentStudents: absent,
     };
   }, [students, scheduledStudents, attendanceByStudent]);
+
+  /** 결석은 등원이 아니므로 출석 수에서 뺀다. */
+  const checkedInCount = checkedInOnSchedule.length + unexpectedArrivals.length;
 
   const sections = useMemo<Section[]>(() => {
     const all: Section[] = [
@@ -153,9 +163,14 @@ const HomeScreen: React.FC = () => {
         data: chunk(unexpectedArrivals, columns),
         checkable: false,
       },
+      {
+        title: `ABSENT — ${absentStudents.length}`,
+        data: chunk(absentStudents, columns),
+        checkable: false,
+      },
     ];
     return all.filter((section) => section.data.length > 0);
-  }, [pending, checkedInOnSchedule, unexpectedArrivals, columns]);
+  }, [pending, checkedInOnSchedule, unexpectedArrivals, absentStudents, columns]);
 
   const handleCheckIn = useCallback(
     async (student: Student) => {
@@ -172,6 +187,24 @@ const HomeScreen: React.FC = () => {
       await checkInStudent(student.id, status);
     },
     [dayOfWeek, checkInStudent]
+  );
+
+  const handleMarkAbsent = useCallback(
+    (student: Student) => {
+      confirm({
+        title: '결석 처리',
+        message: `${student.name} 학생을 결석 처리할까요?\n보충 건이 함께 생성됩니다.`,
+        confirmLabel: '결석',
+        destructive: true,
+        onConfirm: () => markAbsent(student.id),
+      });
+    },
+    [markAbsent]
+  );
+
+  const handleUndo = useCallback(
+    (student: Student) => undoTodayAttendance(student.id),
+    [undoTodayAttendance]
   );
 
   return (
@@ -193,7 +226,7 @@ const HomeScreen: React.FC = () => {
             <SummaryCard>
               <SummaryTitle>CHECKED IN TODAY</SummaryTitle>
               <SummaryValue>
-                {attendanceByStudent.size} / {scheduledStudents.length}
+                {checkedInCount} / {scheduledStudents.length}
               </SummaryValue>
               <StatsContainer $spread={sizeClass === 'compact'}>
                 <StatItem>
@@ -202,7 +235,7 @@ const HomeScreen: React.FC = () => {
                 </StatItem>
                 <StatItem>
                   <StatLabel>Checked In</StatLabel>
-                  <StatValue>{attendanceByStudent.size}</StatValue>
+                  <StatValue>{checkedInCount}</StatValue>
                 </StatItem>
                 <StatItem>
                   <StatLabel>Remaining</StatLabel>
@@ -223,6 +256,8 @@ const HomeScreen: React.FC = () => {
                 student={student}
                 attendance={attendanceByStudent.get(student.id)}
                 onCheckIn={section.checkable ? handleCheckIn : undefined}
+                onMarkAbsent={section.checkable ? handleMarkAbsent : undefined}
+                onUndo={section.checkable ? undefined : handleUndo}
               />
             )}
           />

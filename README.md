@@ -83,13 +83,13 @@ App.tsx                     루트. DB 초기화 게이트 + 네비게이터
 src/
   screens/                  Home(오늘) · Students(원생) · Makeup(보충) · AddStudentModal
   components/
-    StudentCard.tsx
+    StudentCard.tsx · MakeupCard.tsx · ErrorBoundary.tsx
     common/                 Screen(반응형 셸) · GridRow(그리드 한 행) · Button · Chip
   hooks/
     useData.tsx             SQLite 접근 + 전역 상태
     useResponsive.ts        창 폭 기준 사이즈 클래스
   db/index.ts               스키마 · 마이그레이션 앵커
-  utils/                    date · id · array · csv
+  utils/                    date · id · array · csv · dialog · logger
   constants/theme.ts        색·간격·브레이크포인트
 ```
 
@@ -107,11 +107,25 @@ src/
 
 `styled-components` 템플릿 안에서 `//` 주석을 쓰면 안 된다. 네이티브 파서는 블록 주석만 제거하기 때문에, `//` 뒤의 값 파싱이 다음 `:`까지 이어지면서 **바로 다음 선언 한 줄을 통째로 삼킨다.** 주석이 필요하면 템플릿 밖에 `/* */`로 쓴다.
 
+`Alert`를 직접 쓰지 말고 `utils/dialog`의 `confirm`·`notify`를 쓴다. `react-native-web`의 `Alert.alert`는 `static alert() {}` 인 빈 스텁이라, 웹에서는 확인 대화상자로 감싼 동작이 아무 반응 없이 사라진다.
+
+## 출결 흐름
+
+```
+등원 예정 ──[Check In]──▶ 출석 / 예외
+        └──[결석]──▶ 결석 기록 + 보충 건 생성
+                             │
+                   [보충] 탭 ─┴─▶ 날짜 지정 ──▶ 완료
+                                              (보충 수업 출결 기록)
+```
+
+결석과 보충 건은 항상 함께 생성·취소되도록 트랜잭션으로 묶여 있다.
+잘못 누른 기록은 카드의 **취소**로 되돌릴 수 있다. 다만 이미 날짜를 잡았거나
+완료한 보충은 별도 판단이 들어간 기록이라 취소해도 남는다.
+
 ## 아직 없는 기능
 
 - 원생 수정·삭제 (추가만 가능)
-- 결석 처리 (`status: 'absent'`는 타입에만 존재)
-- 보충 수업 (`makeup` 테이블과 타입은 있으나 화면은 미구현)
 - 출결 이력 조회 (오늘 데이터만 표시)
 - **데이터 백업·내보내기** — `utils/csv.ts`에 파서만 있고 UI가 없다. 앱을 삭제하면 데이터가 전부 사라지므로 실사용 전에 갖추는 것을 권한다.
 - 앱 잠금 — 미성년자 이름·학년·수강료를 다루는데 기기를 든 사람 누구나 열람할 수 있다.

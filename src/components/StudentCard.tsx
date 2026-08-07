@@ -15,6 +15,10 @@ interface StudentCardProps {
    * 매 렌더 새 함수가 만들어져 React.memo가 항상 miss 난다.
    */
   onCheckIn?: (student: Student) => void;
+  /** 결석 처리. 넘기면 Check In 아래에 결석 버튼이 붙는다. */
+  onMarkAbsent?: (student: Student) => void;
+  /** 이미 기록된 카드에서 오늘 기록을 되돌린다. */
+  onUndo?: (student: Student) => void;
   showFee?: boolean; // 금액 표시 여부 제어
 }
 
@@ -89,6 +93,23 @@ const StatusContainer = styled.View`
   margin-left: ${({ theme }) => theme.spacing.small}px;
 `;
 
+const ActionStack = styled.View`
+  align-items: flex-end;
+  gap: 6px;
+`;
+
+const TextAction = styled.TouchableOpacity`
+  padding-vertical: 4px;
+  padding-horizontal: 6px;
+`;
+
+const TextActionLabel = styled.Text<{ $tone: 'danger' | 'muted' }>`
+  font-size: 13px;
+  font-weight: 600;
+  color: ${({ theme, $tone }) =>
+    $tone === 'danger' ? theme.colors.danger : theme.colors.textSecondary};
+`;
+
 const statusColor = (theme: ReturnType<typeof useTheme>, status: Status) => {
   switch (status) {
     case 'scheduled':
@@ -137,9 +158,13 @@ const StudentCard: React.FC<StudentCardProps> = ({
   student,
   attendance,
   onCheckIn,
+  onMarkAbsent,
+  onUndo,
   showFee = false,
 }) => {
   const handleCheckIn = useCallback(() => onCheckIn?.(student), [onCheckIn, student]);
+  const handleMarkAbsent = useCallback(() => onMarkAbsent?.(student), [onMarkAbsent, student]);
+  const handleUndo = useCallback(() => onUndo?.(student), [onUndo, student]);
 
   // 이 색은 styled 템플릿 밖(JSX prop)에서 쓰이므로 훅으로 직접 꺼내야 한다.
   // 이전 코드는 import 없이 전역 theme을 참조해서 이 카드가 그려지는 순간
@@ -173,15 +198,38 @@ const StudentCard: React.FC<StudentCardProps> = ({
               </StatusText>
             </StatusTag>
             <SubText>{formatTimeLabel(attendance.time)}</SubText>
-            <Ionicons
-              name="checkmark-circle"
-              size={22}
-              color={theme.colors.success}
-              style={{ marginTop: 4 }}
-            />
+            {onUndo ? (
+              <TextAction
+                onPress={handleUndo}
+                accessibilityRole="button"
+                accessibilityLabel={`${student.name} 기록 취소`}
+              >
+                <TextActionLabel $tone="muted">취소</TextActionLabel>
+              </TextAction>
+            ) : (
+              attendance.status !== 'absent' && (
+                <Ionicons
+                  name="checkmark-circle"
+                  size={22}
+                  color={theme.colors.success}
+                  style={{ marginTop: 4 }}
+                />
+              )
+            )}
           </>
         ) : (
-          onCheckIn && <Button title="Check In" size="compact" onPress={handleCheckIn} />
+          <ActionStack>
+            {onCheckIn && <Button title="Check In" size="compact" onPress={handleCheckIn} />}
+            {onMarkAbsent && (
+              <TextAction
+                onPress={handleMarkAbsent}
+                accessibilityRole="button"
+                accessibilityLabel={`${student.name} 결석 처리`}
+              >
+                <TextActionLabel $tone="danger">결석</TextActionLabel>
+              </TextAction>
+            )}
+          </ActionStack>
         )}
       </StatusContainer>
     </CardContainer>

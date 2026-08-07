@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import styled from 'styled-components/native';
-import { View, Alert, ScrollView, Platform, KeyboardAvoidingView } from 'react-native';
+import { View, ScrollView, Platform, KeyboardAvoidingView } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
@@ -11,6 +11,7 @@ import Chip from '../components/common/Chip';
 import { DayOfWeek, Student } from '../types';
 import { createId } from '../utils/id';
 import { logger } from '../utils/logger';
+import { notify } from '../utils/dialog';
 
 const Root = styled.View`
   flex: 1;
@@ -117,7 +118,7 @@ const AddStudentModal: React.FC = () => {
 
   const handleSave = async () => {
     if (!name.trim() || !grade.trim() || selectedDays.length === 0) {
-      Alert.alert('입력 확인', '이름, 학년, 수업 요일을 모두 입력해 주세요.');
+      notify('입력 확인', '이름, 학년, 수업 요일을 모두 입력해 주세요.');
       return;
     }
 
@@ -141,7 +142,7 @@ const AddStudentModal: React.FC = () => {
       navigation.goBack();
     } catch (error) {
       logger.error('Failed to add student', error);
-      Alert.alert('저장 실패', '원생을 추가하지 못했습니다. 다시 시도해 주세요.');
+      notify('저장 실패', '원생을 추가하지 못했습니다. 다시 시도해 주세요.');
     } finally {
       setIsSaving(false);
     }

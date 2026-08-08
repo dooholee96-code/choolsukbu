@@ -18,11 +18,13 @@ const Header = styled.View`
 
 const TitleText = styled.Text`
   font-size: 28px;
-  font-weight: bold;
+  font-family: ${({ theme }) => theme.fonts.bold};
   color: ${({ theme }) => theme.colors.textPrimary};
 `;
 
 const SubText = styled.Text`
+  font-family: ${({ theme }) => theme.fonts.regular};
+
   font-size: 16px;
   color: ${({ theme }) => theme.colors.textSecondary};
 `;
@@ -34,12 +36,14 @@ const Empty = styled.View`
 
 const EmptyTitle = styled.Text`
   font-size: 16px;
-  font-weight: bold;
+  font-family: ${({ theme }) => theme.fonts.bold};
   color: ${({ theme }) => theme.colors.textPrimary};
   margin-top: ${({ theme }) => theme.spacing.medium}px;
 `;
 
 const EmptyText = styled.Text`
+  font-family: ${({ theme }) => theme.fonts.regular};
+
   font-size: 14px;
   color: ${({ theme }) => theme.colors.textSecondary};
   text-align: center;

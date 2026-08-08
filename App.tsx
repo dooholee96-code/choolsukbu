@@ -1,10 +1,11 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { View, ActivityIndicator, Text, TouchableOpacity } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
+import { useFonts } from 'expo-font';
 import { Ionicons } from '@expo/vector-icons';
 import { ThemeProvider } from 'styled-components/native';
 
@@ -12,7 +13,7 @@ import HomeScreen from './src/screens/HomeScreen';
 import StudentsScreen from './src/screens/StudentsScreen';
 import MakeupScreen from './src/screens/MakeupScreen';
 import StudentFormModal from './src/screens/StudentFormModal';
-import { theme } from './src/constants/theme';
+import { theme, systemFontTheme } from './src/constants/theme';
 import { initDB } from './src/db';
 import { DataProvider } from './src/hooks/useData';
 import ErrorBoundary from './src/components/ErrorBoundary';
@@ -37,7 +38,7 @@ function TabNavigator() {
           const [active, inactive] = TAB_ICONS[route.name] ?? ['help', 'help'];
           return <Ionicons name={focused ? active : inactive} size={size} color={color} />;
         },
-        tabBarActiveTintColor: theme.colors.primary,
+        tabBarActiveTintColor: theme.colors.primaryStrong,
         tabBarInactiveTintColor: theme.colors.textSecondary,
         headerShown: false,
       })}
@@ -81,6 +82,19 @@ const centered = {
 export default function App() {
   const [dbState, setDBState] = useState<DBState>('loading');
 
+  // 커스텀 글꼴. 로드 전에 화면을 그리면 시스템 글꼴로 한 번 그렸다가
+  // 바뀌면서 글자가 튀므로 DB와 함께 시작 게이트에서 기다린다.
+  const [fontsLoaded, fontError] = useFonts({
+    GowunDodum: require('./assets/fonts/GowunDodum-Regular.ttf'),
+    'GowunBatang-Bold': require('./assets/fonts/GowunBatang-Bold.ttf'),
+  });
+
+  // 글꼴을 못 읽었으면 이름이 살아 있는 테마를 넘기면 안 된다.
+  const activeTheme = useMemo(
+    () => (fontError ? systemFontTheme : theme),
+    [fontError]
+  );
+
   const setupDatabase = useCallback(() => {
     setDBState('loading');
     initDB()
@@ -93,12 +107,14 @@ export default function App() {
 
   useEffect(setupDatabase, [setupDatabase]);
 
-  if (dbState !== 'ready') {
+  const fontsSettled = fontsLoaded || Boolean(fontError);
+
+  if (dbState !== 'ready' || !fontsSettled) {
     // 이전에는 초기화가 실패해도 상태를 바꾸지 않아 스피너에 영구히 갇혔다.
     return (
       <View style={centered}>
-        {dbState === 'loading' ? (
-          <ActivityIndicator size="large" color={theme.colors.primary} />
+        {dbState !== 'error' ? (
+          <ActivityIndicator size="large" color={theme.colors.primaryStrong} />
         ) : (
           <>
             <Text style={{ color: theme.colors.textPrimary, fontSize: 16, textAlign: 'center' }}>
@@ -112,7 +128,7 @@ export default function App() {
                 paddingVertical: 12,
                 paddingHorizontal: 24,
                 borderRadius: theme.borderRadius.medium,
-                backgroundColor: theme.colors.primary,
+                backgroundColor: theme.colors.primaryStrong,
               }}
             >
               <Text style={{ color: 'white', fontWeight: 'bold' }}>다시 시도</Text>
@@ -126,7 +142,7 @@ export default function App() {
   return (
     <ErrorBoundary>
       <SafeAreaProvider>
-        <ThemeProvider theme={theme}>
+        <ThemeProvider theme={activeTheme}>
           <DataProvider>
             <StatusBar style="dark" />
             <NavigationContainer>

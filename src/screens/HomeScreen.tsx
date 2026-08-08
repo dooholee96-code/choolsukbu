@@ -16,20 +16,21 @@ const Header = styled.View`
 `;
 
 const DateText = styled.Text`
+  font-family: ${({ theme }) => theme.fonts.regular};
+
   font-size: 16px;
   color: ${({ theme }) => theme.colors.textSecondary};
 `;
 
 const TitleText = styled.Text`
   font-size: 28px;
-  font-weight: bold;
+  font-family: ${({ theme }) => theme.fonts.bold};
   color: ${({ theme }) => theme.colors.textPrimary};
 `;
 
 const SectionTitle = styled.Text`
   font-size: 13px;
-  font-weight: bold;
-  letter-spacing: 0.5px;
+  font-family: ${({ theme }) => theme.fonts.bold};
   color: ${({ theme }) => theme.colors.textSecondary};
   margin-bottom: ${({ theme }) => theme.spacing.small}px;
   margin-top: ${({ theme }) => theme.spacing.medium}px;
@@ -38,7 +39,7 @@ const SectionTitle = styled.Text`
 `;
 
 const SummaryCard = styled.View`
-  background-color: ${({ theme }) => theme.colors.primary};
+  background-color: ${({ theme }) => theme.colors.primaryStrong};
   padding: ${({ theme }) => theme.spacing.large}px;
   border-radius: ${({ theme }) => theme.borderRadius.large}px;
   margin-bottom: ${({ theme }) => theme.spacing.small}px;
@@ -46,6 +47,7 @@ const SummaryCard = styled.View`
 
 const SummaryTitle = styled.Text`
   color: rgba(255, 255, 255, 0.8);
+  font-family: ${({ theme }) => theme.fonts.regular};
   font-size: 14px;
   margin-bottom: 4px;
 `;
@@ -53,7 +55,7 @@ const SummaryTitle = styled.Text`
 const SummaryValue = styled.Text`
   color: white;
   font-size: 32px;
-  font-weight: bold;
+  font-family: ${({ theme }) => theme.fonts.bold};
   margin-bottom: ${({ theme }) => theme.spacing.medium}px;
 `;
 
@@ -67,16 +69,18 @@ const StatItem = styled.View``;
 
 const StatLabel = styled.Text`
   color: rgba(255, 255, 255, 0.8);
+  font-family: ${({ theme }) => theme.fonts.regular};
   font-size: 12px;
 `;
 
 const StatValue = styled.Text`
   color: white;
   font-size: 20px;
-  font-weight: bold;
-`;
+  font-family: ${({ theme }) => theme.fonts.bold};`;
 
 const EmptyText = styled.Text`
+  font-family: ${({ theme }) => theme.fonts.regular};
+
   font-size: 15px;
   color: ${({ theme }) => theme.colors.textSecondary};
   text-align: center;
@@ -152,19 +156,19 @@ const HomeScreen: React.FC = () => {
 
   const sections = useMemo<Section[]>(() => {
     const all: Section[] = [
-      { title: `SCHEDULED TODAY — ${pending.length}`, data: chunk(pending, columns), checkable: true },
+      { title: `등원 예정 — ${pending.length}`, data: chunk(pending, columns), checkable: true },
       {
-        title: `CHECKED IN — ${checkedInOnSchedule.length}`,
+        title: `등원 완료 — ${checkedInOnSchedule.length}`,
         data: chunk(checkedInOnSchedule, columns),
         checkable: false,
       },
       {
-        title: `UNEXPECTED ARRIVALS — ${unexpectedArrivals.length}`,
+        title: `예외 등원 — ${unexpectedArrivals.length}`,
         data: chunk(unexpectedArrivals, columns),
         checkable: false,
       },
       {
-        title: `ABSENT — ${absentStudents.length}`,
+        title: `결석 — ${absentStudents.length}`,
         data: chunk(absentStudents, columns),
         checkable: false,
       },
@@ -217,28 +221,28 @@ const HomeScreen: React.FC = () => {
         ListHeaderComponent={
           <>
             <Header>
-              <DateText>{new Date().toLocaleDateString()}</DateText>
-              <TitleText>Today's Attendance</TitleText>
+              <DateText>{new Date().toLocaleDateString('ko-KR')}</DateText>
+              <TitleText>오늘의 출석</TitleText>
             </Header>
 
             {/* 금액은 홈에서 다루지 않는다. 수강료는 원생 탭의 토글과
                 이후 월계표 화면에서만 노출한다. */}
             <SummaryCard>
-              <SummaryTitle>CHECKED IN TODAY</SummaryTitle>
+              <SummaryTitle>오늘 등원</SummaryTitle>
               <SummaryValue>
                 {checkedInCount} / {scheduledStudents.length}
               </SummaryValue>
               <StatsContainer $spread={sizeClass === 'compact'}>
                 <StatItem>
-                  <StatLabel>Scheduled</StatLabel>
+                  <StatLabel>예정</StatLabel>
                   <StatValue>{scheduledStudents.length}</StatValue>
                 </StatItem>
                 <StatItem>
-                  <StatLabel>Checked In</StatLabel>
+                  <StatLabel>등원</StatLabel>
                   <StatValue>{checkedInCount}</StatValue>
                 </StatItem>
                 <StatItem>
-                  <StatLabel>Remaining</StatLabel>
+                  <StatLabel>남음</StatLabel>
                   <StatValue>{pending.length}</StatValue>
                 </StatItem>
               </StatsContainer>

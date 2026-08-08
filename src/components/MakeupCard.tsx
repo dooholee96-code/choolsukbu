@@ -37,7 +37,7 @@ const TopRow = styled.View`
 
 const NameText = styled.Text`
   font-size: 17px;
-  font-weight: bold;
+  font-family: ${({ theme }) => theme.fonts.bold};
   color: ${({ theme }) => theme.colors.textPrimary};
   flex: 1;
 `;
@@ -54,15 +54,17 @@ const MetaRow = styled.View`
 `;
 
 const MetaLabel = styled.Text`
+  font-family: ${({ theme }) => theme.fonts.regular};
+
   font-size: 13px;
   color: ${({ theme }) => theme.colors.textSecondary};
 `;
 
 const MetaValue = styled.Text<{ $pending?: boolean }>`
   font-size: 13px;
-  font-weight: 600;
+  font-family: ${({ theme }) => theme.fonts.bold};
   color: ${({ theme, $pending }) =>
-    $pending ? theme.colors.secondary : theme.colors.textPrimary};
+    $pending ? theme.colors.secondaryStrong : theme.colors.textPrimary};
 `;
 
 const Actions = styled.View`

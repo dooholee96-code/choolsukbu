@@ -28,7 +28,7 @@ const Form = styled.View`
 
 const TitleText = styled.Text`
   font-size: 24px;
-  font-weight: bold;
+  font-family: ${({ theme }) => theme.fonts.bold};
   color: ${({ theme }) => theme.colors.textPrimary};
   margin-bottom: ${({ theme }) => theme.spacing.large}px;
   text-align: center;
@@ -36,7 +36,7 @@ const TitleText = styled.Text`
 
 const Label = styled.Text`
   font-size: 16px;
-  font-weight: bold;
+  font-family: ${({ theme }) => theme.fonts.bold};
   color: ${({ theme }) => theme.colors.textPrimary};
   margin-bottom: ${({ theme }) => theme.spacing.small}px;
   margin-top: ${({ theme }) => theme.spacing.medium}px;
@@ -48,6 +48,7 @@ const StyledTextInput = styled.TextInput`
   border-radius: ${({ theme }) => theme.borderRadius.medium}px;
   border-width: 1px;
   border-color: ${({ theme }) => theme.colors.border};
+  font-family: ${({ theme }) => theme.fonts.regular};
   font-size: 16px;
   color: ${({ theme }) => theme.colors.textPrimary};
 `;
@@ -76,6 +77,8 @@ const TimePickerButton = styled.TouchableOpacity`
 `;
 
 const TimePickerText = styled.Text`
+  font-family: ${({ theme }) => theme.fonts.regular};
+
   font-size: 16px;
   color: ${({ theme }) => theme.colors.textPrimary};
 `;
@@ -241,9 +244,9 @@ const StudentFormModal: React.FC = () => {
           keyboardShouldPersistTaps="handled"
         >
           <Form>
-            <TitleText>{isEditing ? '원생 정보 수정' : 'Add New Student'}</TitleText>
+            <TitleText>{isEditing ? '원생 정보 수정' : '원생 등록'}</TitleText>
 
-            <Label>Name</Label>
+            <Label>이름</Label>
             <StyledTextInput
               value={name}
               onChangeText={setName}
@@ -251,7 +254,7 @@ const StudentFormModal: React.FC = () => {
               returnKeyType="next"
             />
 
-            <Label>Grade</Label>
+            <Label>학년</Label>
             <StyledTextInput
               value={grade}
               onChangeText={setGrade}
@@ -259,7 +262,7 @@ const StudentFormModal: React.FC = () => {
               returnKeyType="next"
             />
 
-            <Label>Scheduled Days</Label>
+            <Label>수업 요일</Label>
             <ChipContainer>
               {DAYS.map((day) => (
                 <Chip
@@ -271,7 +274,7 @@ const StudentFormModal: React.FC = () => {
               ))}
             </ChipContainer>
 
-            <Label>Scheduled Time</Label>
+            <Label>수업 시간</Label>
             <TimeRow>
               {renderTimeField(
                 '수업 시작 시각',
@@ -289,7 +292,7 @@ const StudentFormModal: React.FC = () => {
               )}
             </TimeRow>
 
-            <Label>Monthly Fee (Optional)</Label>
+            <Label>월 수강료 (선택)</Label>
             <StyledTextInput
               value={fee}
               onChangeText={(text) => setFee(text.replace(/[^0-9]/g, ''))}
@@ -299,12 +302,12 @@ const StudentFormModal: React.FC = () => {
 
             <Actions>
               <Button
-                title={isSaving ? '저장 중…' : isEditing ? '저장' : 'Save Student'}
+                title={isSaving ? '저장 중…' : isEditing ? '저장' : '등록'}
                 onPress={handleSave}
                 disabled={isSaving}
               />
               <View>
-                <Button title="Cancel" variant="secondary" onPress={() => navigation.goBack()} />
+                <Button title="취소" variant="secondary" onPress={() => navigation.goBack()} />
               </View>
               {isEditing && (
                 <View>

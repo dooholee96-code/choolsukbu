@@ -2,6 +2,7 @@ import React from 'react';
 import styled from 'styled-components/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useResponsive } from '../../hooks/useResponsive';
+import ForestBackground from './ForestBackground';
 
 const Root = styled.View`
   flex: 1;
@@ -31,6 +32,7 @@ const Screen: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 
   return (
     <Root>
+      <ForestBackground />
       <Inner
         $maxWidth={maxContentWidth}
         $paddingH={Math.max(horizontalPadding, insets.left, insets.right)}

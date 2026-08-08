@@ -90,8 +90,38 @@ src/
     useResponsive.ts        창 폭 기준 사이즈 클래스
   db/index.ts               스키마 · 마이그레이션 앵커
   utils/                    date · id · array · csv · dialog · logger
-  constants/theme.ts        색·간격·브레이크포인트
+  constants/theme.ts        색·글꼴·간격·브레이크포인트
+assets/fonts/               고운돋움 · 고운바탕 Bold (약 15MB)
 ```
+
+## 숲속 테마
+
+크림 배경에 호수 블루를 얹은 파스텔 팔레트. `Screen` 뒤에 `ForestBackground`가
+깔린다. 배경은 폰 화면(390x844) 기준으로 그려서 `xMidYMax slice`로 채우므로,
+넓은 창에서는 3.5배까지 확대된다. 그래서 compact가 아닌 사이즈 클래스에서는
+불투명도를 낮춰 카드보다 뒤로 물러나게 한다.
+
+### 색은 두 벌이다
+
+| 용도 | 토큰 |
+|---|---|
+| 면·틴트 배경 | `primary` `secondary` `success` `danger` |
+| 그 위에 얹히는 글씨·아이콘 | `primaryStrong` `secondaryStrong` `successStrong` `dangerStrong` |
+
+파스텔 원색 위의 흰 글씨는 WCAG AA(4.5:1)에 크게 못 미친다 — 측정값으로
+primary 2.46:1, secondary 1.90:1, success 2.10:1이었다. `Strong` 계열은 색조를
+유지한 채 명도만 낮춰 흰 글씨 기준 4.5:1 이상을 확보한 값이다.
+**버튼 배경, 상태 태그 글씨, 탭바 활성 색에는 반드시 `Strong` 쪽을 쓴다.**
+
+### 글꼴
+
+고운돋움(본문) / 고운바탕 Bold(강조). `App.tsx`에서 `useFonts`로 읽고 DB 초기화와
+같은 게이트에서 기다린다. styled 템플릿에는 `font-weight` 대신
+`font-family: ${({ theme }) => theme.fonts.bold}`를 쓴다 — 커스텀 폰트에
+`font-weight`를 주면 합성 볼드로 뭉개진다.
+
+로딩이 실패하면 `systemFontTheme`으로 갈아끼운다. 존재하지 않는 글꼴 이름이
+`font-family`에 남으면 네이티브에서 글자가 그려지지 않기 때문이다.
 
 ### 반응형 규칙
 

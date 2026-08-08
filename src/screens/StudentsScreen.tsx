@@ -26,18 +26,20 @@ const HeaderActions = styled.View`
 
 const TitleText = styled.Text`
   font-size: 28px;
-  font-weight: bold;
+  font-family: ${({ theme }) => theme.fonts.bold};
   color: ${({ theme }) => theme.colors.textPrimary};
 `;
 
 const SubText = styled.Text`
+  font-family: ${({ theme }) => theme.fonts.regular};
+
   font-size: 16px;
   color: ${({ theme }) => theme.colors.textSecondary};
 `;
 
 const RoundButton = styled.TouchableOpacity<{ $variant: 'primary' | 'plain' }>`
   background-color: ${({ theme, $variant }) =>
-    $variant === 'primary' ? theme.colors.primary : theme.colors.cardBackground};
+    $variant === 'primary' ? theme.colors.primaryStrong : theme.colors.cardBackground};
   width: 44px;
   height: 44px;
   border-radius: 22px;
@@ -48,6 +50,8 @@ const RoundButton = styled.TouchableOpacity<{ $variant: 'primary' | 'plain' }>`
 `;
 
 const EmptyText = styled.Text`
+  font-family: ${({ theme }) => theme.fonts.regular};
+
   font-size: 15px;
   color: ${({ theme }) => theme.colors.textSecondary};
   text-align: center;
@@ -76,8 +80,8 @@ const StudentsScreen: React.FC = () => {
     <Screen>
       <Header>
         <View>
-          <TitleText>Students</TitleText>
-          <SubText>{students.length} enrolled</SubText>
+          <TitleText>원생</TitleText>
+          <SubText>{students.length}명 등록</SubText>
         </View>
         <HeaderActions>
           <RoundButton

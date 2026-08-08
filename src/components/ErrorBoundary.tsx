@@ -87,7 +87,7 @@ class ErrorBoundary extends React.Component<Props, State> {
             paddingVertical: 12,
             paddingHorizontal: 24,
             borderRadius: theme.borderRadius.medium,
-            backgroundColor: theme.colors.primary,
+            backgroundColor: theme.colors.primaryStrong,
           }}
         >
           <Text style={{ color: 'white', fontWeight: 'bold' }}>다시 시도</Text>

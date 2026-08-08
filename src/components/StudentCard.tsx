@@ -69,10 +69,9 @@ const Avatar = styled.View`
 `;
 
 const AvatarText = styled.Text`
-  color: ${({ theme }) => theme.colors.primary};
+  color: ${({ theme }) => theme.colors.primaryStrong};
   font-size: 18px;
-  font-weight: bold;
-`;
+  font-family: ${({ theme }) => theme.fonts.bold};`;
 
 const TextContainer = styled.View`
   flex: 1;
@@ -80,11 +79,13 @@ const TextContainer = styled.View`
 
 const NameText = styled.Text`
   font-size: 17px;
-  font-weight: bold;
+  font-family: ${({ theme }) => theme.fonts.bold};
   color: ${({ theme }) => theme.colors.textPrimary};
 `;
 
 const SubText = styled.Text`
+  font-family: ${({ theme }) => theme.fonts.regular};
+
   font-size: 13px;
   color: ${({ theme }) => theme.colors.textSecondary};
   margin-top: 4px;
@@ -107,11 +108,12 @@ const TextAction = styled.TouchableOpacity`
 
 const TextActionLabel = styled.Text<{ $tone: 'danger' | 'muted' }>`
   font-size: 13px;
-  font-weight: 600;
+  font-family: ${({ theme }) => theme.fonts.bold};
   color: ${({ theme, $tone }) =>
-    $tone === 'danger' ? theme.colors.danger : theme.colors.textSecondary};
+    $tone === 'danger' ? theme.colors.dangerStrong : theme.colors.textSecondary};
 `;
 
+/** 태그 배경 틴트용 원색 */
 const statusColor = (theme: ReturnType<typeof useTheme>, status: Status) => {
   switch (status) {
     case 'scheduled':
@@ -120,6 +122,20 @@ const statusColor = (theme: ReturnType<typeof useTheme>, status: Status) => {
       return theme.colors.secondary;
     case 'absent':
       return theme.colors.danger;
+    default:
+      return theme.colors.textPrimary;
+  }
+};
+
+/** 태그 글씨용. 파스텔 원색은 카드 위에서 2:1 수준이라 읽히지 않는다. */
+const statusTextColor = (theme: ReturnType<typeof useTheme>, status: Status) => {
+  switch (status) {
+    case 'scheduled':
+      return theme.colors.successStrong;
+    case 'unexpected':
+      return theme.colors.secondaryStrong;
+    case 'absent':
+      return theme.colors.dangerStrong;
     default:
       return theme.colors.textPrimary;
   }
@@ -134,10 +150,9 @@ const StatusTag = styled.View<{ $status: Status }>`
 `;
 
 const StatusText = styled.Text<{ $status: Status }>`
-  color: ${({ theme, $status }) => statusColor(theme, $status)};
+  color: ${({ theme, $status }) => statusTextColor(theme, $status)};
   font-size: 12px;
-  font-weight: bold;
-`;
+  font-family: ${({ theme }) => theme.fonts.bold};`;
 
 const STATUS_LABEL: Record<Status, string> = {
   scheduled: '출석',
@@ -219,7 +234,7 @@ const StudentCard: React.FC<StudentCardProps> = ({
                 <Ionicons
                   name="checkmark-circle"
                   size={22}
-                  color={theme.colors.success}
+                  color={theme.colors.successStrong}
                   style={{ marginTop: 4 }}
                 />
               )
@@ -227,7 +242,7 @@ const StudentCard: React.FC<StudentCardProps> = ({
           </>
         ) : (
           <ActionStack>
-            {onCheckIn && <Button title="Check In" size="compact" onPress={handleCheckIn} />}
+            {onCheckIn && <Button title="등원" size="compact" onPress={handleCheckIn} />}
             {onMarkAbsent && (
               <TextAction
                 onPress={handleMarkAbsent}

@@ -8,7 +8,12 @@ export const theme = {
     background: '#F6F2EC', // 크림
     cardBackground: '#FFFDFB',
     textPrimary: '#4B3B53',
-    textSecondary: '#9B8AA3',
+    /*
+     * 시안값은 #9B8AA3였는데 크림 배경 위에서 2.87:1이라 오래 보면 눈이 아프다.
+     * 시간·학년·날짜처럼 실제로 읽어야 하는 정보가 이 색이라 기준을 맞췄다.
+     * 같은 모브 색조에서 명도만 낮춘 값 — 배경 4.53:1, 카드 4.97:1.
+     */
+    textSecondary: '#776A7E',
     border: '#E7DEE6',
     modalBackground: 'rgba(75, 59, 83, 0.45)',
 
@@ -17,13 +22,18 @@ export const theme = {
      *
      * 파스텔 원색 위의 흰 글씨는 WCAG AA(4.5:1)에 크게 못 미친다.
      * 측정값: primary 2.46:1, secondary 1.90:1, success 2.10:1.
-     * 버튼 라벨과 상태 태그 글씨가 이 조합이라 그대로 두면 읽기 어렵다.
-     * 아래 값은 흰 글씨 기준 4.5:1 이상, 카드 배경 위 글씨로도 4.45:1 이상이다.
+     *
+     * 이 색들은 세 자리에 쓰이고 요구 대비가 서로 다르다.
+     *   버튼 배경  — 그 위의 흰 글씨
+     *   카드 위 글씨 — 상태 태그, 아바타 이니셜 (#FFFDFB)
+     *   배경 위 글씨 — 탭바 활성 라벨 (#F6F2EC, 가장 어두워 여기가 기준)
+     * 세 조건을 모두 4.5:1 이상으로 맞춘 값이다. 순백 기준으로만 잡으면
+     * 카드와 배경이 완전한 흰색이 아니라 4.4대로 내려가 미달한다.
      */
-    primaryStrong: '#4F7C8D',
-    secondaryStrong: '#92704D',
-    successStrong: '#547E6A',
-    dangerStrong: '#A1666F',
+    primaryStrong: '#4A7585',
+    secondaryStrong: '#896948',
+    successStrong: '#4F7664',
+    dangerStrong: '#965F67',
   },
   fonts: {
     regular: 'GowunDodum',

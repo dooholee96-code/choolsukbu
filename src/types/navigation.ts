@@ -4,6 +4,7 @@ export type TabParamList = {
   Today: undefined;
   Students: undefined;
   Makeup: undefined;
+  History: undefined;
 };
 
 export type RootStackParamList = {

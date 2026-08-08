@@ -12,6 +12,7 @@ import { ThemeProvider } from 'styled-components/native';
 import HomeScreen from './src/screens/HomeScreen';
 import StudentsScreen from './src/screens/StudentsScreen';
 import MakeupScreen from './src/screens/MakeupScreen';
+import HistoryScreen from './src/screens/HistoryScreen';
 import StudentFormModal from './src/screens/StudentFormModal';
 import BackupModal from './src/screens/BackupModal';
 import { theme, systemFontTheme } from './src/constants/theme';
@@ -29,6 +30,7 @@ const TAB_ICONS: Record<keyof TabParamList, [keyof typeof Ionicons.glyphMap, key
   Today: ['home', 'home-outline'],
   Students: ['people', 'people-outline'],
   Makeup: ['book', 'book-outline'],
+  History: ['calendar', 'calendar-outline'],
 };
 
 function TabNavigator() {
@@ -47,6 +49,7 @@ function TabNavigator() {
       <Tab.Screen name="Today" component={HomeScreen} options={{ title: '오늘' }} />
       <Tab.Screen name="Students" component={StudentsScreen} options={{ title: '원생' }} />
       <Tab.Screen name="Makeup" component={MakeupScreen} options={{ title: '보충' }} />
+      <Tab.Screen name="History" component={HistoryScreen} options={{ title: '이력' }} />
     </Tab.Navigator>
   );
 }

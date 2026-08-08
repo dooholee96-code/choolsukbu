@@ -81,7 +81,7 @@ npx expo run:ios --device --configuration Release
 ```
 App.tsx                     루트. DB 초기화 게이트 + 네비게이터
 src/
-  screens/                  Home(오늘) · Students(원생) · Makeup(보충)
+  screens/                  Home(오늘) · Students(원생) · Makeup(보충) · History(이력)
                             StudentFormModal · BackupModal
   components/
     StudentCard.tsx · MakeupCard.tsx · ErrorBoundary.tsx
@@ -196,6 +196,18 @@ primary 2.46:1, secondary 1.90:1, success 2.10:1이었다. `Strong` 계열은 �
 CSV 파일은 캐시 디렉터리에 쓴다. 사용자가 공유 시트에서 보관할 곳을 고르고 나면
 앱 안의 사본은 쓸모가 없는데, `document`에 두면 지우는 사람이 없어 계속 쌓인다.
 
+## 출결 이력
+
+네 번째 탭. 한 번에 한 달만 보여주고 그 달만 `loadAttendanceRange`로 읽는다.
+전체를 상태에 올리지 않는 원칙은 여기서도 같다.
+
+- **학생별** — 원생마다 출석·예외·결석·보충 횟수. 월계표를 만들 때 쓰는 값이다.
+- **날짜별** — 날짜로 묶은 상세 기록. "지난주 화요일에 누가 왔더라"를 확인하는 용도.
+
+다음 달 버튼은 이번 달에서 비활성이다. 미래 기록은 존재할 수 없다.
+탭에 들어올 때마다 `useFocusEffect`로 다시 읽는다 — 다른 탭에서 체크인하고
+돌아왔을 때 옛 숫자가 남아 있으면 안 된다.
+
 ## 개인정보 처리방침
 
 `docs/index.md`. 저장소 설정에서 GitHub Pages를 `docs/` 폴더로 켜면 공개된다.
@@ -203,6 +215,5 @@ App Store 등록 시 이 URL이 필요하다.
 
 ## 아직 없는 기능
 
-- 출결 이력 조회 (앱 화면은 오늘 데이터만 표시. 전체 기록은 백업으로 내보내 볼 수 있다)
 - 앱 잠금 — 미성년자 이름·학년·수강료를 다루는데 기기를 든 사람 누구나 열람할 수 있다.
 - 퇴원 보관 — 삭제만 있고 기록을 남긴 채 비활성화하는 상태가 없다.

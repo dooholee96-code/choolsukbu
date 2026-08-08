@@ -25,6 +25,8 @@ interface DataContextType {
   /** 내보내기용 전체 이력. 상태에 담지 않고 그때그때 읽는다. */
   loadAllAttendance: () => Promise<Attendance[]>;
   loadAllMakeups: () => Promise<MakeUp[]>;
+  /** 이력 조회용 기간 질의. 'YYYY-MM-DD' 경계 포함. */
+  loadAttendanceRange: (fromDate: string, toDate: string) => Promise<Attendance[]>;
   /** CSV 가져오기. 이미 있는 이름은 건너뛰고 넣은 수를 돌려준다. */
   importStudents: (students: Student[]) => Promise<{ added: number; skipped: number }>;
   refreshData: () => Promise<void>;
@@ -357,6 +359,20 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   );
 
   /**
+   * 이력 화면이 보고 있는 달만 읽는다. 전체를 올리면 화면이 커질수록
+   * 느려지고, 어차피 한 번에 한 달만 보여준다. idx_attendance_date를 탄다.
+   */
+  const loadAttendanceRange = useCallback(
+    (fromDate: string, toDate: string) =>
+      db.getAllAsync<Attendance>(
+        'SELECT * FROM attendance WHERE date >= ? AND date <= ? ORDER BY date DESC, time DESC;',
+        fromDate,
+        toDate
+      ),
+    [db]
+  );
+
+  /**
    * 이름이 같은 원생은 건너뛴다. 같은 파일을 두 번 가져와도 명단이
    * 복제되지 않아야 하고, 이 앱에는 학번 같은 외부 식별자가 없어서
    * 이름이 유일한 실용적 기준이다.
@@ -418,6 +434,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       deleteMakeup,
       loadAllAttendance,
       loadAllMakeups,
+      loadAttendanceRange,
       importStudents,
       refreshData,
     }),
@@ -436,6 +453,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       deleteMakeup,
       loadAllAttendance,
       loadAllMakeups,
+      loadAttendanceRange,
       importStudents,
       refreshData,
     ]

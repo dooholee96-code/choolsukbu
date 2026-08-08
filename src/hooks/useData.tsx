@@ -22,6 +22,11 @@ interface DataContextType {
   scheduleMakeup: (makeupId: string, makeUpDate: string) => Promise<void>;
   completeMakeup: (makeupId: string) => Promise<void>;
   deleteMakeup: (makeupId: string) => Promise<void>;
+  /** 내보내기용 전체 이력. 상태에 담지 않고 그때그때 읽는다. */
+  loadAllAttendance: () => Promise<Attendance[]>;
+  loadAllMakeups: () => Promise<MakeUp[]>;
+  /** CSV 가져오기. 이미 있는 이름은 건너뛰고 넣은 수를 돌려준다. */
+  importStudents: (students: Student[]) => Promise<{ added: number; skipped: number }>;
   refreshData: () => Promise<void>;
 }
 
@@ -336,6 +341,66 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     [db, refreshData]
   );
 
+  /*
+   * 화면은 오늘 기록만 들고 있으므로 내보내기는 DB에서 직접 전체를 읽는다.
+   * 결과를 상태에 담지 않는 게 핵심이다. 담는 순간 오늘로 범위를 좁혀 둔
+   * 이유가 사라진다.
+   */
+  const loadAllAttendance = useCallback(
+    () => db.getAllAsync<Attendance>('SELECT * FROM attendance ORDER BY date, time;'),
+    [db]
+  );
+
+  const loadAllMakeups = useCallback(
+    () => db.getAllAsync<MakeUp>('SELECT * FROM makeup ORDER BY originalDate;'),
+    [db]
+  );
+
+  /**
+   * 이름이 같은 원생은 건너뛴다. 같은 파일을 두 번 가져와도 명단이
+   * 복제되지 않아야 하고, 이 앱에는 학번 같은 외부 식별자가 없어서
+   * 이름이 유일한 실용적 기준이다.
+   */
+  const importStudents = useCallback(
+    async (incoming: Student[]) => {
+      let added = 0;
+      let skipped = 0;
+
+      try {
+        await db.withTransactionAsync(async () => {
+          for (const student of incoming) {
+            const existing = await db.getFirstAsync<{ id: string }>(
+              'SELECT id FROM students WHERE name = ? LIMIT 1;',
+              student.name
+            );
+            if (existing) {
+              skipped += 1;
+              continue;
+            }
+            await db.runAsync(
+              'INSERT INTO students (id, name, grade, scheduledDays, scheduledStartTime, scheduledEndTime, fee) VALUES (?, ?, ?, ?, ?, ?, ?);',
+              student.id,
+              student.name,
+              student.grade,
+              JSON.stringify(student.scheduledDays),
+              student.scheduledStartTime,
+              student.scheduledEndTime,
+              student.fee ?? null
+            );
+            added += 1;
+          }
+        });
+        await refreshData();
+      } catch (error) {
+        logger.error('Error importing students:', error);
+        throw error;
+      }
+
+      return { added, skipped };
+    },
+    [db, refreshData]
+  );
+
   // 값 객체를 매 렌더 새로 만들면 모든 소비 화면이 함께 리렌더된다.
   const value = useMemo(
     () => ({
@@ -351,6 +416,9 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       scheduleMakeup,
       completeMakeup,
       deleteMakeup,
+      loadAllAttendance,
+      loadAllMakeups,
+      importStudents,
       refreshData,
     }),
     [
@@ -366,6 +434,9 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       scheduleMakeup,
       completeMakeup,
       deleteMakeup,
+      loadAllAttendance,
+      loadAllMakeups,
+      importStudents,
       refreshData,
     ]
   );

@@ -98,6 +98,18 @@ const StudentsScreen: React.FC = () => {
             />
           </RoundButton>
           <RoundButton
+            $variant="plain"
+            onPress={() => navigation.navigate('BackupModal')}
+            accessibilityRole="button"
+            accessibilityLabel="백업"
+          >
+            <Ionicons
+              name="save-outline"
+              size={21}
+              color={theme.colors.textSecondary}
+            />
+          </RoundButton>
+          <RoundButton
             $variant="primary"
             onPress={() => navigation.navigate('StudentFormModal')}
             accessibilityRole="button"

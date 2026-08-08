@@ -13,6 +13,7 @@ import HomeScreen from './src/screens/HomeScreen';
 import StudentsScreen from './src/screens/StudentsScreen';
 import MakeupScreen from './src/screens/MakeupScreen';
 import StudentFormModal from './src/screens/StudentFormModal';
+import BackupModal from './src/screens/BackupModal';
 import { theme, systemFontTheme } from './src/constants/theme';
 import { initDB } from './src/db';
 import { DataProvider } from './src/hooks/useData';
@@ -63,6 +64,11 @@ function RootNavigator() {
       <Stack.Screen
         name="StudentFormModal"
         component={StudentFormModal}
+        options={{ presentation: modalPresentation }}
+      />
+      <Stack.Screen
+        name="BackupModal"
+        component={BackupModal}
         options={{ presentation: modalPresentation }}
       />
     </Stack.Navigator>

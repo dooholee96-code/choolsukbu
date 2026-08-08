@@ -81,7 +81,8 @@ npx expo run:ios --device --configuration Release
 ```
 App.tsx                     루트. DB 초기화 게이트 + 네비게이터
 src/
-  screens/                  Home(오늘) · Students(원생) · Makeup(보충) · StudentFormModal
+  screens/                  Home(오늘) · Students(원생) · Makeup(보충)
+                            StudentFormModal · BackupModal
   components/
     StudentCard.tsx · MakeupCard.tsx · ErrorBoundary.tsx
     common/                 Screen(반응형 셸) · GridRow(그리드 한 행) · Button · Chip
@@ -89,7 +90,7 @@ src/
     useData.tsx             SQLite 접근 + 전역 상태
     useResponsive.ts        창 폭 기준 사이즈 클래스
   db/index.ts               스키마 · 마이그레이션 앵커
-  utils/                    date · id · array · csv · dialog · logger
+  utils/                    date · id · array · csv · backup · dialog · logger
   constants/theme.ts        색·글꼴·간격·브레이크포인트
 assets/fonts/               고운돋움 · 고운바탕 Bold (약 15MB)
 ```
@@ -180,8 +181,28 @@ primary 2.46:1, secondary 1.90:1, success 2.10:1이었다. `Strong` 계열은 �
 > 삭제는 되돌릴 수 없다. 퇴원생의 기록을 남겨야 한다면 삭제 대신 보관 상태를
 > 두는 편이 맞지만, 아직 그런 개념은 없다.
 
+## 백업
+
+[원생] 탭 헤더의 저장 아이콘에서 연다. 기기 밖으로 데이터를 꺼내는 유일한 경로다.
+
+- **내보내기** — 원생 명단 / 출결 기록(전체) / 보충 기록을 각각 CSV로 쓰고 공유 시트를
+  연다. 앞에 BOM을 붙여 엑셀에서 한글이 깨지지 않는다.
+- **가져오기** — 원생 명단만. 이름이 같으면 건너뛰므로 같은 파일을 두 번 가져와도
+  명단이 복제되지 않는다. 출결은 덮어쓸 위험이 커서 지원하지 않는다.
+
+내보내기용 전체 이력은 `loadAllAttendance`로 그때그때 읽고 **상태에 담지 않는다.**
+담는 순간 오늘로 범위를 좁혀 둔 이유가 사라진다.
+
+CSV 파일은 캐시 디렉터리에 쓴다. 사용자가 공유 시트에서 보관할 곳을 고르고 나면
+앱 안의 사본은 쓸모가 없는데, `document`에 두면 지우는 사람이 없어 계속 쌓인다.
+
+## 개인정보 처리방침
+
+`docs/index.md`. 저장소 설정에서 GitHub Pages를 `docs/` 폴더로 켜면 공개된다.
+App Store 등록 시 이 URL이 필요하다.
+
 ## 아직 없는 기능
 
-- 출결 이력 조회 (오늘 데이터만 표시)
-- **데이터 백업·내보내기** — `utils/csv.ts`에 파서만 있고 UI가 없다. 앱을 삭제하면 데이터가 전부 사라지므로 실사용 전에 갖추는 것을 권한다.
+- 출결 이력 조회 (앱 화면은 오늘 데이터만 표시. 전체 기록은 백업으로 내보내 볼 수 있다)
 - 앱 잠금 — 미성년자 이름·학년·수강료를 다루는데 기기를 든 사람 누구나 열람할 수 있다.
+- 퇴원 보관 — 삭제만 있고 기록을 남긴 채 비활성화하는 상태가 없다.

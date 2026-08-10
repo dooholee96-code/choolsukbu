@@ -230,6 +230,9 @@
     <button class="tb-btn" onclick="matchSize('w')">같은 폭</button>
     <button class="tb-btn" onclick="matchSize('h')">같은 높이</button>
     <div class="tb-sep"></div>
+    <button class="tb-btn primary" onclick="treeConnect()"
+            title="가장 위(또는 아래)의 객체를 부모로 삼아, 나머지를 가운데에서 갈라지는 트리로 연결합니다">⑂ 트리 연결</button>
+    <div class="tb-sep"></div>
     <span class="tb-label">색</span><div class="tb-group" id="themeBtns2"></div>
   </div>
 
@@ -524,9 +527,45 @@ function layout() {
 }
 
 /* ---- 연결부 ---- */
+/* 자동 연결부 — 두 객체가 나란히 놓였는지 위아래로 놓였는지를 먼저 본다.
+   (겹침을 무시하고 거리만 비교하면, 아래에 벌려 놓은 자식이 옆면에 붙는다) */
 function autoPort(A, B) {
+  const ox = Math.min(A.x + A.w, B.x + B.w) - Math.max(A.x, B.x);   // 가로로 겹치는 폭
+  const oy = Math.min(A.y + A.h, B.y + B.h) - Math.max(A.y, B.y);   // 세로로 겹치는 높이
   const dx = B.cx - A.cx, dy = B.cy - A.cy;
+  if (oy > 0 && ox <= 0) return dx >= 0 ? 'r' : 'l';                // 같은 줄 → 좌우
+  if (ox > 0 && oy <= 0) return dy >= 0 ? 'b' : 't';                // 위아래 → 상하
   return Math.abs(dx) >= Math.abs(dy) ? (dx >= 0 ? 'r' : 'l') : (dy >= 0 ? 'b' : 't');
+}
+const resolvePorts = ed => {
+  const A = byId(ed.a), B = byId(ed.b);
+  if (!A || !B) return null;
+  const ra = rect(A), rb = rect(B);
+  return { ra, rb, pa: ed.pa === 'auto' ? autoPort(ra, rb) : ed.pa,
+                   pb: ed.pb === 'auto' ? autoPort(rb, ra) : ed.pb };
+};
+
+/* 한 객체에서 여러 갈래로 내려가는 직각 연결선은 가로 줄기를 공유한다 */
+function trunkLevels() {
+  const groups = {};
+  edges.forEach(ed => {
+    if (ed.route !== 'ortho') return;
+    const r = resolvePorts(ed);
+    if (!r) return;
+    if (!((r.pa === 'b' && r.pb === 't') || (r.pa === 't' && r.pb === 'b'))) return;
+    const key = ed.a + '|' + r.pa;
+    (groups[key] = groups[key] || []).push({ ed, ...r });
+  });
+  const out = {};
+  Object.values(groups).forEach(list => {
+    if (list.length < 2) return;                       // 형제가 있을 때만 줄기를 맞춘다
+    const { ra, pa } = list[0];
+    const edgeY = pa === 'b' ? ra.y + ra.h : ra.y;
+    const kids  = list.map(({ rb }) => pa === 'b' ? rb.y : rb.y + rb.h);
+    const lvl = (edgeY + (pa === 'b' ? Math.min(...kids) : Math.max(...kids))) / 2;
+    list.forEach(({ ed }) => out[ed.id] = lvl);
+  });
+  return out;
 }
 function portPoint(r, port) {
   if (port === 't') return { x:r.cx, y:r.y - GAP };
@@ -535,18 +574,16 @@ function portPoint(r, port) {
   return { x:r.x + r.w + GAP, y:r.cy };
 }
 
-function edgeGeom(ed) {
-  const A = byId(ed.a), B = byId(ed.b);
-  if (!A || !B) return null;
-  const ra = rect(A), rb = rect(B);
-  const pa = ed.pa === 'auto' ? autoPort(ra, rb) : ed.pa;
-  const pb = ed.pb === 'auto' ? autoPort(rb, ra) : ed.pb;
+function edgeGeom(ed, trunkY) {
+  const r = resolvePorts(ed);
+  if (!r) return null;
+  const { ra, rb, pa, pb } = r;
   const p1 = portPoint(ra, pa), p2 = portPoint(rb, pb);
   const vertA = pa === 't' || pa === 'b', vertB = pb === 't' || pb === 'b';
 
   if (ed.route === 'ortho') {
     let d;
-    if (vertA && vertB)        d = `M${p1.x},${p1.y} V${(p1.y+p2.y)/2} H${p2.x} V${p2.y}`;
+    if (vertA && vertB)        d = `M${p1.x},${p1.y} V${trunkY ?? (p1.y+p2.y)/2} H${p2.x} V${p2.y}`;
     else if (!vertA && !vertB) d = `M${p1.x},${p1.y} H${(p1.x+p2.x)/2} V${p2.y} H${p2.x}`;
     else if (vertA)            d = `M${p1.x},${p1.y} V${p2.y} H${p2.x}`;
     else                       d = `M${p1.x},${p1.y} H${p2.x} V${p2.y}`;
@@ -584,8 +621,9 @@ function markerFor(color) {
 
 function drawEdges() {
   edgesG.innerHTML = '';
+  const trunks = trunkLevels();
   edges.forEach(ed => {
-    const g = edgeGeom(ed);
+    const g = edgeGeom(ed, trunks[ed.id]);
     if (!g) return;
     const mk = markerFor(ed.color);
 
@@ -1070,6 +1108,30 @@ function distribute(axis) {
   t.forEach(n => { n[key] = Math.round(p); p += n[size] + gap; });
   layout(); persist(); flash('균등 배분했습니다');
 }
+/* 선택한 것 중 홀로 떨어진 하나를 부모로 보고, 나머지를 트리로 연결한다.
+   시작점은 모두 부모의 가운데(위 또는 아래)로 맞추고 가로 줄기를 공유한다. */
+function treeConnect() {
+  const t = sel.map(byId).filter(Boolean);
+  if (t.length < 3) return flash('부모 1개와 자식 2개 이상을 선택하세요');
+
+  const sorted = [...t].sort((a, b) => (a.y + a.h/2) - (b.y + b.h/2));
+  const top = sorted[0], bottom = sorted[sorted.length - 1];
+  // 위쪽에 홀로 있으면 아래로 뻗는 트리, 아래쪽에 홀로 있으면 위로 뻗는 트리
+  const downward = (sorted[1].y + sorted[1].h/2) - (top.y + top.h/2)
+                 >= (bottom.y + bottom.h/2) - (sorted[sorted.length-2].y + sorted[sorted.length-2].h/2);
+  const parent = downward ? top : bottom;
+  const kids = t.filter(n => n.id !== parent.id);
+  const [pa, pb] = downward ? ['b','t'] : ['t','b'];
+
+  kids.forEach(k => {
+    let e = edges.find(x => (x.a === parent.id && x.b === k.id) || (x.a === k.id && x.b === parent.id));
+    if (!e) { e = materializeEdge({ id: uid('e'), a: parent.id, b: k.id, color:'#8b95a1', w:3, dir:'fwd' }); edges.push(e); }
+    Object.assign(e, { a: parent.id, b: k.id, pa, pb, route: 'ortho', bend: 0 });
+  });
+  layout(); persist();
+  flash(`${plain(parent.t)} 아래로 ${kids.length}개를 트리로 연결했습니다`);
+}
+
 function matchSize(dim) {
   const t = sel.map(byId).filter(Boolean);
   if (t.length < 2) return flash('두 개 이상 선택하세요');

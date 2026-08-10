@@ -47,7 +47,8 @@
   .tb-btn.on { background: var(--ui); border-color: #7a9dc0; color: #fff; }
   .tb-btn.danger { background: #5e3a41; border-color: #7d4c55; color: #f0d4d9; }
   .tb-btn.icon { padding: 7px 11px; min-width: 36px; }
-  .tb-status { color: var(--muted); font-size: 12px; font-weight: 600; margin-left: auto; white-space: nowrap; padding-left: 12px; }
+  .tb-status { color: var(--muted); font-size: 12px; font-weight: 600; margin-left: auto; padding-left: 12px;
+                white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 
   .pb-hint { color: var(--muted); font-size: 13px; font-weight: 600; }
   .pb-sec { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
@@ -160,8 +161,17 @@
   </div>
   <div class="tb-sep"></div>
   <div class="tb-group">
+    <button class="tb-btn primary" onclick="exportHTML()"
+            title="지금 화면 그대로가 담긴 HTML 파일을 내려받습니다. 그 파일을 열면 이어서 편집할 수 있습니다">💾 파일로 저장</button>
+    <label class="tb-btn" title="저장해 둔 HTML 또는 데이터 파일을 불러옵니다">⤒ 불러오기
+      <input type="file" accept=".html,.htm,.json" hidden onchange="importFile(event)">
+    </label>
+    <button class="tb-btn" onclick="exportJSON()" title="배치 데이터만 .json 으로 내려받습니다">⤓ 데이터</button>
+  </div>
+  <div class="tb-sep"></div>
+  <div class="tb-group">
     <button class="tb-btn" onclick="resetLayout()">↺ 초기 상태로</button>
-    <button class="tb-btn primary" onclick="saveAsImage()">📸 이미지 저장</button>
+    <button class="tb-btn primary" onclick="saveAsImage()">📸 이미지</button>
   </div>
   <span class="tb-status" id="status"></span>
 </div>
@@ -264,6 +274,12 @@
     </div>
   </div>
 </div>
+
+<!--
+  '💾 파일로 저장' 을 누르면 그 시점의 배치·글자·화살표가 아래 칸에 담긴 채로
+  HTML 이 통째로 내려받아집니다. 그 파일을 열면 저장한 상태에서 이어서 편집합니다.
+-->
+<script type="application/json" id="saved-state"></script>
 
 <!--
   핵심 규칙 — 화면에는 표시하지 않고 데이터로만 보관합니다. (콘솔: CORE_RULES)
@@ -381,7 +397,15 @@ const DEFAULT_EDGES = [
   { id:'e17', a:'n-uniw', b:'s-sch',   color:'#8b95a1', w:3, dir:'both', route:'ortho', pa:'b', pb:'t' },
 ];
 
-const STORE_KEY = 'edu-uni-diagram-v5';
+/* 파일에 심어 둔 저장본. 저장한 HTML 마다 고유한 칸을 쓰므로,
+   여러 파일을 오가며 편집해도 서로 섞이지 않는다. */
+const SAVED = (() => {
+  try {
+    const t = document.getElementById('saved-state').textContent.trim();
+    return t ? JSON.parse(t) : null;
+  } catch (e) { return null; }
+})();
+const STORE_KEY = 'edu-uni-diagram-v5:' + ((SAVED && SAVED.docId) || 'default');
 const SNAP = 8, GAP = 4, SVGNS = 'http://www.w3.org/2000/svg';
 const PORTS = [['auto','자동'], ['t','▲'], ['r','▶'], ['b','▼'], ['l','◀']];
 const OUT = { t:{x:0,y:-1}, r:{x:1,y:0}, b:{x:0,y:1}, l:{x:-1,y:0} };
@@ -422,17 +446,11 @@ function init() {
   nodes = clone(DEFAULT_NODES).map(materializeNode);
   edges = clone(DEFAULT_EDGES).map(materializeEdge);
 
-  const saved = localStorage.getItem(STORE_KEY);
-  if (saved) {
-    try {
-      const data = JSON.parse(saved);
-      if (Array.isArray(data.nodes) && data.nodes.length) nodes = data.nodes.map(materializeNode);
-      if (Array.isArray(data.edges)) edges = data.edges.map(materializeEdge);
-      if (data.texts) staticTexts().forEach(el => {
-        if (data.texts[el.dataset.k] != null) el.innerHTML = data.texts[el.dataset.k];
-      });
-    } catch (e) { /* 저장본이 깨졌으면 기본값 사용 */ }
-  }
+  // 이 파일에서 이어 편집하던 내용이 있으면 그것을, 없으면 파일에 심어 둔 저장본을 쓴다
+  let data = null;
+  try { data = JSON.parse(localStorage.getItem(STORE_KEY)); } catch (e) { /* 깨진 저장본 무시 */ }
+  applyState(data || SAVED);
+
   staticTexts().forEach(el => el.addEventListener('blur', persist));
 
   buildPropButtons();
@@ -1209,10 +1227,111 @@ document.addEventListener('keydown', e => {
 });
 
 /* ============================ 저장 / 복원 ============================ */
-function persist() {
+function currentTexts() {
   const texts = {};
   staticTexts().forEach(el => texts[el.dataset.k] = el.innerHTML);
-  localStorage.setItem(STORE_KEY, JSON.stringify({ nodes, edges, texts }));
+  return texts;
+}
+function applyState(data) {
+  if (!data || !Array.isArray(data.nodes) || !data.nodes.length) return false;
+  nodes = data.nodes.map(materializeNode);
+  edges = (data.edges || []).map(materializeEdge);
+  if (data.texts) staticTexts().forEach(el => {
+    if (data.texts[el.dataset.k] != null) el.innerHTML = data.texts[el.dataset.k];
+  });
+  return true;
+}
+function persist() {
+  localStorage.setItem(STORE_KEY, JSON.stringify({ nodes, edges, texts: currentTexts() }));
+  savedTick();
+}
+let savedTimer;
+function savedTick() {                       // 자동 저장되고 있음을 알려준다
+  clearTimeout(savedTimer);
+  savedTimer = setTimeout(() => {
+    if (statusEl.textContent === HINT || statusEl.textContent === '') flash('자동 저장됨');
+  }, 400);
+}
+
+/* ---------- 파일로 저장 / 불러오기 ---------- */
+/* 파일 이름은 영문으로만 짓는다.
+   한글이 섞이면 브라우저가 이름을 버리고 확장자 없는 'download' 로 받아버려
+   나중에 그 파일이 열리지 않는다. */
+function downloadURL(name, url, revoke) {
+  const a = document.createElement('a');
+  a.href = url; a.download = name;
+  document.body.appendChild(a);          // 문서에 붙여야 파일 이름이 그대로 적용된다
+  a.click();
+  a.remove();
+  if (revoke) setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+function download(name, text, type) {
+  downloadURL(name, URL.createObjectURL(new Blob([text], { type })), true);
+}
+const stamp = () => new Date().toISOString().slice(0,16).replace(/[-T:]/g,'').replace(/^(\d{8})/,'$1-');
+const fileName = ext => `collab-diagram_${stamp()}.${ext}`;
+
+/* 지금 화면 그대로가 담긴 HTML 을 통째로 내려받는다 */
+function exportHTML() {
+  if (editMode) toggleEditMode();
+  if (linking) toggleLinking();
+  if (document.activeElement) document.activeElement.blur();
+  clearSelection(); hideGuides();
+
+  const state = { docId: uid('doc'), savedAt: new Date().toISOString(), nodes, edges, texts: currentTexts() };
+  const root = document.documentElement.cloneNode(true);
+  const q = s => root.querySelector(s);
+
+  // 실행 중에 만들어진 것들은 걷어낸다 — 파일을 열 때 다시 그려진다
+  root.querySelectorAll('.nd').forEach(el => el.remove());
+  ['#edges','#defs','#handles',
+   '#shapeBtns','#themeBtns','#themeBtns2','#taBtns','#vaBtns','#alignBtns',
+   '#portA','#portB','#dirBtns','#lineBtns','#colorBtns'].forEach(s => q(s).innerHTML = '');
+  ['#marquee','#guideH','#guideV'].forEach(s => q(s).removeAttribute('style'));
+  q('#handles').setAttribute('hidden','');
+  q('#status').textContent = '';
+  ['#pbNode','#pbMulti','#pbEdge'].forEach(s => q(s).setAttribute('hidden',''));
+  q('#pbHint').removeAttribute('hidden');
+  q('#editBtn').textContent = '✏️ 텍스트 편집'; q('#editBtn').classList.remove('on');
+  q('#linkBtn').textContent = '🔗 연결선';      q('#linkBtn').classList.remove('on');
+  q('#snapBtn').classList.toggle('on', snapOn);
+  root.querySelector('body').className = '';
+  q('#saved-state').textContent = JSON.stringify(state);
+
+  download(fileName('html'), '<!DOCTYPE html>\n' + root.outerHTML, 'text/html;charset=utf-8');
+  flash('현재 상태를 HTML 파일로 저장했습니다 — 그 파일을 열면 이어서 편집할 수 있습니다');
+}
+
+function exportJSON() {
+  const state = { docId: uid('doc'), savedAt: new Date().toISOString(), nodes, edges, texts: currentTexts() };
+  download(fileName('json'), JSON.stringify(state, null, 2), 'application/json');
+  flash('배치 데이터를 .json 으로 저장했습니다');
+}
+
+/* 저장해 둔 HTML 이나 .json 에서 상태만 꺼내 현재 화면에 적용 */
+function importFile(ev) {
+  const file = ev.target.files && ev.target.files[0];
+  ev.target.value = '';
+  if (!file) return;
+  const r = new FileReader();
+  r.onload = () => {
+    const txt = String(r.result);
+    let data = null;
+    try {
+      if (/^\s*\{/.test(txt)) data = JSON.parse(txt);
+      else {
+        const m = txt.match(/id="saved-state"[^>]*>([\s\S]*?)<\/script>/);
+        if (m && m[1].trim()) data = JSON.parse(m[1]);
+      }
+    } catch (e) { /* 아래에서 안내 */ }
+    if (!data || !Array.isArray(data.nodes) || !data.nodes.length)
+      return flash('이 파일에서는 도식 데이터를 찾지 못했습니다');
+    if (!confirm('현재 화면을 불러온 내용으로 바꿉니다. 계속할까요?')) return;
+    applyState(data);
+    buildNodes(); clearSelection(); layout(); persist();
+    flash(`불러왔습니다 (저장 시각 ${(data.savedAt || '').slice(0,16).replace('T',' ')})`);
+  };
+  r.readAsText(file);
 }
 function resetLayout() {
   if (!confirm('배치 · 도형 · 색 · 화살표 · 글자를 모두 초기 상태로 되돌립니다. 계속할까요?')) return;
@@ -1224,7 +1343,7 @@ function resetLayout() {
   flash('초기 상태로 복원했습니다');
 }
 
-const HINT = '끌어서 이동 · 모서리로 크기 조절 · 더블클릭으로 글자 수정 · 빈 곳 더블클릭으로 새 글상자';
+const HINT = '끌어서 이동 · 모서리로 크기 조절 · 더블클릭으로 글자 수정 · 작업은 자동 저장됨';
 let flashTimer;
 function flash(msg) {
   statusEl.textContent = msg;
@@ -1243,10 +1362,7 @@ function saveAsImage() {
   flash('캡처 중…');
   html2canvas(document.getElementById('slide-container'),
     { scale:2, useCORS:true, backgroundColor:'#ffffff' }).then(cv => {
-    const link = document.createElement('a');
-    link.download = '교육청_대학교_협력체계_도식.png';
-    link.href = cv.toDataURL('image/png');
-    link.click();
+    downloadURL(fileName('png'), cv.toDataURL('image/png'));
     flash('이미지를 저장했습니다');
   });
 }

@@ -6,6 +6,11 @@
 *.mobileprovision
 *.orig.*
 
+# expo prebuild / expo run:ios 가 생성하는 네이티브 프로젝트.
+# app.json이 소스이므로 커밋하지 않는다. 필요할 때 다시 생성된다.
+/ios
+/android
+
 # NPM
 node_modules/
 npm-debug.log

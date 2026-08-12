@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useCallback } from 'react';
 import styled, { useTheme } from 'styled-components/native';
 import { Student, Attendance } from '../types';
 import Button from './common/Button';
@@ -10,7 +10,17 @@ type Status = Attendance['status'];
 interface StudentCardProps {
   student: Student;
   attendance?: Attendance;
-  onCheckIn?: () => void;
+  /**
+   * 학생을 인자로 받는다. 부모가 () => handleCheckIn(student) 로 감싸면
+   * 매 렌더 새 함수가 만들어져 React.memo가 항상 miss 난다.
+   */
+  onCheckIn?: (student: Student) => void;
+  /** 결석 처리. 넘기면 Check In 아래에 결석 버튼이 붙는다. */
+  onMarkAbsent?: (student: Student) => void;
+  /** 이미 기록된 카드에서 오늘 기록을 되돌린다. */
+  onUndo?: (student: Student) => void;
+  /** 카드 자체를 눌렀을 때. 원생 정보 수정 진입에 쓴다. */
+  onPress?: (student: Student) => void;
   showFee?: boolean; // 금액 표시 여부 제어
 }
 
@@ -59,10 +69,9 @@ const Avatar = styled.View`
 `;
 
 const AvatarText = styled.Text`
-  color: ${({ theme }) => theme.colors.primary};
+  color: ${({ theme }) => theme.colors.primaryStrong};
   font-size: 18px;
-  font-weight: bold;
-`;
+  font-family: ${({ theme }) => theme.fonts.bold};`;
 
 const TextContainer = styled.View`
   flex: 1;
@@ -70,11 +79,13 @@ const TextContainer = styled.View`
 
 const NameText = styled.Text`
   font-size: 17px;
-  font-weight: bold;
+  font-family: ${({ theme }) => theme.fonts.bold};
   color: ${({ theme }) => theme.colors.textPrimary};
 `;
 
 const SubText = styled.Text`
+  font-family: ${({ theme }) => theme.fonts.regular};
+
   font-size: 13px;
   color: ${({ theme }) => theme.colors.textSecondary};
   margin-top: 4px;
@@ -85,6 +96,24 @@ const StatusContainer = styled.View`
   margin-left: ${({ theme }) => theme.spacing.small}px;
 `;
 
+const ActionStack = styled.View`
+  align-items: flex-end;
+  gap: 6px;
+`;
+
+const TextAction = styled.TouchableOpacity`
+  padding-vertical: 4px;
+  padding-horizontal: 6px;
+`;
+
+const TextActionLabel = styled.Text<{ $tone: 'danger' | 'muted' }>`
+  font-size: 13px;
+  font-family: ${({ theme }) => theme.fonts.bold};
+  color: ${({ theme, $tone }) =>
+    $tone === 'danger' ? theme.colors.dangerStrong : theme.colors.textSecondary};
+`;
+
+/** 태그 배경 틴트용 원색 */
 const statusColor = (theme: ReturnType<typeof useTheme>, status: Status) => {
   switch (status) {
     case 'scheduled':
@@ -93,6 +122,20 @@ const statusColor = (theme: ReturnType<typeof useTheme>, status: Status) => {
       return theme.colors.secondary;
     case 'absent':
       return theme.colors.danger;
+    default:
+      return theme.colors.textPrimary;
+  }
+};
+
+/** 태그 글씨용. 파스텔 원색은 카드 위에서 2:1 수준이라 읽히지 않는다. */
+const statusTextColor = (theme: ReturnType<typeof useTheme>, status: Status) => {
+  switch (status) {
+    case 'scheduled':
+      return theme.colors.successStrong;
+    case 'unexpected':
+      return theme.colors.secondaryStrong;
+    case 'absent':
+      return theme.colors.dangerStrong;
     default:
       return theme.colors.textPrimary;
   }
@@ -107,10 +150,9 @@ const StatusTag = styled.View<{ $status: Status }>`
 `;
 
 const StatusText = styled.Text<{ $status: Status }>`
-  color: ${({ theme, $status }) => statusColor(theme, $status)};
+  color: ${({ theme, $status }) => statusTextColor(theme, $status)};
   font-size: 12px;
-  font-weight: bold;
-`;
+  font-family: ${({ theme }) => theme.fonts.bold};`;
 
 const STATUS_LABEL: Record<Status, string> = {
   scheduled: '출석',
@@ -129,18 +171,30 @@ const getInitials = (name: string) => {
   return initials;
 };
 
+const PressableCard = styled.TouchableOpacity`
+  flex-grow: 1;
+`;
+
 const StudentCard: React.FC<StudentCardProps> = ({
   student,
   attendance,
   onCheckIn,
+  onMarkAbsent,
+  onUndo,
+  onPress,
   showFee = false,
 }) => {
+  const handleCheckIn = useCallback(() => onCheckIn?.(student), [onCheckIn, student]);
+  const handleMarkAbsent = useCallback(() => onMarkAbsent?.(student), [onMarkAbsent, student]);
+  const handleUndo = useCallback(() => onUndo?.(student), [onUndo, student]);
+  const handlePress = useCallback(() => onPress?.(student), [onPress, student]);
+
   // 이 색은 styled 템플릿 밖(JSX prop)에서 쓰이므로 훅으로 직접 꺼내야 한다.
   // 이전 코드는 import 없이 전역 theme을 참조해서 이 카드가 그려지는 순간
   // ReferenceError로 화면이 통째로 죽었다.
   const theme = useTheme();
 
-  return (
+  const card = (
     <CardContainer>
       <InfoContainer>
         <Avatar>
@@ -167,19 +221,59 @@ const StudentCard: React.FC<StudentCardProps> = ({
               </StatusText>
             </StatusTag>
             <SubText>{formatTimeLabel(attendance.time)}</SubText>
-            <Ionicons
-              name="checkmark-circle"
-              size={22}
-              color={theme.colors.success}
-              style={{ marginTop: 4 }}
-            />
+            {onUndo ? (
+              <TextAction
+                onPress={handleUndo}
+                accessibilityRole="button"
+                accessibilityLabel={`${student.name} 기록 취소`}
+              >
+                <TextActionLabel $tone="muted">취소</TextActionLabel>
+              </TextAction>
+            ) : (
+              attendance.status !== 'absent' && (
+                <Ionicons
+                  name="checkmark-circle"
+                  size={22}
+                  color={theme.colors.successStrong}
+                  style={{ marginTop: 4 }}
+                />
+              )
+            )}
           </>
         ) : (
-          onCheckIn && <Button title="Check In" size="compact" onPress={onCheckIn} />
+          <ActionStack>
+            {onCheckIn && <Button title="등원" size="compact" onPress={handleCheckIn} />}
+            {onMarkAbsent && (
+              <TextAction
+                onPress={handleMarkAbsent}
+                accessibilityRole="button"
+                accessibilityLabel={`${student.name} 결석 처리`}
+              >
+                <TextActionLabel $tone="danger">결석</TextActionLabel>
+              </TextAction>
+            )}
+          </ActionStack>
         )}
       </StatusContainer>
     </CardContainer>
   );
+
+  if (!onPress) return card;
+
+  return (
+    <PressableCard
+      onPress={handlePress}
+      activeOpacity={0.7}
+      accessibilityRole="button"
+      accessibilityLabel={`${student.name} 정보 수정`}
+    >
+      {card}
+    </PressableCard>
+  );
 };
 
-export default StudentCard;
+/**
+ * 원생 수가 늘면 컨텍스트가 한 번 바뀔 때마다 모든 카드가 다시 그려진다.
+ * 카드는 props가 그대로면 결과도 같으므로 memo로 끊는다.
+ */
+export default React.memo(StudentCard);

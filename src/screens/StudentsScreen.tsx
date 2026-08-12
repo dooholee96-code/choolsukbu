@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import styled, { useTheme } from 'styled-components/native';
 import { FlatList, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
@@ -26,18 +26,20 @@ const HeaderActions = styled.View`
 
 const TitleText = styled.Text`
   font-size: 28px;
-  font-weight: bold;
+  font-family: ${({ theme }) => theme.fonts.bold};
   color: ${({ theme }) => theme.colors.textPrimary};
 `;
 
 const SubText = styled.Text`
+  font-family: ${({ theme }) => theme.fonts.regular};
+
   font-size: 16px;
   color: ${({ theme }) => theme.colors.textSecondary};
 `;
 
 const RoundButton = styled.TouchableOpacity<{ $variant: 'primary' | 'plain' }>`
   background-color: ${({ theme, $variant }) =>
-    $variant === 'primary' ? theme.colors.primary : theme.colors.cardBackground};
+    $variant === 'primary' ? theme.colors.primaryStrong : theme.colors.cardBackground};
   width: 44px;
   height: 44px;
   border-radius: 22px;
@@ -48,6 +50,8 @@ const RoundButton = styled.TouchableOpacity<{ $variant: 'primary' | 'plain' }>`
 `;
 
 const EmptyText = styled.Text`
+  font-family: ${({ theme }) => theme.fonts.regular};
+
   font-size: 15px;
   color: ${({ theme }) => theme.colors.textSecondary};
   text-align: center;
@@ -67,12 +71,17 @@ const StudentsScreen: React.FC = () => {
 
   const rows = useMemo(() => chunk(students, columns), [students, columns]);
 
+  const handleEdit = useCallback(
+    (student: Student) => navigation.navigate('StudentFormModal', { studentId: student.id }),
+    [navigation]
+  );
+
   return (
     <Screen>
       <Header>
         <View>
-          <TitleText>Students</TitleText>
-          <SubText>{students.length} enrolled</SubText>
+          <TitleText>원생</TitleText>
+          <SubText>{students.length}명 등록</SubText>
         </View>
         <HeaderActions>
           <RoundButton
@@ -89,8 +98,20 @@ const StudentsScreen: React.FC = () => {
             />
           </RoundButton>
           <RoundButton
+            $variant="plain"
+            onPress={() => navigation.navigate('BackupModal')}
+            accessibilityRole="button"
+            accessibilityLabel="백업"
+          >
+            <Ionicons
+              name="save-outline"
+              size={21}
+              color={theme.colors.textSecondary}
+            />
+          </RoundButton>
+          <RoundButton
             $variant="primary"
-            onPress={() => navigation.navigate('AddStudentModal')}
+            onPress={() => navigation.navigate('StudentFormModal')}
             accessibilityRole="button"
             accessibilityLabel="원생 추가"
           >
@@ -109,7 +130,9 @@ const StudentsScreen: React.FC = () => {
             items={item}
             columns={columns}
             keyExtractor={(student) => student.id}
-            renderItem={(student) => <StudentCard student={student} showFee={showFee} />}
+            renderItem={(student) => (
+              <StudentCard student={student} showFee={showFee} onPress={handleEdit} />
+            )}
           />
         )}
         ListEmptyComponent={<EmptyText>등록된 원생이 없습니다.</EmptyText>}

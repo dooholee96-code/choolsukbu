@@ -1,21 +1,25 @@
-import 'react-native-gesture-handler'; // ⭐️ 반드시 1번 줄에 추가해 주세요!
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { View, ActivityIndicator, Text, TouchableOpacity } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
+import { useFonts } from 'expo-font';
 import { Ionicons } from '@expo/vector-icons';
 import { ThemeProvider } from 'styled-components/native';
 
 import HomeScreen from './src/screens/HomeScreen';
 import StudentsScreen from './src/screens/StudentsScreen';
 import MakeupScreen from './src/screens/MakeupScreen';
-import AddStudentModal from './src/screens/AddStudentModal';
-import { theme } from './src/constants/theme';
+import HistoryScreen from './src/screens/HistoryScreen';
+import StudentFormModal from './src/screens/StudentFormModal';
+import BackupModal from './src/screens/BackupModal';
+import { theme, systemFontTheme } from './src/constants/theme';
 import { initDB } from './src/db';
 import { DataProvider } from './src/hooks/useData';
+import ErrorBoundary from './src/components/ErrorBoundary';
+import { logger } from './src/utils/logger';
 import { useResponsive } from './src/hooks/useResponsive';
 import type { RootStackParamList, TabParamList } from './src/types/navigation';
 
@@ -26,6 +30,7 @@ const TAB_ICONS: Record<keyof TabParamList, [keyof typeof Ionicons.glyphMap, key
   Today: ['home', 'home-outline'],
   Students: ['people', 'people-outline'],
   Makeup: ['book', 'book-outline'],
+  History: ['calendar', 'calendar-outline'],
 };
 
 function TabNavigator() {
@@ -36,7 +41,7 @@ function TabNavigator() {
           const [active, inactive] = TAB_ICONS[route.name] ?? ['help', 'help'];
           return <Ionicons name={focused ? active : inactive} size={size} color={color} />;
         },
-        tabBarActiveTintColor: theme.colors.primary,
+        tabBarActiveTintColor: theme.colors.primaryStrong,
         tabBarInactiveTintColor: theme.colors.textSecondary,
         headerShown: false,
       })}
@@ -44,6 +49,7 @@ function TabNavigator() {
       <Tab.Screen name="Today" component={HomeScreen} options={{ title: '오늘' }} />
       <Tab.Screen name="Students" component={StudentsScreen} options={{ title: '원생' }} />
       <Tab.Screen name="Makeup" component={MakeupScreen} options={{ title: '보충' }} />
+      <Tab.Screen name="History" component={HistoryScreen} options={{ title: '이력' }} />
     </Tab.Navigator>
   );
 }
@@ -59,8 +65,13 @@ function RootNavigator() {
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       <Stack.Screen name="Main" component={TabNavigator} />
       <Stack.Screen
-        name="AddStudentModal"
-        component={AddStudentModal}
+        name="StudentFormModal"
+        component={StudentFormModal}
+        options={{ presentation: modalPresentation }}
+      />
+      <Stack.Screen
+        name="BackupModal"
+        component={BackupModal}
         options={{ presentation: modalPresentation }}
       />
     </Stack.Navigator>
@@ -80,24 +91,39 @@ const centered = {
 export default function App() {
   const [dbState, setDBState] = useState<DBState>('loading');
 
+  // 커스텀 글꼴. 로드 전에 화면을 그리면 시스템 글꼴로 한 번 그렸다가
+  // 바뀌면서 글자가 튀므로 DB와 함께 시작 게이트에서 기다린다.
+  const [fontsLoaded, fontError] = useFonts({
+    GowunDodum: require('./assets/fonts/GowunDodum-Regular.ttf'),
+    'GowunBatang-Bold': require('./assets/fonts/GowunBatang-Bold.ttf'),
+  });
+
+  // 글꼴을 못 읽었으면 이름이 살아 있는 테마를 넘기면 안 된다.
+  const activeTheme = useMemo(
+    () => (fontError ? systemFontTheme : theme),
+    [fontError]
+  );
+
   const setupDatabase = useCallback(() => {
     setDBState('loading');
     initDB()
       .then(() => setDBState('ready'))
       .catch((error) => {
-        console.error('Database initialization failed:', error);
+        logger.error('Database initialization failed:', error);
         setDBState('error');
       });
   }, []);
 
   useEffect(setupDatabase, [setupDatabase]);
 
-  if (dbState !== 'ready') {
+  const fontsSettled = fontsLoaded || Boolean(fontError);
+
+  if (dbState !== 'ready' || !fontsSettled) {
     // 이전에는 초기화가 실패해도 상태를 바꾸지 않아 스피너에 영구히 갇혔다.
     return (
       <View style={centered}>
-        {dbState === 'loading' ? (
-          <ActivityIndicator size="large" color={theme.colors.primary} />
+        {dbState !== 'error' ? (
+          <ActivityIndicator size="large" color={theme.colors.primaryStrong} />
         ) : (
           <>
             <Text style={{ color: theme.colors.textPrimary, fontSize: 16, textAlign: 'center' }}>
@@ -111,7 +137,7 @@ export default function App() {
                 paddingVertical: 12,
                 paddingHorizontal: 24,
                 borderRadius: theme.borderRadius.medium,
-                backgroundColor: theme.colors.primary,
+                backgroundColor: theme.colors.primaryStrong,
               }}
             >
               <Text style={{ color: 'white', fontWeight: 'bold' }}>다시 시도</Text>
@@ -123,15 +149,17 @@ export default function App() {
   }
 
   return (
-    <SafeAreaProvider>
-      <ThemeProvider theme={theme}>
-        <DataProvider>
-          <StatusBar style="dark" />
-          <NavigationContainer>
-            <RootNavigator />
-          </NavigationContainer>
-        </DataProvider>
-      </ThemeProvider>
-    </SafeAreaProvider>
+    <ErrorBoundary>
+      <SafeAreaProvider>
+        <ThemeProvider theme={activeTheme}>
+          <DataProvider>
+            <StatusBar style="dark" />
+            <NavigationContainer>
+              <RootNavigator />
+            </NavigationContainer>
+          </DataProvider>
+        </ThemeProvider>
+      </SafeAreaProvider>
+    </ErrorBoundary>
   );
 }

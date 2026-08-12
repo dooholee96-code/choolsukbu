@@ -1,4 +1,5 @@
-import { format, getDay } from 'date-fns';
+import { format, getDay, isValid, parse } from 'date-fns';
+import { ko } from 'date-fns/locale';
 import { DayOfWeek } from '../types';
 
 export const getCurrentDate = () => format(new Date(), 'yyyy-MM-dd');
@@ -49,6 +50,17 @@ export const isTimeWithinRange = (time: string, startTime: string, endTime: stri
  * (이전에는 new Date(`2000-01-01T${time}`)가 Invalid Date가 되면
  *  date-fns의 format이 RangeError를 던져 카드 렌더링이 통째로 깨졌다.)
  */
+/**
+ * 'YYYY-MM-DD' 를 '8월 7일 (금)' 로. 파싱 실패 시 원본을 그대로 돌려준다.
+ * 보충 목록에서는 요일이 있어야 일정을 잡을 수 있어 함께 표시한다.
+ */
+export const formatDateLabel = (date: string): string => {
+  const parsed = parse(date ?? '', 'yyyy-MM-dd', new Date());
+  if (!isValid(parsed)) return date ?? '';
+
+  return format(parsed, 'M월 d일 (E)', { locale: ko });
+};
+
 export const formatTimeLabel = (time: string): string => {
   const minutes = toMinutes(time);
   if (minutes === null) return time ?? '';

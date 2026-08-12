@@ -18,11 +18,11 @@ const StyledButton = styled.TouchableOpacity<{ $variant: Variant; $size: Size }>
   background-color: ${({ theme, $variant }) => {
     switch ($variant) {
       case 'secondary':
-        return theme.colors.secondary;
+        return theme.colors.secondaryStrong;
       case 'danger':
-        return theme.colors.danger;
+        return theme.colors.dangerStrong;
       default:
-        return theme.colors.primary;
+        return theme.colors.primaryStrong;
     }
   }};
   padding-vertical: ${({ theme, $size }) =>
@@ -37,8 +37,7 @@ const StyledButton = styled.TouchableOpacity<{ $variant: Variant; $size: Size }>
 const ButtonText = styled.Text<{ $size: Size }>`
   color: white;
   font-size: ${({ $size }) => ($size === 'compact' ? 14 : 16)}px;
-  font-weight: bold;
-`;
+  font-family: ${({ theme }) => theme.fonts.bold};`;
 
 const Button: React.FC<ButtonProps> = ({
   title,

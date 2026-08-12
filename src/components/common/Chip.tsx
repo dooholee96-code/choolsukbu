@@ -9,7 +9,7 @@ interface ChipProps extends TouchableOpacityProps {
 
 const StyledChip = styled.TouchableOpacity<{ $selected: boolean }>`
   background-color: ${({ theme, $selected }) =>
-    $selected ? theme.colors.primary : theme.colors.cardBackground};
+    $selected ? theme.colors.primaryStrong : theme.colors.cardBackground};
   padding-vertical: 10px;
   padding-horizontal: 16px;
   border-radius: 20px;
@@ -17,13 +17,13 @@ const StyledChip = styled.TouchableOpacity<{ $selected: boolean }>`
   margin-bottom: 8px;
   border-width: 1px;
   border-color: ${({ theme, $selected }) =>
-    $selected ? theme.colors.primary : theme.colors.border};
+    $selected ? theme.colors.primaryStrong : theme.colors.border};
 `;
 
 const ChipText = styled.Text<{ $selected: boolean }>`
   color: ${({ theme, $selected }) => ($selected ? 'white' : theme.colors.textPrimary)};
+  font-family: ${({ theme, $selected }) => ($selected ? theme.fonts.bold : theme.fonts.regular)};
   font-size: 14px;
-  font-weight: ${({ $selected }) => ($selected ? 'bold' : 'normal')};
 `;
 
 const Chip: React.FC<ChipProps> = ({ label, selected = false, ...props }) => {

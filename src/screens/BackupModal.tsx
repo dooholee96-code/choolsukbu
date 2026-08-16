@@ -1,6 +1,6 @@
 import React, { useCallback, useState } from 'react';
 import styled from 'styled-components/native';
-import { ScrollView, View } from 'react-native';
+import { Platform, ScrollView, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useData } from '../hooks/useData';
@@ -153,7 +153,14 @@ const BackupModal: React.FC = () => {
   return (
     <Root>
       <ScrollView
-        contentContainerStyle={{ paddingTop: insets.top + 16, paddingBottom: insets.bottom + 32 }}
+        // flex 없이는 ScrollView가 내용 높이만큼 커져서 시트 밖으로 잘려 나가고,
+        // 스크롤 영역이 화면보다 커지므로 스크롤도 먹지 않는다.
+        style={{ flex: 1 }}
+        contentContainerStyle={{
+          // iOS의 modal/formSheet는 상태 표시줄 아래에서 시작하므로 창의 top 인셋을 더하면 안 된다.
+          paddingTop: (Platform.OS === 'ios' ? 0 : insets.top) + 16,
+          paddingBottom: insets.bottom + 32,
+        }}
       >
         <Content>
           <TitleText>백업</TitleText>

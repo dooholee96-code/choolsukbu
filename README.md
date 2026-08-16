@@ -154,6 +154,10 @@ primary 2.46:1, secondary 1.90:1, success 2.10:1이었다. `Strong` 계열은 �
 
 `Alert`를 직접 쓰지 말고 `utils/dialog`의 `confirm`·`notify`를 쓴다. `react-native-web`의 `Alert.alert`는 `static alert() {}` 인 빈 스텁이라, 웹에서는 확인 대화상자로 감싼 동작이 아무 반응 없이 사라진다.
 
+`ScrollView`에는 반드시 `style={{ flex: 1 }}`을 준다. React Native의 기본 `flexShrink`는 웹과 달리 0이라, flex를 주지 않으면 ScrollView가 부모를 넘어 **내용 높이만큼 커진다.** 그러면 스크롤 영역이 화면보다 커져서 스크롤이 먹지 않고 내용이 잘린다. `react-native-web`은 `overflow: auto`로 그리기 때문에 웹에서는 멀쩡해 보인다 — 실기기에서만 드러난다.
+
+모달 화면에서 `insets.top`을 더하지 않는다. iOS의 `modal`·`formSheet`는 이미 상태 표시줄 아래에서 시작하는데 `useSafeAreaInsets()`는 **시트가 아니라 창 전체**의 인셋을 돌려주므로, 더하면 그만큼 위가 비고 내용이 아래로 밀린다. 전체 화면으로 뜨는 Android 모달에서만 필요하다.
+
 ## 출결 흐름
 
 ```

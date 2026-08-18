@@ -20,7 +20,8 @@
           "UIInterfaceOrientationPortraitUpsideDown",
           "UIInterfaceOrientationLandscapeLeft",
           "UIInterfaceOrientationLandscapeRight"
-        ]
+        ],
+        "NSFaceIDUsageDescription": "앱 잠금을 해제할 때 Face ID를 사용합니다."
       },
       "privacyManifests": {
         "NSPrivacyTracking": false,
@@ -65,6 +66,12 @@
           "imageWidth": 180,
           "resizeMode": "contain",
           "backgroundColor": "#F6F2EC"
+        }
+      ],
+      [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "앱 잠금을 해제할 때 Face ID를 사용합니다."
         }
       ]
     ]

@@ -6,6 +6,7 @@ import { format } from 'date-fns';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { useData } from '../hooks/useData';
+import { useAppLockContext } from '../hooks/appLockContext';
 import { useResponsive } from '../hooks/useResponsive';
 import Screen from '../components/common/Screen';
 import GridRow from '../components/common/GridRow';
@@ -182,6 +183,7 @@ const HomeScreen: React.FC = () => {
   } = useData();
   const { columns, sizeClass } = useResponsive();
   const navigation = useNavigation();
+  const lock = useAppLockContext();
 
   const [timeTarget, setTimeTarget] = useState<Attendance | null>(null);
 
@@ -365,14 +367,27 @@ const HomeScreen: React.FC = () => {
                 <TitleText>오늘의 출석</TitleText>
               </View>
               <View style={{ alignItems: 'flex-end' }}>
-                <HeaderAction
-                  onPress={openSchedule}
-                  accessibilityRole="button"
-                  accessibilityLabel="일정 관리"
-                >
-                  <Ionicons name="calendar-outline" size={16} />
-                  <HeaderActionText>일정</HeaderActionText>
-                </HeaderAction>
+                <View style={{ flexDirection: 'row', gap: 8 }}>
+                  {/* 수업용으로 아이패드를 건네주기 직전에 누른다. 앱을 켠 채로
+                      넘기는 경우는 자동 잠금으로 잡을 수 없다. */}
+                  {lock.enabled && (
+                    <HeaderAction
+                      onPress={lock.lock}
+                      accessibilityRole="button"
+                      accessibilityLabel="지금 잠그기"
+                    >
+                      <Ionicons name="lock-closed-outline" size={16} />
+                    </HeaderAction>
+                  )}
+                  <HeaderAction
+                    onPress={openSchedule}
+                    accessibilityRole="button"
+                    accessibilityLabel="일정 관리"
+                  >
+                    <Ionicons name="calendar-outline" size={16} />
+                    <HeaderActionText>일정</HeaderActionText>
+                  </HeaderAction>
+                </View>
                 {syncUnavailable === null && (
                   <SyncLine
                     onPress={handleSync}

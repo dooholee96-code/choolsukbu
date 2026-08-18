@@ -99,12 +99,12 @@ const StudentsScreen: React.FC = () => {
           </RoundButton>
           <RoundButton
             $variant="plain"
-            onPress={() => navigation.navigate('BackupModal')}
+            onPress={() => navigation.navigate('SettingsModal')}
             accessibilityRole="button"
-            accessibilityLabel="백업"
+            accessibilityLabel="설정"
           >
             <Ionicons
-              name="save-outline"
+              name="settings-outline"
               size={21}
               color={theme.colors.textSecondary}
             />

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { View, ActivityIndicator, Text, TouchableOpacity } from 'react-native';
+import { View, ActivityIndicator, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
@@ -14,7 +14,8 @@ import StudentsScreen from './src/screens/StudentsScreen';
 import MakeupScreen from './src/screens/MakeupScreen';
 import HistoryScreen from './src/screens/HistoryScreen';
 import StudentFormModal from './src/screens/StudentFormModal';
-import BackupModal from './src/screens/BackupModal';
+import SettingsModal from './src/screens/SettingsModal';
+import LockScreen from './src/screens/LockScreen';
 import ScheduleModal from './src/screens/ScheduleModal';
 import { theme, systemFontTheme } from './src/constants/theme';
 import { initDB } from './src/db';
@@ -22,6 +23,8 @@ import { DataProvider } from './src/hooks/useData';
 import ErrorBoundary from './src/components/ErrorBoundary';
 import { logger } from './src/utils/logger';
 import { useResponsive } from './src/hooks/useResponsive';
+import { useAppLock } from './src/hooks/useAppLock';
+import { AppLockContext } from './src/hooks/appLockContext';
 import type { RootStackParamList, TabParamList } from './src/types/navigation';
 
 const Tab = createBottomTabNavigator<TabParamList>();
@@ -71,8 +74,8 @@ function RootNavigator() {
         options={{ presentation: modalPresentation }}
       />
       <Stack.Screen
-        name="BackupModal"
-        component={BackupModal}
+        name="SettingsModal"
+        component={SettingsModal}
         options={{ presentation: modalPresentation }}
       />
       <Stack.Screen
@@ -86,6 +89,15 @@ function RootNavigator() {
 
 type DBState = 'loading' | 'ready' | 'error';
 
+/** 네비게이터를 통째로 덮는 잠금 화면. */
+function LockOverlay({ onUnlock }: { onUnlock: () => void }) {
+  return (
+    <View style={StyleSheet.absoluteFill}>
+      <LockScreen onUnlock={onUnlock} />
+    </View>
+  );
+}
+
 const centered = {
   flex: 1,
   justifyContent: 'center',
@@ -96,6 +108,7 @@ const centered = {
 
 export default function App() {
   const [dbState, setDBState] = useState<DBState>('loading');
+  const lock = useAppLock();
 
   // 커스텀 글꼴. 로드 전에 화면을 그리면 시스템 글꼴로 한 번 그렸다가
   // 바뀌면서 글자가 튀므로 DB와 함께 시작 게이트에서 기다린다.
@@ -158,12 +171,17 @@ export default function App() {
     <ErrorBoundary>
       <SafeAreaProvider>
         <ThemeProvider theme={activeTheme}>
-          <DataProvider>
-            <StatusBar style="dark" />
-            <NavigationContainer>
-              <RootNavigator />
-            </NavigationContainer>
-          </DataProvider>
+          <AppLockContext.Provider value={lock}>
+            <DataProvider>
+              <StatusBar style="dark" />
+              {/* 잠금 화면은 네비게이터 위에 덮는다. 화면을 갈아 끼우면
+                  잠금이 풀릴 때마다 탭 상태가 처음으로 되돌아간다. */}
+              <NavigationContainer>
+                <RootNavigator />
+              </NavigationContainer>
+              {lock.locked && <LockOverlay onUnlock={lock.unlock} />}
+            </DataProvider>
+          </AppLockContext.Provider>
         </ThemeProvider>
       </SafeAreaProvider>
     </ErrorBoundary>

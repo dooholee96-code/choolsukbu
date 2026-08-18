@@ -16,6 +16,8 @@ import {
   pickCsvText,
 } from '../utils/backup';
 import { confirm, notify } from '../utils/dialog';
+import LockSection from '../components/LockSection';
+import { useAppLockContext } from '../hooks/appLockContext';
 import { logger } from '../utils/logger';
 
 const Root = styled.View`
@@ -67,8 +69,9 @@ const Stack = styled.View`
   gap: 10px;
 `;
 
-const BackupModal: React.FC = () => {
+const SettingsModal: React.FC = () => {
   const navigation = useNavigation();
+  const lock = useAppLockContext();
   const insets = useSafeAreaInsets();
   const {
     students,
@@ -185,11 +188,13 @@ const BackupModal: React.FC = () => {
         }}
       >
         <Content>
-          <TitleText>백업</TitleText>
+          <TitleText>설정</TitleText>
           <Lead>
             이 앱은 기기 안에만 저장합니다.{'\n'}
             앱을 지우거나 기기를 바꾸면 기록도 함께 사라집니다.
           </Lead>
+
+          <LockSection onChanged={lock.refresh} />
 
           <SectionTitle>기기 간 동기화</SectionTitle>
           {syncUnavailable ? (
@@ -242,4 +247,4 @@ const BackupModal: React.FC = () => {
   );
 };
 
-export default BackupModal;
+export default SettingsModal;

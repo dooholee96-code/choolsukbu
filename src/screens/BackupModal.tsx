@@ -78,6 +78,7 @@ const BackupModal: React.FC = () => {
     importStudents,
     lastSyncAt,
     syncUnavailable,
+    syncError,
     syncing,
     syncNow,
   } = useData();
@@ -200,6 +201,7 @@ const BackupModal: React.FC = () => {
                   ? `마지막으로 맞춘 시각 ${new Date(lastSyncAt).toLocaleString('ko-KR')}`
                   : '아직 한 번도 맞추지 않았습니다.'}
                 {'\n'}같은 iCloud 계정을 쓰는 기기끼리 자동으로 맞춰집니다.
+                {syncError ? `\n\n마지막 시도 실패: ${syncError}` : ''}
               </Note>
               <Button
                 title={syncing ? '맞추는 중…' : '지금 맞추기'}

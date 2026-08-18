@@ -1,6 +1,9 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
-import { Attendance, DayOfWeek, ExceptionKind, MakeUp, ScheduleException, Student } from '../types';
-import { parseDayTimes, serializeDayTimes } from '../utils/schedule';
+import { serializeDayTimes } from '../utils/schedule';
+import { listAttendanceIncludingDeleted } from '../data/attendance';
+import { listExceptionsIncludingDeleted } from '../data/exceptions';
+import { listMakeupsIncludingDeleted } from '../data/makeup';
+import { listStudentsIncludingDeleted } from '../data/students';
 import {
   attendanceKey,
   changedRows,
@@ -14,68 +17,19 @@ import {
 /**
  * 동기화가 보는 DB. 화면 질의와 다르게 **삭제된 행까지 전부** 읽는다.
  * 묘비를 빼고 내보내면 상대 기기는 삭제가 있었다는 사실을 영영 모른다.
+ *
+ * 행을 객체로 바꾸는 일은 src/data의 도메인 모듈이 한다. 여기에 사본을 두면
+ * 컬럼이 하나 늘 때 한쪽만 고쳐지고, 그 차이는 동기화한 뒤에야 드러난다.
  */
-
-const VALID_DAYS: DayOfWeek[] = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-const VALID_KINDS: ExceptionKind[] = ['closure', 'extra', 'skip'];
-
-type StudentRow = Omit<Student, 'scheduledDays' | 'dayTimes'> & {
-  scheduledDays: string;
-  dayTimes: string | null;
-};
-
-type ExceptionRow = Omit<ScheduleException, 'kind' | 'studentId' | 'startTime' | 'endTime' | 'note'> & {
-  kind: string;
-  studentId: string | null;
-  startTime: string | null;
-  endTime: string | null;
-  note: string | null;
-};
-
-const parseDays = (raw: unknown): DayOfWeek[] => {
-  if (typeof raw !== 'string') return [];
-  try {
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed)
-      ? parsed.filter((day): day is DayOfWeek => VALID_DAYS.includes(day))
-      : [];
-  } catch {
-    return [];
-  }
-};
-
 export const readAll = async (db: SQLiteDatabase): Promise<MergeResult> => {
   const [students, attendance, makeups, exceptions] = await Promise.all([
-    db.getAllAsync<StudentRow>('SELECT * FROM students;'),
-    db.getAllAsync<Attendance>('SELECT * FROM attendance;'),
-    db.getAllAsync<MakeUp>('SELECT * FROM makeup;'),
-    db.getAllAsync<ExceptionRow>('SELECT * FROM schedule_exception;'),
+    listStudentsIncludingDeleted(db),
+    listAttendanceIncludingDeleted(db),
+    listMakeupsIncludingDeleted(db),
+    listExceptionsIncludingDeleted(db),
   ]);
 
-  return {
-    students: students.map((row) => ({
-      ...row,
-      scheduledDays: parseDays(row.scheduledDays),
-      dayTimes: parseDayTimes(row.dayTimes),
-      deletedAt: row.deletedAt ?? null,
-    })),
-    attendance: attendance.map((row) => ({ ...row, deletedAt: row.deletedAt ?? null })),
-    makeups: makeups.map((row) => ({
-      ...row,
-      // SQLite는 boolean이 없어 0/1로 돌아온다. JSON으로 나갈 때 형이 흔들리지 않게 맞춘다.
-      completed: Boolean(row.completed),
-      deletedAt: row.deletedAt ?? null,
-    })),
-    exceptions: exceptions.map((row) => ({
-      ...row,
-      kind: (VALID_KINDS.includes(row.kind as ExceptionKind) ? row.kind : 'skip') as ExceptionKind,
-      studentId: row.studentId ?? undefined,
-      startTime: row.startTime ?? undefined,
-      endTime: row.endTime ?? undefined,
-      note: row.note ?? undefined,
-      deletedAt: row.deletedAt ?? null,
-    })),
-  };
+  return { students, attendance, makeups, exceptions };
 };
 
 /**
@@ -101,9 +55,16 @@ export const applyMerge = async (
   const staleAttendance = supersededIds(attendanceKey, local.attendance, merged.attendance);
   const staleExceptions = supersededIds(exceptionKey, local.exceptions, merged.exceptions);
 
+  // 지운 행도 '반영한 것'이다. 빼고 세면 행을 지워 놓고 0을 돌려주게 되고,
+  // 부르는 쪽은 화면을 새로 읽지도, 바뀐 내용을 올리지도 않는다.
   const total =
-    students.length + attendance.length + makeups.length + exceptions.length;
-  if (total === 0 && staleAttendance.length === 0 && staleExceptions.length === 0) return 0;
+    students.length +
+    attendance.length +
+    makeups.length +
+    exceptions.length +
+    staleAttendance.length +
+    staleExceptions.length;
+  if (total === 0) return 0;
 
   await db.withTransactionAsync(async () => {
     for (const row of students) {

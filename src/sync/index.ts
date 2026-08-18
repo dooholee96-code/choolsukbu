@@ -1,7 +1,7 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 import { logger } from '../utils/logger';
 import { mergeSnapshots, SNAPSHOT_VERSION, SyncSnapshot } from './merge';
-import { getDeviceId, getLastSyncAt, setLastSyncAt } from './device';
+import { getDeviceId, getLastSyncAt, hasChangesSince, setLastSyncAt } from './device';
 import { applyMerge, readAll } from './store';
 import { checkAvailability, downloadOthers, upload } from './transport';
 
@@ -30,7 +30,23 @@ const UNAVAILABLE_REASON: Record<string, string> = {
  * 어느 단계에서 실패하든 로컬 데이터는 이미 안전하다. 기록은 항상 먼저
  * 기기에 저장되고 전송은 그다음이다.
  */
-export const runSync = async (db: SQLiteDatabase): Promise<SyncOutcome> => {
+/**
+ * 지금 돌고 있는 동기화. 겹쳐 돌면 두 트랜잭션이 같은 연결 위에서 서로 끼어든다.
+ * iOS는 앱을 내릴 때 'inactive'와 'background'를 잇달아 보내고, 쓰기 뒤 타이머와
+ * 겹치는 일도 있어서 실제로 겹친다.
+ */
+let inFlight: Promise<SyncOutcome> | null = null;
+
+export const runSync = (db: SQLiteDatabase): Promise<SyncOutcome> => {
+  if (inFlight) return inFlight;
+
+  inFlight = runSyncOnce(db).finally(() => {
+    inFlight = null;
+  });
+  return inFlight;
+};
+
+const runSyncOnce = async (db: SQLiteDatabase): Promise<SyncOutcome> => {
   const availability = await checkAvailability();
   if (!availability.ok) {
     return {
@@ -55,7 +71,9 @@ export const runSync = async (db: SQLiteDatabase): Promise<SyncOutcome> => {
       };
     };
 
-    await upload(await snapshotOf());
+    // 지난번 이후 이 기기에서 바뀐 것이 없으면 같은 파일을 다시 쓸 이유가 없다.
+    const since = await getLastSyncAt(db);
+    if (await hasChangesSince(db, since)) await upload(await snapshotOf());
 
     const others = await downloadOthers(deviceId);
     const local = await readAll(db);

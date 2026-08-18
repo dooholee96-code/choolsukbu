@@ -22,12 +22,19 @@ export const SNAPSHOT_VERSION = 1;
 /**
  * 무엇이 같으면 같은 기록인가.
  *
- * 출결만 id가 아닌 이유: 두 기기에서 같은 학생의 같은 날 등원을 각각 찍으면
+ * 정규 등원이 id가 아닌 이유: 두 기기에서 같은 학생의 같은 날 등원을 각각 찍으면
  * id는 서로 다르지만 같은 사실이다. id로 합치면 한 학생이 하루에 두 번 등원한
- * 것처럼 남는다.
+ * 것처럼 남는다. 하루에 정규 등원은 한 번뿐이므로 학생과 날짜로 충분하다.
+ *
+ * 보충은 다르다. 두 번 빠진 학생이 같은 날 두 타임을 몰아 보충하는 일이 있어서
+ * 학생과 날짜로 묶으면 두 수업이 하나로 뭉개지고, 진 쪽은 지워져 되돌릴 수 없다.
+ * 그래서 보충 출결의 id는 그 보충 건의 id를 그대로 쓴다(completeMakeup 참고).
+ * 서로 다른 보충은 id가 다르니 둘 다 살고, 같은 보충을 두 기기에서 완료 처리해도
+ * id가 같아 하나로 합쳐진다.
  */
 export const studentKey = (row: Student) => row.id;
-export const attendanceKey = (row: Attendance) => `${row.studentId}|${row.date}|${row.type}`;
+export const attendanceKey = (row: Attendance) =>
+  row.type === 'makeUp' ? `makeUp|${row.id}` : `${row.studentId}|${row.date}|checkIn`;
 export const makeupKey = (row: MakeUp) => row.id;
 export const exceptionKey = (row: ScheduleException) =>
   `${row.date}|${row.kind}|${row.studentId ?? ''}`;

@@ -176,6 +176,7 @@ const HomeScreen: React.FC = () => {
     updateAttendanceTime,
     lastSyncAt,
     syncUnavailable,
+    syncError,
     syncing,
     syncNow,
   } = useData();
@@ -340,12 +341,14 @@ const HomeScreen: React.FC = () => {
    */
   const syncLabel = syncing
     ? '맞추는 중…'
-    : lastSyncAt
-      ? `${new Date(lastSyncAt).toLocaleTimeString('ko-KR', {
-          hour: 'numeric',
-          minute: '2-digit',
-        })}에 맞춤`
-      : '아직 안 맞춤';
+    : syncError
+      ? '못 맞춤 — 눌러서 다시'
+      : lastSyncAt
+        ? `${new Date(lastSyncAt).toLocaleTimeString('ko-KR', {
+            hour: 'numeric',
+            minute: '2-digit',
+          })}에 맞춤`
+        : '아직 안 맞춤';
 
   return (
     <Screen>
@@ -377,8 +380,13 @@ const HomeScreen: React.FC = () => {
                     accessibilityRole="button"
                     accessibilityLabel="지금 동기화"
                   >
-                    <Ionicons name={syncing ? 'sync' : 'cloud-done-outline'} size={12} />
-                    <SyncText $warn={!lastSyncAt}>{syncLabel}</SyncText>
+                    <Ionicons
+                      name={
+                        syncing ? 'sync' : syncError ? 'cloud-offline-outline' : 'cloud-done-outline'
+                      }
+                      size={12}
+                    />
+                    <SyncText $warn={Boolean(syncError) || !lastSyncAt}>{syncLabel}</SyncText>
                   </SyncLine>
                 )}
               </View>

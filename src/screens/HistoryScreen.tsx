@@ -5,7 +5,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { useData } from '../hooks/useData';
 import Screen from '../components/common/Screen';
-import { Attendance, Student } from '../types';
+import { Attendance, ScheduleException, Student } from '../types';
 import { formatDateLabel, formatTimeLabel } from '../utils/date';
 import { logger } from '../utils/logger';
 
@@ -148,6 +148,11 @@ const EmptyText = styled.Text`
 
 type Mode = 'student' | 'date';
 
+/** 날짜별 보기의 한 줄. 출결 기록이거나, 그 날이 휴강이었다는 표시다. */
+type DateRow =
+  | { kind: 'record'; id: string; record: Attendance; student: Student }
+  | { kind: 'closure'; id: string; note: string };
+
 interface StudentTally {
   student: Student;
   scheduled: number;
@@ -163,12 +168,13 @@ const monthBounds = (year: number, month: number) => ({
 });
 
 const HistoryScreen: React.FC = () => {
-  const { students, loadAttendanceRange } = useData();
+  const { students, loadAttendanceRange, loadExceptionsRange } = useData();
   const theme = useTheme();
 
   const today = new Date();
   const [cursor, setCursor] = useState({ year: today.getFullYear(), month: today.getMonth() });
   const [records, setRecords] = useState<Attendance[]>([]);
+  const [exceptions, setExceptions] = useState<ScheduleException[]>([]);
   const [loading, setLoading] = useState(true);
   const [mode, setMode] = useState<Mode>('student');
 
@@ -177,14 +183,20 @@ const HistoryScreen: React.FC = () => {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      setRecords(await loadAttendanceRange(from, to));
+      const [monthRecords, monthExceptions] = await Promise.all([
+        loadAttendanceRange(from, to),
+        loadExceptionsRange(from, to),
+      ]);
+      setRecords(monthRecords);
+      setExceptions(monthExceptions);
     } catch (error) {
       logger.error('Failed to load attendance range', error);
       setRecords([]);
+      setExceptions([]);
     } finally {
       setLoading(false);
     }
-  }, [from, to, loadAttendanceRange]);
+  }, [from, to, loadAttendanceRange, loadExceptionsRange]);
 
   // 다른 탭에서 체크인하고 돌아오면 최신 상태여야 한다.
   useFocusEffect(
@@ -241,22 +253,33 @@ const HistoryScreen: React.FC = () => {
     return rows.length ? [{ title: `원생 ${rows.length}명`, data: rows }] : [];
   }, [records, students]);
 
+  /**
+   * 날짜별 묶음. 휴강일은 출결 기록이 하나도 없어서 그냥 두면 목록에서 사라지고,
+   * 나중에 보면 '전원 결석'과 구분이 안 된다. 기록이 없어도 줄을 하나 만든다.
+   */
   const dateSections = useMemo(() => {
     const byId = new Map(students.map((s) => [s.id, s]));
-    const byDate = new Map<string, { record: Attendance; student: Student }[]>();
+    const byDate = new Map<string, DateRow[]>();
 
     for (const r of records) {
       const student = byId.get(r.studentId);
       if (!student) continue;
       const list = byDate.get(r.date) ?? [];
-      list.push({ record: r, student });
+      list.push({ kind: 'record', id: r.id, record: r, student });
       byDate.set(r.date, list);
+    }
+
+    for (const rule of exceptions) {
+      if (rule.kind !== 'closure') continue;
+      const list = byDate.get(rule.date) ?? [];
+      list.unshift({ kind: 'closure', id: rule.id, note: rule.note ?? '' });
+      byDate.set(rule.date, list);
     }
 
     return [...byDate.entries()]
       .sort((a, b) => b[0].localeCompare(a[0]))
       .map(([date, data]) => ({ title: formatDateLabel(date), data }));
-  }, [records, students]);
+  }, [records, exceptions, students]);
 
   const toneFor = (record: Attendance) => {
     if (record.type === 'makeUp') return theme.colors.primaryStrong;
@@ -378,20 +401,28 @@ const HistoryScreen: React.FC = () => {
     <Screen>
       <SectionList
         sections={dateSections}
-        keyExtractor={(item) => item.record.id}
+        keyExtractor={(item) => item.id}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: 24 }}
         ListHeaderComponent={header}
         ListEmptyComponent={empty}
         renderSectionHeader={({ section }) => <SectionTitle>{section.title}</SectionTitle>}
-        renderItem={({ item }) => (
-          <Row>
-            <RowName numberOfLines={1}>{item.student.name}</RowName>
-            <RowMeta>{item.student.grade}</RowMeta>
-            <RowMeta>{formatTimeLabel(item.record.time)}</RowMeta>
-            <Badge $tone={toneFor(item.record)}>{labelFor(item.record)}</Badge>
-          </Row>
-        )}
+        renderItem={({ item }) =>
+          item.kind === 'closure' ? (
+            <Row>
+              <RowName numberOfLines={1}>휴강</RowName>
+              <RowMeta>{item.note || '학원 전체 휴강'}</RowMeta>
+              <Badge $tone={theme.colors.secondaryStrong}>휴강</Badge>
+            </Row>
+          ) : (
+            <Row>
+              <RowName numberOfLines={1}>{item.student.name}</RowName>
+              <RowMeta>{item.student.grade}</RowMeta>
+              <RowMeta>{formatTimeLabel(item.record.time)}</RowMeta>
+              <Badge $tone={toneFor(item.record)}>{labelFor(item.record)}</Badge>
+            </Row>
+          )
+        }
       />
     </Screen>
   );

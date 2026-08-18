@@ -1,5 +1,5 @@
 import React, { createContext, useState, useEffect, useContext, useCallback, useMemo } from 'react';
-import { Student, Attendance, MakeUp, DayOfWeek } from '../types';
+import { Student, Attendance, MakeUp, DayOfWeek, ScheduleException, ExceptionKind } from '../types';
 import { getDB } from '../db';
 import { createId } from '../utils/id';
 import { getCurrentDate, getCurrentTime } from '../utils/date';
@@ -10,6 +10,8 @@ interface DataContextType {
   /** 오늘 날짜의 checkIn 기록만. 전체 이력은 DB에만 있다. */
   todayAttendances: Attendance[];
   makeups: MakeUp[];
+  /** 오늘 날짜의 일정 예외만. 다른 날짜는 loadExceptionsRange로 읽는다. */
+  todayExceptions: ScheduleException[];
   addStudent: (student: Student) => Promise<void>;
   updateStudent: (student: Student) => Promise<void>;
   /** 원생과 그에 딸린 출결·보충 기록을 함께 삭제한다 */
@@ -19,12 +21,28 @@ interface DataContextType {
   markAbsent: (studentId: string) => Promise<void>;
   /** 오늘 정규 수업 기록을 취소한다 (오입력 복구) */
   undoTodayAttendance: (studentId: string) => Promise<void>;
+  /** 기록해 둔 등원 시각을 고친다. 뒤늦게 찍었을 때 실제 도착 시각으로 맞춘다. */
+  updateAttendanceTime: (attendanceId: string, time: string) => Promise<void>;
+  /** 휴강 지정·해제 (그 날짜 전체) */
+  setClosure: (date: string, closed: boolean, note?: string) => Promise<void>;
+  /** 특정 날짜에 원생 하나를 추가(extra)하거나 빼는(skip) 예외를 만든다 */
+  addStudentException: (
+    date: string,
+    studentId: string,
+    kind: 'extra' | 'skip',
+    times?: { startTime: string; endTime: string }
+  ) => Promise<void>;
+  removeException: (exceptionId: string) => Promise<void>;
+  /** 일정 관리 화면이 보고 있는 날짜의 예외를 읽는다 */
+  loadExceptionsForDate: (date: string) => Promise<ScheduleException[]>;
+  loadExceptionsRange: (fromDate: string, toDate: string) => Promise<ScheduleException[]>;
   scheduleMakeup: (makeupId: string, makeUpDate: string) => Promise<void>;
   completeMakeup: (makeupId: string) => Promise<void>;
   deleteMakeup: (makeupId: string) => Promise<void>;
   /** 내보내기용 전체 이력. 상태에 담지 않고 그때그때 읽는다. */
   loadAllAttendance: () => Promise<Attendance[]>;
   loadAllMakeups: () => Promise<MakeUp[]>;
+  loadAllExceptions: () => Promise<ScheduleException[]>;
   /** 이력 조회용 기간 질의. 'YYYY-MM-DD' 경계 포함. */
   loadAttendanceRange: (fromDate: string, toDate: string) => Promise<Attendance[]>;
   /** CSV 가져오기. 이미 있는 이름은 건너뛰고 넣은 수를 돌려준다. */
@@ -52,10 +70,34 @@ const parseScheduledDays = (raw: unknown): DayOfWeek[] => {
   }
 };
 
+/** SQLite는 빈 칸을 NULL로 돌려주는데 타입은 optional이라 undefined로 맞춘다. */
+type ExceptionRow = {
+  id: string;
+  date: string;
+  kind: string;
+  studentId: string | null;
+  startTime: string | null;
+  endTime: string | null;
+  note: string | null;
+};
+
+const VALID_KINDS: ExceptionKind[] = ['closure', 'extra', 'skip'];
+
+const mapException = (row: ExceptionRow): ScheduleException => ({
+  id: row.id,
+  date: row.date,
+  kind: (VALID_KINDS.includes(row.kind as ExceptionKind) ? row.kind : 'skip') as ExceptionKind,
+  studentId: row.studentId ?? undefined,
+  startTime: row.startTime ?? undefined,
+  endTime: row.endTime ?? undefined,
+  note: row.note ?? undefined,
+});
+
 export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [students, setStudents] = useState<Student[]>([]);
   const [todayAttendances, setTodayAttendances] = useState<Attendance[]>([]);
   const [makeups, setMakeups] = useState<MakeUp[]>([]);
+  const [todayExceptions, setTodayExceptions] = useState<ScheduleException[]>([]);
   const db = getDB();
 
   const refreshData = useCallback(async () => {
@@ -87,6 +129,13 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         'SELECT * FROM makeup WHERE completed = 0;'
       );
       setMakeups(pendingMakeups);
+
+      // 출결과 같은 이유로 오늘 것만 올린다. 홈 화면이 쓰는 범위가 딱 이만큼이다.
+      const todayRules = await db.getAllAsync<ExceptionRow>(
+        'SELECT * FROM schedule_exception WHERE date = ?;',
+        getCurrentDate()
+      );
+      setTodayExceptions(todayRules.map(mapException));
     } catch (error) {
       logger.error('Error fetching data:', error);
     }
@@ -154,6 +203,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         await db.withTransactionAsync(async () => {
           await db.runAsync('DELETE FROM attendance WHERE studentId = ?;', studentId);
           await db.runAsync('DELETE FROM makeup WHERE studentId = ?;', studentId);
+          await db.runAsync('DELETE FROM schedule_exception WHERE studentId = ?;', studentId);
           await db.runAsync('DELETE FROM students WHERE id = ?;', studentId);
         });
         await refreshData();
@@ -278,6 +328,136 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     },
     [db, refreshData]
   );
+
+  /**
+   * 기록된 등원 시각 교정. 3시에 온 학생을 5시에 찍으면 5시로 남는데,
+   * 그 값이 그대로 '지각 2시간'이 되어 이력까지 흘러간다.
+   */
+  const updateAttendanceTime = useCallback(
+    async (attendanceId: string, time: string) => {
+      try {
+        await db.runAsync('UPDATE attendance SET time = ? WHERE id = ?;', time, attendanceId);
+        await refreshData();
+      } catch (error) {
+        logger.error('Error updating attendance time:', error);
+        throw error;
+      }
+    },
+    [db, refreshData]
+  );
+
+  /**
+   * 휴강 지정·해제. 한 날짜에 휴강 행은 하나뿐이어야 하므로 켤 때도 먼저 지운다.
+   * (연타나 두 화면에서 동시에 눌렀을 때 중복 행이 남는 것을 막는다.)
+   */
+  const setClosure = useCallback(
+    async (date: string, closed: boolean, note?: string) => {
+      try {
+        await db.withTransactionAsync(async () => {
+          await db.runAsync(
+            "DELETE FROM schedule_exception WHERE date = ? AND kind = 'closure';",
+            date
+          );
+          if (closed) {
+            await db.runAsync(
+              'INSERT INTO schedule_exception (id, date, kind, studentId, startTime, endTime, note) VALUES (?, ?, ?, NULL, NULL, NULL, ?);',
+              createId(),
+              date,
+              'closure',
+              note ?? null
+            );
+          }
+        });
+        await refreshData();
+      } catch (error) {
+        logger.error('Error setting closure:', error);
+        throw error;
+      }
+    },
+    [db, refreshData]
+  );
+
+  /**
+   * 한 원생의 그 날짜 예외를 만든다.
+   *
+   * extra와 skip은 서로 반대라 같은 날 둘 다 있으면 명단 계산이 모순된다.
+   * 새로 넣기 전에 그 원생의 그 날짜 예외를 지워 항상 하나만 남게 한다.
+   */
+  const addStudentException = useCallback(
+    async (
+      date: string,
+      studentId: string,
+      kind: 'extra' | 'skip',
+      times?: { startTime: string; endTime: string }
+    ) => {
+      try {
+        await db.withTransactionAsync(async () => {
+          await db.runAsync(
+            "DELETE FROM schedule_exception WHERE date = ? AND studentId = ? AND kind IN ('extra', 'skip');",
+            date,
+            studentId
+          );
+          await db.runAsync(
+            'INSERT INTO schedule_exception (id, date, kind, studentId, startTime, endTime, note) VALUES (?, ?, ?, ?, ?, ?, NULL);',
+            createId(),
+            date,
+            kind,
+            studentId,
+            times?.startTime ?? null,
+            times?.endTime ?? null
+          );
+        });
+        await refreshData();
+      } catch (error) {
+        logger.error('Error adding schedule exception:', error);
+        throw error;
+      }
+    },
+    [db, refreshData]
+  );
+
+  const removeException = useCallback(
+    async (exceptionId: string) => {
+      try {
+        await db.runAsync('DELETE FROM schedule_exception WHERE id = ?;', exceptionId);
+        await refreshData();
+      } catch (error) {
+        logger.error('Error removing schedule exception:', error);
+        throw error;
+      }
+    },
+    [db, refreshData]
+  );
+
+  const loadExceptionsForDate = useCallback(
+    async (date: string) => {
+      const rows = await db.getAllAsync<ExceptionRow>(
+        'SELECT * FROM schedule_exception WHERE date = ?;',
+        date
+      );
+      return rows.map(mapException);
+    },
+    [db]
+  );
+
+  const loadExceptionsRange = useCallback(
+    async (fromDate: string, toDate: string) => {
+      const rows = await db.getAllAsync<ExceptionRow>(
+        'SELECT * FROM schedule_exception WHERE date >= ? AND date <= ? ORDER BY date;',
+        fromDate,
+        toDate
+      );
+      return rows.map(mapException);
+    },
+    [db]
+  );
+
+  const loadAllExceptions = useCallback(async () => {
+    const rows = await db.getAllAsync<ExceptionRow>(
+      'SELECT * FROM schedule_exception ORDER BY date;'
+    );
+    return rows.map(mapException);
+  }, [db]);
 
   /** 보충 예정일 지정. 'YYYY-MM-DD'. */
   const scheduleMakeup = useCallback(
@@ -423,17 +603,25 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       students,
       todayAttendances,
       makeups,
+      todayExceptions,
       addStudent,
       updateStudent,
       deleteStudent,
       checkInStudent,
       markAbsent,
       undoTodayAttendance,
+      updateAttendanceTime,
+      setClosure,
+      addStudentException,
+      removeException,
+      loadExceptionsForDate,
+      loadExceptionsRange,
       scheduleMakeup,
       completeMakeup,
       deleteMakeup,
       loadAllAttendance,
       loadAllMakeups,
+      loadAllExceptions,
       loadAttendanceRange,
       importStudents,
       refreshData,
@@ -442,17 +630,25 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       students,
       todayAttendances,
       makeups,
+      todayExceptions,
       addStudent,
       updateStudent,
       deleteStudent,
       checkInStudent,
       markAbsent,
       undoTodayAttendance,
+      updateAttendanceTime,
+      setClosure,
+      addStudentException,
+      removeException,
+      loadExceptionsForDate,
+      loadExceptionsRange,
       scheduleMakeup,
       completeMakeup,
       deleteMakeup,
       loadAllAttendance,
       loadAllMakeups,
+      loadAllExceptions,
       loadAttendanceRange,
       importStudents,
       refreshData,

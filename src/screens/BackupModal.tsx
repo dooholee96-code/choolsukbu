@@ -10,6 +10,7 @@ import {
   backupStamp,
   buildAttendanceCsv,
   buildMakeupCsv,
+  buildExceptionCsv,
   buildStudentsCsv,
   exportCsv,
   pickCsvText,
@@ -69,7 +70,8 @@ const Stack = styled.View`
 const BackupModal: React.FC = () => {
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
-  const { students, loadAllAttendance, loadAllMakeups, importStudents } = useData();
+  const { students, loadAllAttendance, loadAllMakeups, loadAllExceptions, importStudents } =
+    useData();
   const [busy, setBusy] = useState(false);
 
   const run = useCallback(async (task: () => Promise<void>) => {
@@ -101,6 +103,16 @@ const BackupModal: React.FC = () => {
         return;
       }
       await exportCsv(`출석부_출결_${backupStamp()}.csv`, buildAttendanceCsv(records, students));
+    });
+
+  const exportExceptions = () =>
+    run(async () => {
+      const records = await loadAllExceptions();
+      if (records.length === 0) {
+        notify('내보낼 일정 변경이 없습니다.');
+        return;
+      }
+      await exportCsv(`출석부_일정_${backupStamp()}.csv`, buildExceptionCsv(records, students));
     });
 
   const exportMakeups = () =>
@@ -177,6 +189,7 @@ const BackupModal: React.FC = () => {
             <Button title="원생 명단" onPress={exportStudents} disabled={busy} />
             <Button title="출결 기록 (전체)" onPress={exportAttendance} disabled={busy} />
             <Button title="보충 기록" onPress={exportMakeups} disabled={busy} />
+            <Button title="일정 변경 (휴강·특강)" onPress={exportExceptions} disabled={busy} />
           </Stack>
 
           <SectionTitle>가져오기</SectionTitle>

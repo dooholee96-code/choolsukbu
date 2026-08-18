@@ -61,6 +61,39 @@ export const formatDateLabel = (date: string): string => {
   return format(parsed, 'M월 d일 (E)', { locale: ko });
 };
 
+/** 90 → '1시간 30분', 45 → '45분', 120 → '2시간' */
+const formatDuration = (minutes: number): string => {
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  if (!hours) return `${rest}분`;
+  return rest ? `${hours}시간 ${rest}분` : `${hours}시간`;
+};
+
+/** 이 정도 차이는 굳이 알릴 것이 없다. 몇 분 차이마다 라벨이 붙으면 눈이 피곤하다. */
+const NOTABLE_OFFSET_MINUTES = 10;
+
+/**
+ * 실제 도착이 예정 시작 시각보다 얼마나 이르거나 늦었는지. 차이가 작으면 null.
+ *
+ * 자정을 넘는 수업(22:00 시작)에서 00:30 도착 같은 경우 단순 뺄셈은
+ * '21시간 30분 일찍'이 되므로, 12시간을 넘는 차이는 반대쪽으로 감아 해석한다.
+ */
+export const arrivalOffsetLabel = (
+  actualTime: string,
+  scheduledStartTime: string
+): string | null => {
+  const actual = toMinutes(actualTime);
+  const start = toMinutes(scheduledStartTime);
+  if (actual === null || start === null) return null;
+
+  let diff = actual - start;
+  if (diff > 720) diff -= 1440;
+  if (diff < -720) diff += 1440;
+
+  if (Math.abs(diff) < NOTABLE_OFFSET_MINUTES) return null;
+  return `${formatDuration(Math.abs(diff))} ${diff > 0 ? '늦음' : '일찍'}`;
+};
+
 export const formatTimeLabel = (time: string): string => {
   const minutes = toMinutes(time);
   if (minutes === null) return time ?? '';

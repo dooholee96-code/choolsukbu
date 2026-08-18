@@ -10,7 +10,7 @@ import * as SQLite from 'expo-sqlite';
 let db: SQLite.SQLiteDatabase | null = null;
 
 /** 스키마 버전. 컬럼을 바꿀 때 올리고 runMigrations에 분기를 추가한다. */
-const DATABASE_VERSION = 1;
+const DATABASE_VERSION = 2;
 
 export const initDB = async () => {
   if (!db) {
@@ -49,8 +49,19 @@ export const initDB = async () => {
       completed INTEGER DEFAULT 0,
       FOREIGN KEY (studentId) REFERENCES students (id)
     );
+    CREATE TABLE IF NOT EXISTS schedule_exception (
+      id TEXT PRIMARY KEY,
+      date TEXT NOT NULL,
+      kind TEXT NOT NULL,
+      studentId TEXT,
+      startTime TEXT,
+      endTime TEXT,
+      note TEXT,
+      FOREIGN KEY (studentId) REFERENCES students (id)
+    );
     CREATE INDEX IF NOT EXISTS idx_attendance_date ON attendance (date);
     CREATE INDEX IF NOT EXISTS idx_attendance_student_date ON attendance (studentId, date);
+    CREATE INDEX IF NOT EXISTS idx_exception_date ON schedule_exception (date);
   `);
 
   await runMigrations();
@@ -68,7 +79,23 @@ const runMigrations = async () => {
 
   if (currentVersion >= DATABASE_VERSION) return;
 
-  // 예시: if (currentVersion < 2) { await database.execAsync('ALTER TABLE ...'); }
+  // v2: 일정 예외(휴강·특강·빠짐). 위의 CREATE TABLE IF NOT EXISTS가 새 설치를
+  // 이미 처리하므로, 여기서는 v1로 만들어진 기기에 테이블을 뒤늦게 붙여준다.
+  if (currentVersion < 2) {
+    await database.execAsync(`
+      CREATE TABLE IF NOT EXISTS schedule_exception (
+        id TEXT PRIMARY KEY,
+        date TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        studentId TEXT,
+        startTime TEXT,
+        endTime TEXT,
+        note TEXT,
+        FOREIGN KEY (studentId) REFERENCES students (id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_exception_date ON schedule_exception (date);
+    `);
+  }
 
   await database.execAsync(`PRAGMA user_version = ${DATABASE_VERSION};`);
 };

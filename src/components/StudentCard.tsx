@@ -2,7 +2,7 @@ import React, { useCallback } from 'react';
 import styled, { useTheme } from 'styled-components/native';
 import { Student, Attendance } from '../types';
 import Button from './common/Button';
-import { formatTimeLabel } from '../utils/date';
+import { arrivalOffsetLabel, formatTimeLabel } from '../utils/date';
 import { Ionicons } from '@expo/vector-icons';
 
 type Status = Attendance['status'];
@@ -22,6 +22,16 @@ interface StudentCardProps {
   /** 카드 자체를 눌렀을 때. 원생 정보 수정 진입에 쓴다. */
   onPress?: (student: Student) => void;
   showFee?: boolean; // 금액 표시 여부 제어
+  /**
+   * 그 날만 적용되는 수업 시간. 특강처럼 정규와 다를 때 부모가 넘긴다.
+   * 비우면 원생의 정규 시간을 그대로 쓴다.
+   */
+  startTime?: string;
+  endTime?: string;
+  /** 정규 수업이 아니라 그 날만 추가된 자리인지 */
+  isExtra?: boolean;
+  /** 기록된 등원 시각 교정. 넘기면 시각이 눌리는 버튼이 된다. */
+  onEditTime?: (student: Student, attendance: Attendance) => void;
 }
 
 /*
@@ -160,6 +170,32 @@ const STATUS_LABEL: Record<Status, string> = {
   absent: '결석',
 };
 
+const ExtraTag = styled.View`
+  align-self: flex-start;
+  background-color: ${({ theme }) => theme.colors.secondary}20;
+  padding-vertical: 2px;
+  padding-horizontal: 7px;
+  border-radius: 10px;
+  margin-top: 4px;
+`;
+
+const ExtraTagText = styled.Text`
+  color: ${({ theme }) => theme.colors.secondaryStrong};
+  font-size: 11px;
+  font-family: ${({ theme }) => theme.fonts.bold};`;
+
+/** 지각·조기 도착 표시. 정시면 색을 죽여 눈에 걸리지 않게 둔다. */
+const OffsetText = styled.Text`
+  font-family: ${({ theme }) => theme.fonts.bold};
+  font-size: 11px;
+  color: ${({ theme }) => theme.colors.secondaryStrong};
+  margin-top: 2px;
+`;
+
+const TimeButton = styled.TouchableOpacity`
+  padding-vertical: 2px;
+`;
+
 const getInitials = (name: string) => {
   const names = name.trim().split(/\s+/).filter(Boolean);
   if (names.length === 0) return '?';
@@ -183,11 +219,28 @@ const StudentCard: React.FC<StudentCardProps> = ({
   onUndo,
   onPress,
   showFee = false,
+  startTime,
+  endTime,
+  isExtra = false,
+  onEditTime,
 }) => {
   const handleCheckIn = useCallback(() => onCheckIn?.(student), [onCheckIn, student]);
   const handleMarkAbsent = useCallback(() => onMarkAbsent?.(student), [onMarkAbsent, student]);
   const handleUndo = useCallback(() => onUndo?.(student), [onUndo, student]);
   const handlePress = useCallback(() => onPress?.(student), [onPress, student]);
+  const handleEditTime = useCallback(
+    () => attendance && onEditTime?.(student, attendance),
+    [onEditTime, student, attendance]
+  );
+
+  const effectiveStart = startTime ?? student.scheduledStartTime;
+  const effectiveEnd = endTime ?? student.scheduledEndTime;
+
+  // 결석에는 도착 시각이 없으므로 지각을 따질 것도 없다.
+  const offset =
+    attendance && attendance.status !== 'absent'
+      ? arrivalOffsetLabel(attendance.time, effectiveStart)
+      : null;
 
   // 이 색은 styled 템플릿 밖(JSX prop)에서 쓰이므로 훅으로 직접 꺼내야 한다.
   // 이전 코드는 import 없이 전역 theme을 참조해서 이 카드가 그려지는 순간
@@ -204,9 +257,13 @@ const StudentCard: React.FC<StudentCardProps> = ({
           <NameText numberOfLines={1}>{student.name}</NameText>
           <SubText numberOfLines={1}>{student.grade}</SubText>
           <SubText numberOfLines={1}>
-            {formatTimeLabel(student.scheduledStartTime)} –{' '}
-            {formatTimeLabel(student.scheduledEndTime)}
+            {formatTimeLabel(effectiveStart)} – {formatTimeLabel(effectiveEnd)}
           </SubText>
+          {isExtra && (
+            <ExtraTag>
+              <ExtraTagText>추가 일정</ExtraTagText>
+            </ExtraTag>
+          )}
           {showFee && student.fee != null && (
             <SubText numberOfLines={1}>₩{student.fee.toLocaleString()}/월</SubText>
           )}
@@ -220,7 +277,18 @@ const StudentCard: React.FC<StudentCardProps> = ({
                 {STATUS_LABEL[attendance.status]}
               </StatusText>
             </StatusTag>
-            <SubText>{formatTimeLabel(attendance.time)}</SubText>
+            {onEditTime ? (
+              <TimeButton
+                onPress={handleEditTime}
+                accessibilityRole="button"
+                accessibilityLabel={`${student.name} 등원 시각 수정`}
+              >
+                <SubText>{formatTimeLabel(attendance.time)}</SubText>
+              </TimeButton>
+            ) : (
+              <SubText>{formatTimeLabel(attendance.time)}</SubText>
+            )}
+            {offset && <OffsetText>{offset}</OffsetText>}
             {onUndo ? (
               <TextAction
                 onPress={handleUndo}

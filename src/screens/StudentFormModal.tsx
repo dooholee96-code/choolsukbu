@@ -128,6 +128,10 @@ const StudentFormModal: React.FC = () => {
   const [fee, setFee] = useState(editing?.fee != null ? String(editing.fee) : '');
   const [isSaving, setIsSaving] = useState(false);
 
+  // iOS의 modal/formSheet는 상태 표시줄 아래에서 시작하므로 창의 top 인셋을 더하면
+  // 그만큼 위가 비고 내용이 아래로 밀린다. Android 모달은 전체 화면이라 인셋이 필요하다.
+  const topInset = Platform.OS === 'ios' ? 0 : insets.top;
+
   const toggleDay = (day: DayOfWeek) => {
     setSelectedDays((previous) =>
       previous.includes(day) ? previous.filter((d) => d !== day) : [...previous, day]
@@ -240,7 +244,10 @@ const StudentFormModal: React.FC = () => {
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
         <ScrollView
-          contentContainerStyle={{ paddingTop: insets.top + 16, paddingBottom: insets.bottom + 32 }}
+          // flex 없이는 ScrollView가 내용 높이만큼 커져서 시트 밖으로 잘려 나가고,
+          // 스크롤 영역이 화면보다 커지므로 스크롤도 먹지 않는다.
+          style={{ flex: 1 }}
+          contentContainerStyle={{ paddingTop: topInset + 16, paddingBottom: insets.bottom + 32 }}
           keyboardShouldPersistTaps="handled"
         >
           <Form>

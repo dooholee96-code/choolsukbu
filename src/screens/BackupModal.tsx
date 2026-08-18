@@ -1,6 +1,6 @@
 import React, { useCallback, useState } from 'react';
 import styled from 'styled-components/native';
-import { ScrollView, View } from 'react-native';
+import { Platform, ScrollView, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useData } from '../hooks/useData';
@@ -10,6 +10,7 @@ import {
   backupStamp,
   buildAttendanceCsv,
   buildMakeupCsv,
+  buildExceptionCsv,
   buildStudentsCsv,
   exportCsv,
   pickCsvText,
@@ -69,7 +70,8 @@ const Stack = styled.View`
 const BackupModal: React.FC = () => {
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
-  const { students, loadAllAttendance, loadAllMakeups, importStudents } = useData();
+  const { students, loadAllAttendance, loadAllMakeups, loadAllExceptions, importStudents } =
+    useData();
   const [busy, setBusy] = useState(false);
 
   const run = useCallback(async (task: () => Promise<void>) => {
@@ -101,6 +103,16 @@ const BackupModal: React.FC = () => {
         return;
       }
       await exportCsv(`출석부_출결_${backupStamp()}.csv`, buildAttendanceCsv(records, students));
+    });
+
+  const exportExceptions = () =>
+    run(async () => {
+      const records = await loadAllExceptions();
+      if (records.length === 0) {
+        notify('내보낼 일정 변경이 없습니다.');
+        return;
+      }
+      await exportCsv(`출석부_일정_${backupStamp()}.csv`, buildExceptionCsv(records, students));
     });
 
   const exportMakeups = () =>
@@ -153,7 +165,14 @@ const BackupModal: React.FC = () => {
   return (
     <Root>
       <ScrollView
-        contentContainerStyle={{ paddingTop: insets.top + 16, paddingBottom: insets.bottom + 32 }}
+        // flex 없이는 ScrollView가 내용 높이만큼 커져서 시트 밖으로 잘려 나가고,
+        // 스크롤 영역이 화면보다 커지므로 스크롤도 먹지 않는다.
+        style={{ flex: 1 }}
+        contentContainerStyle={{
+          // iOS의 modal/formSheet는 상태 표시줄 아래에서 시작하므로 창의 top 인셋을 더하면 안 된다.
+          paddingTop: (Platform.OS === 'ios' ? 0 : insets.top) + 16,
+          paddingBottom: insets.bottom + 32,
+        }}
       >
         <Content>
           <TitleText>백업</TitleText>
@@ -170,6 +189,7 @@ const BackupModal: React.FC = () => {
             <Button title="원생 명단" onPress={exportStudents} disabled={busy} />
             <Button title="출결 기록 (전체)" onPress={exportAttendance} disabled={busy} />
             <Button title="보충 기록" onPress={exportMakeups} disabled={busy} />
+            <Button title="일정 변경 (휴강·특강)" onPress={exportExceptions} disabled={busy} />
           </Stack>
 
           <SectionTitle>가져오기</SectionTitle>

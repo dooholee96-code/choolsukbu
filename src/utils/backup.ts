@@ -3,7 +3,7 @@ import { Platform } from 'react-native';
 import { File, Paths } from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
 import * as DocumentPicker from 'expo-document-picker';
-import { Attendance, MakeUp, Student } from '../types';
+import { Attendance, MakeUp, ScheduleException, Student } from '../types';
 import { logger } from './logger';
 
 /**
@@ -68,6 +68,35 @@ export const buildMakeupCsv = (makeups: MakeUp[], students: Student[]): string =
         completed: m.completed ? '완료' : '대기',
       })),
       { columns: ['name', 'originalDate', 'makeUpDate', 'completed'] }
+    )
+  );
+};
+
+const KIND_LABEL: Record<ScheduleException['kind'], string> = {
+  closure: '휴강',
+  extra: '추가',
+  skip: '빠짐',
+};
+
+export const buildExceptionCsv = (
+  exceptions: ScheduleException[],
+  students: Student[]
+): string => {
+  const byId = new Map(students.map((s) => [s.id, s]));
+
+  return (
+    BOM +
+    Papa.unparse(
+      exceptions.map((e) => ({
+        date: e.date,
+        kind: KIND_LABEL[e.kind] ?? e.kind,
+        // 휴강은 학원 전체라 원생이 없다. 빈 칸 대신 무엇에 걸린 건지 적는다.
+        name: e.studentId ? byId.get(e.studentId)?.name ?? '(삭제된 원생)' : '(전체)',
+        startTime: e.startTime ?? '',
+        endTime: e.endTime ?? '',
+        note: e.note ?? '',
+      })),
+      { columns: ['date', 'kind', 'name', 'startTime', 'endTime', 'note'] }
     )
   );
 };

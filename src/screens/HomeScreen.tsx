@@ -48,6 +48,21 @@ const HeaderAction = styled.TouchableOpacity`
   border-color: ${({ theme }) => theme.colors.border};
 `;
 
+const SyncLine = styled.TouchableOpacity`
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  align-self: flex-end;
+`;
+
+const SyncText = styled.Text<{ $warn: boolean }>`
+  font-family: ${({ theme }) => theme.fonts.regular};
+  font-size: 12px;
+  color: ${({ theme, $warn }) =>
+    $warn ? theme.colors.secondaryStrong : theme.colors.textSecondary};
+`;
+
 const HeaderActionText = styled.Text`
   font-family: ${({ theme }) => theme.fonts.bold};
   font-size: 14px;
@@ -159,6 +174,10 @@ const HomeScreen: React.FC = () => {
     markAbsent,
     undoTodayAttendance,
     updateAttendanceTime,
+    lastSyncAt,
+    syncUnavailable,
+    syncing,
+    syncNow,
   } = useData();
   const { columns, sizeClass } = useResponsive();
   const navigation = useNavigation();
@@ -311,6 +330,23 @@ const HomeScreen: React.FC = () => {
 
   const openSchedule = useCallback(() => navigation.navigate('ScheduleModal'), [navigation]);
 
+  const handleSync = useCallback(() => {
+    syncNow().catch(() => {});
+  }, [syncNow]);
+
+  /**
+   * 조용히 실패하지 않게 한다. 언제 맞췄는지, 못 맞추고 있다면 왜인지 늘 보인다.
+   * 동기화를 아예 쓸 수 없는 빌드(무료 계정)에서는 줄 자체를 띄우지 않는다.
+   */
+  const syncLabel = syncing
+    ? '맞추는 중…'
+    : lastSyncAt
+      ? `${new Date(lastSyncAt).toLocaleTimeString('ko-KR', {
+          hour: 'numeric',
+          minute: '2-digit',
+        })}에 맞춤`
+      : '아직 안 맞춤';
+
   return (
     <Screen>
       <SectionList<Student[], Section>
@@ -325,14 +361,27 @@ const HomeScreen: React.FC = () => {
                 <DateText>{new Date().toLocaleDateString('ko-KR')}</DateText>
                 <TitleText>오늘의 출석</TitleText>
               </View>
-              <HeaderAction
-                onPress={openSchedule}
-                accessibilityRole="button"
-                accessibilityLabel="일정 관리"
-              >
-                <Ionicons name="calendar-outline" size={16} />
-                <HeaderActionText>일정</HeaderActionText>
-              </HeaderAction>
+              <View style={{ alignItems: 'flex-end' }}>
+                <HeaderAction
+                  onPress={openSchedule}
+                  accessibilityRole="button"
+                  accessibilityLabel="일정 관리"
+                >
+                  <Ionicons name="calendar-outline" size={16} />
+                  <HeaderActionText>일정</HeaderActionText>
+                </HeaderAction>
+                {syncUnavailable === null && (
+                  <SyncLine
+                    onPress={handleSync}
+                    disabled={syncing}
+                    accessibilityRole="button"
+                    accessibilityLabel="지금 동기화"
+                  >
+                    <Ionicons name={syncing ? 'sync' : 'cloud-done-outline'} size={12} />
+                    <SyncText $warn={!lastSyncAt}>{syncLabel}</SyncText>
+                  </SyncLine>
+                )}
+              </View>
             </Header>
 
             {closed ? (

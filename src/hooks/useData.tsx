@@ -14,6 +14,7 @@ import { createId } from '../utils/id';
 import { getCurrentDate, getCurrentTime } from '../utils/date';
 import { logger } from '../utils/logger';
 import { parseDayTimes, serializeDayTimes } from '../utils/schedule';
+import { checkAvailability, getLastSyncAt, runSync, type SyncOutcome } from '../sync';
 
 interface DataContextType {
   students: Student[];
@@ -58,9 +59,19 @@ interface DataContextType {
   /** CSV 가져오기. 이미 있는 이름은 건너뛰고 넣은 수를 돌려준다. */
   importStudents: (students: Student[]) => Promise<{ added: number; skipped: number }>;
   refreshData: () => Promise<void>;
+  /** 마지막으로 맞춘 시각. 한 번도 안 했으면 null. */
+  lastSyncAt: string | null;
+  /** 동기화를 쓸 수 없으면 그 이유. 쓸 수 있으면 null. */
+  syncUnavailable: string | null;
+  syncing: boolean;
+  /** 지금 맞추기. 실패해도 로컬 데이터는 그대로다. */
+  syncNow: () => Promise<SyncOutcome>;
 }
 
 const DataContext = createContext<DataContextType | undefined>(undefined);
+
+/** 동기화 비교의 유일한 근거. 기기 시계 기준 ISO 8601(UTC). */
+const stamp = () => new Date().toISOString();
 
 const VALID_DAYS: DayOfWeek[] = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
@@ -89,6 +100,8 @@ type ExceptionRow = {
   startTime: string | null;
   endTime: string | null;
   note: string | null;
+  updatedAt: string | null;
+  deletedAt: string | null;
 };
 
 const VALID_KINDS: ExceptionKind[] = ['closure', 'extra', 'skip'];
@@ -101,6 +114,8 @@ const mapException = (row: ExceptionRow): ScheduleException => ({
   startTime: row.startTime ?? undefined,
   endTime: row.endTime ?? undefined,
   note: row.note ?? undefined,
+  updatedAt: row.updatedAt ?? undefined,
+  deletedAt: row.deletedAt ?? null,
 });
 
 export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -110,8 +125,15 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [todayExceptions, setTodayExceptions] = useState<ScheduleException[]>([]);
   const db = getDB();
 
+  const [lastSyncAt, setLastSyncAt] = useState<string | null>(null);
+  const [syncUnavailable, setSyncUnavailable] = useState<string | null>(null);
+  const [syncing, setSyncing] = useState(false);
+
   /** 지금 화면에 올라와 있는 데이터가 어느 날짜의 것인지 */
   const loadedDate = useRef(getCurrentDate());
+
+  /** 기록할 때마다 올리면 낭비라, 잠잠해지면 한 번 올린다. */
+  const pushTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const refreshData = useCallback(async () => {
     const today = getCurrentDate();
@@ -123,7 +145,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
           scheduledDays: string;
           dayTimes: string | null;
         }
-      >('SELECT * FROM students ORDER BY name;');
+      >('SELECT * FROM students WHERE deletedAt IS NULL ORDER BY name;');
       setStudents(
         allStudents.map((row) => ({
           ...row,
@@ -139,20 +161,20 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       // (idx_attendance_date 인덱스를 탄다. 이력 조회 기능은 필요할 때
       //  별도 쿼리로 가져오면 된다 — DB에는 그대로 남아 있다.)
       const todayRecords = await db.getAllAsync<Attendance>(
-        'SELECT * FROM attendance WHERE date = ? AND type = ?;',
+        'SELECT * FROM attendance WHERE date = ? AND type = ? AND deletedAt IS NULL;',
         today,
         'checkIn'
       );
       setTodayAttendances(todayRecords);
 
       const pendingMakeups = await db.getAllAsync<MakeUp>(
-        'SELECT * FROM makeup WHERE completed = 0;'
+        'SELECT * FROM makeup WHERE completed = 0 AND deletedAt IS NULL;'
       );
       setMakeups(pendingMakeups);
 
       // 출결과 같은 이유로 오늘 것만 올린다. 홈 화면이 쓰는 범위가 딱 이만큼이다.
       const todayRules = await db.getAllAsync<ExceptionRow>(
-        'SELECT * FROM schedule_exception WHERE date = ?;',
+        'SELECT * FROM schedule_exception WHERE date = ? AND deletedAt IS NULL;',
         today
       );
       setTodayExceptions(todayRules.map(mapException));
@@ -164,6 +186,72 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     refreshData();
   }, [refreshData]);
+
+  /**
+   * 한 번 맞추고 화면을 새로 읽는다.
+   *
+   * 실패해도 조용히 넘기지 않는다 — 언제 맞췄는지 화면에 남기고, 못 쓰는 상태면
+   * 그 이유를 띄운다. 어느 쪽이든 로컬 기록은 이미 안전하다.
+   */
+  const syncNow = useCallback(async (): Promise<SyncOutcome> => {
+    setSyncing(true);
+    try {
+      const outcome = await runSync(db);
+
+      if (outcome.status === 'synced') {
+        setSyncUnavailable(null);
+        setLastSyncAt(outcome.at);
+        if (outcome.applied > 0) await refreshData();
+      } else if (outcome.status === 'unavailable') {
+        setSyncUnavailable(outcome.reason);
+      }
+
+      return outcome;
+    } finally {
+      setSyncing(false);
+    }
+  }, [db, refreshData]);
+
+  /** 쓰기가 잠잠해지면 한 번 올린다. 등원을 연달아 찍을 때마다 올리면 낭비다. */
+  const schedulePush = useCallback(() => {
+    if (pushTimer.current) clearTimeout(pushTimer.current);
+    pushTimer.current = setTimeout(() => {
+      pushTimer.current = null;
+      syncNow().catch(() => {});
+    }, 3_000);
+  }, [syncNow]);
+
+  /** 쓰기 뒤에 부르는 마무리. 화면을 새로 읽고, 잠잠해지면 올린다. */
+  const commit = useCallback(async () => {
+    await refreshData();
+    schedulePush();
+  }, [refreshData, schedulePush]);
+
+  // 앱을 열 때 한 번. 못 쓰는 상태면 이유만 기억해 두고 넘어간다.
+  useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      const stored = await getLastSyncAt(db).catch(() => null);
+      if (!cancelled && stored) setLastSyncAt(stored);
+
+      const availability = await checkAvailability();
+      if (cancelled) return;
+
+      if (!availability.ok) {
+        // 사유 문구는 runSync가 만든다. 여기서는 한 번 돌려 상태만 받아 둔다.
+        await syncNow();
+        return;
+      }
+      await syncNow();
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+    // 앱 시작 시 한 번만 돈다. syncNow는 refreshData에 매여 있어 넣으면 매번 재실행된다.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [db]);
 
   /**
    * 날짜가 바뀌면 다시 읽는다.
@@ -183,20 +271,29 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     const timer = setInterval(refreshIfDateChanged, 60_000);
     const subscription = AppState.addEventListener('change', (state) => {
-      if (state === 'active') refreshIfDateChanged();
+      if (state === 'active') {
+        refreshIfDateChanged();
+        // 다른 기기에서 찍은 것이 있을 수 있다.
+        syncNow().catch(() => {});
+      } else {
+        // 내려놓을 때 아직 안 올라간 것을 밀어 둔다.
+        if (pushTimer.current) clearTimeout(pushTimer.current);
+        syncNow().catch(() => {});
+      }
     });
 
     return () => {
       clearInterval(timer);
       subscription.remove();
+      if (pushTimer.current) clearTimeout(pushTimer.current);
     };
-  }, [refreshData]);
+  }, [refreshData, syncNow]);
 
   const addStudent = useCallback(
     async (student: Student) => {
       try {
         await db.runAsync(
-          'INSERT INTO students (id, name, grade, scheduledDays, scheduledStartTime, scheduledEndTime, dayTimes, fee) VALUES (?, ?, ?, ?, ?, ?, ?, ?);',
+          'INSERT INTO students (id, name, grade, scheduledDays, scheduledStartTime, scheduledEndTime, dayTimes, fee, updatedAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);',
           student.id,
           student.name,
           student.grade,
@@ -204,22 +301,23 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
           student.scheduledStartTime,
           student.scheduledEndTime,
           serializeDayTimes(student),
-          student.fee ?? null
+          student.fee ?? null,
+          stamp()
         );
-        await refreshData();
+        await commit();
       } catch (error) {
         logger.error('Error adding student:', error);
         throw error;
       }
     },
-    [db, refreshData]
+    [db, commit]
   );
 
   const updateStudent = useCallback(
     async (student: Student) => {
       try {
         await db.runAsync(
-          'UPDATE students SET name = ?, grade = ?, scheduledDays = ?, scheduledStartTime = ?, scheduledEndTime = ?, dayTimes = ?, fee = ? WHERE id = ?;',
+          'UPDATE students SET name = ?, grade = ?, scheduledDays = ?, scheduledStartTime = ?, scheduledEndTime = ?, dayTimes = ?, fee = ?, updatedAt = ? WHERE id = ?;',
           student.name,
           student.grade,
           JSON.stringify(student.scheduledDays),
@@ -227,41 +325,54 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
           student.scheduledEndTime,
           serializeDayTimes(student),
           student.fee ?? null,
+          stamp(),
           student.id
         );
-        await refreshData();
+        await commit();
       } catch (error) {
         logger.error('Error updating student:', error);
         throw error;
       }
     },
-    [db, refreshData]
+    [db, commit]
   );
 
   /**
    * 원생과 그에 딸린 기록을 지운다.
    *
-   * attendance와 makeup이 students를 참조하는데 ON DELETE CASCADE가 없고
-   * initDB에서 PRAGMA foreign_keys를 켜두었으므로, 자식 행을 먼저 지우지 않으면
-   * 기록이 하나라도 있는 원생은 제약 위반으로 삭제 자체가 실패한다.
-   * 셋 중 일부만 지워진 상태를 막기 위해 한 트랜잭션으로 묶는다.
+   * 행을 없애지 않고 deletedAt만 찍는다. 그냥 지우면 상대 기기 파일에는 아직
+   * 그 원생이 남아 있어 다음 동기화에서 되살아난다. 화면 질의가 모두
+   * deletedAt IS NULL로 거르므로 사용자에게는 삭제된 것과 같다.
+   *
+   * 네 테이블이 한꺼번에 넘어가야 하므로 트랜잭션으로 묶는다.
    */
   const deleteStudent = useCallback(
     async (studentId: string) => {
       try {
+        const now = stamp();
         await db.withTransactionAsync(async () => {
-          await db.runAsync('DELETE FROM attendance WHERE studentId = ?;', studentId);
-          await db.runAsync('DELETE FROM makeup WHERE studentId = ?;', studentId);
-          await db.runAsync('DELETE FROM schedule_exception WHERE studentId = ?;', studentId);
-          await db.runAsync('DELETE FROM students WHERE id = ?;', studentId);
+          for (const table of ['attendance', 'makeup', 'schedule_exception']) {
+            await db.runAsync(
+              `UPDATE ${table} SET deletedAt = ?, updatedAt = ? WHERE studentId = ? AND deletedAt IS NULL;`,
+              now,
+              now,
+              studentId
+            );
+          }
+          await db.runAsync(
+            'UPDATE students SET deletedAt = ?, updatedAt = ? WHERE id = ?;',
+            now,
+            now,
+            studentId
+          );
         });
-        await refreshData();
+        await commit();
       } catch (error) {
         logger.error('Error deleting student:', error);
         throw error;
       }
     },
-    [db, refreshData]
+    [db, commit]
   );
 
   /**
@@ -271,7 +382,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const findTodayRecord = useCallback(
     (studentId: string, date: string) =>
       db.getFirstAsync<{ id: string }>(
-        'SELECT id FROM attendance WHERE studentId = ? AND date = ? AND type = ? LIMIT 1;',
+        'SELECT id FROM attendance WHERE studentId = ? AND date = ? AND type = ? AND deletedAt IS NULL LIMIT 1;',
         studentId,
         date,
         'checkIn'
@@ -289,21 +400,22 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (await findTodayRecord(studentId, date)) return;
 
         await db.runAsync(
-          'INSERT INTO attendance (id, studentId, date, time, status, type) VALUES (?, ?, ?, ?, ?, ?);',
+          'INSERT INTO attendance (id, studentId, date, time, status, type, updatedAt) VALUES (?, ?, ?, ?, ?, ?, ?);',
           createId(),
           studentId,
           date,
           getCurrentTime(),
           status,
-          'checkIn'
+          'checkIn',
+          stamp()
         );
-        await refreshData();
+        await commit();
       } catch (error) {
         logger.error('Error checking in:', error);
         throw error;
       }
     },
-    [db, refreshData, findTodayRecord]
+    [db, commit, findTodayRecord]
   );
 
   /**
@@ -318,31 +430,34 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       try {
         if (await findTodayRecord(studentId, date)) return;
 
+        const now = stamp();
         await db.withTransactionAsync(async () => {
           await db.runAsync(
-            'INSERT INTO attendance (id, studentId, date, time, status, type) VALUES (?, ?, ?, ?, ?, ?);',
+            'INSERT INTO attendance (id, studentId, date, time, status, type, updatedAt) VALUES (?, ?, ?, ?, ?, ?, ?);',
             createId(),
             studentId,
             date,
             getCurrentTime(),
             'absent',
-            'checkIn'
+            'checkIn',
+            now
           );
           await db.runAsync(
-            'INSERT INTO makeup (id, studentId, originalDate, makeUpDate, completed) VALUES (?, ?, ?, ?, 0);',
+            'INSERT INTO makeup (id, studentId, originalDate, makeUpDate, completed, updatedAt) VALUES (?, ?, ?, ?, 0, ?);',
             createId(),
             studentId,
             date,
-            null
+            null,
+            now
           );
         });
-        await refreshData();
+        await commit();
       } catch (error) {
         logger.error('Error marking absent:', error);
         throw error;
       }
     },
-    [db, refreshData, findTodayRecord]
+    [db, commit, findTodayRecord]
   );
 
   /**
@@ -356,26 +471,31 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const date = getCurrentDate();
 
       try {
+        const now = stamp();
         await db.withTransactionAsync(async () => {
           await db.runAsync(
-            'DELETE FROM attendance WHERE studentId = ? AND date = ? AND type = ?;',
+            'UPDATE attendance SET deletedAt = ?, updatedAt = ? WHERE studentId = ? AND date = ? AND type = ? AND deletedAt IS NULL;',
+            now,
+            now,
             studentId,
             date,
             'checkIn'
           );
           await db.runAsync(
-            'DELETE FROM makeup WHERE studentId = ? AND originalDate = ? AND completed = 0 AND makeUpDate IS NULL;',
+            'UPDATE makeup SET deletedAt = ?, updatedAt = ? WHERE studentId = ? AND originalDate = ? AND completed = 0 AND makeUpDate IS NULL AND deletedAt IS NULL;',
+            now,
+            now,
             studentId,
             date
           );
         });
-        await refreshData();
+        await commit();
       } catch (error) {
         logger.error('Error undoing attendance:', error);
         throw error;
       }
     },
-    [db, refreshData]
+    [db, commit]
   );
 
   /**
@@ -385,14 +505,19 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const updateAttendanceTime = useCallback(
     async (attendanceId: string, time: string) => {
       try {
-        await db.runAsync('UPDATE attendance SET time = ? WHERE id = ?;', time, attendanceId);
-        await refreshData();
+        await db.runAsync(
+          'UPDATE attendance SET time = ?, updatedAt = ? WHERE id = ?;',
+          time,
+          stamp(),
+          attendanceId
+        );
+        await commit();
       } catch (error) {
         logger.error('Error updating attendance time:', error);
         throw error;
       }
     },
-    [db, refreshData]
+    [db, commit]
   );
 
   /**
@@ -402,28 +527,32 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const setClosure = useCallback(
     async (date: string, closed: boolean, note?: string) => {
       try {
+        const now = stamp();
         await db.withTransactionAsync(async () => {
           await db.runAsync(
-            "DELETE FROM schedule_exception WHERE date = ? AND kind = 'closure';",
+            "UPDATE schedule_exception SET deletedAt = ?, updatedAt = ? WHERE date = ? AND kind = 'closure' AND deletedAt IS NULL;",
+            now,
+            now,
             date
           );
           if (closed) {
             await db.runAsync(
-              'INSERT INTO schedule_exception (id, date, kind, studentId, startTime, endTime, note) VALUES (?, ?, ?, NULL, NULL, NULL, ?);',
+              'INSERT INTO schedule_exception (id, date, kind, studentId, startTime, endTime, note, updatedAt) VALUES (?, ?, ?, NULL, NULL, NULL, ?, ?);',
               createId(),
               date,
               'closure',
-              note ?? null
+              note ?? null,
+              now
             );
           }
         });
-        await refreshData();
+        await commit();
       } catch (error) {
         logger.error('Error setting closure:', error);
         throw error;
       }
     },
-    [db, refreshData]
+    [db, commit]
   );
 
   /**
@@ -440,48 +569,58 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       times?: { startTime: string; endTime: string }
     ) => {
       try {
+        const now = stamp();
         await db.withTransactionAsync(async () => {
           await db.runAsync(
-            "DELETE FROM schedule_exception WHERE date = ? AND studentId = ? AND kind IN ('extra', 'skip');",
+            "UPDATE schedule_exception SET deletedAt = ?, updatedAt = ? WHERE date = ? AND studentId = ? AND kind IN ('extra', 'skip') AND deletedAt IS NULL;",
+            now,
+            now,
             date,
             studentId
           );
           await db.runAsync(
-            'INSERT INTO schedule_exception (id, date, kind, studentId, startTime, endTime, note) VALUES (?, ?, ?, ?, ?, ?, NULL);',
+            'INSERT INTO schedule_exception (id, date, kind, studentId, startTime, endTime, note, updatedAt) VALUES (?, ?, ?, ?, ?, ?, NULL, ?);',
             createId(),
             date,
             kind,
             studentId,
             times?.startTime ?? null,
-            times?.endTime ?? null
+            times?.endTime ?? null,
+            now
           );
         });
-        await refreshData();
+        await commit();
       } catch (error) {
         logger.error('Error adding schedule exception:', error);
         throw error;
       }
     },
-    [db, refreshData]
+    [db, commit]
   );
 
   const removeException = useCallback(
     async (exceptionId: string) => {
       try {
-        await db.runAsync('DELETE FROM schedule_exception WHERE id = ?;', exceptionId);
-        await refreshData();
+        const now = stamp();
+        await db.runAsync(
+          'UPDATE schedule_exception SET deletedAt = ?, updatedAt = ? WHERE id = ?;',
+          now,
+          now,
+          exceptionId
+        );
+        await commit();
       } catch (error) {
         logger.error('Error removing schedule exception:', error);
         throw error;
       }
     },
-    [db, refreshData]
+    [db, commit]
   );
 
   const loadExceptionsForDate = useCallback(
     async (date: string) => {
       const rows = await db.getAllAsync<ExceptionRow>(
-        'SELECT * FROM schedule_exception WHERE date = ?;',
+        'SELECT * FROM schedule_exception WHERE date = ? AND deletedAt IS NULL;',
         date
       );
       return rows.map(mapException);
@@ -492,7 +631,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const loadExceptionsRange = useCallback(
     async (fromDate: string, toDate: string) => {
       const rows = await db.getAllAsync<ExceptionRow>(
-        'SELECT * FROM schedule_exception WHERE date >= ? AND date <= ? ORDER BY date;',
+        'SELECT * FROM schedule_exception WHERE date >= ? AND date <= ? AND deletedAt IS NULL ORDER BY date;',
         fromDate,
         toDate
       );
@@ -503,7 +642,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const loadAllExceptions = useCallback(async () => {
     const rows = await db.getAllAsync<ExceptionRow>(
-      'SELECT * FROM schedule_exception ORDER BY date;'
+      'SELECT * FROM schedule_exception WHERE deletedAt IS NULL ORDER BY date;'
     );
     return rows.map(mapException);
   }, [db]);
@@ -512,14 +651,19 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const scheduleMakeup = useCallback(
     async (makeupId: string, makeUpDate: string) => {
       try {
-        await db.runAsync('UPDATE makeup SET makeUpDate = ? WHERE id = ?;', makeUpDate, makeupId);
-        await refreshData();
+        await db.runAsync(
+          'UPDATE makeup SET makeUpDate = ?, updatedAt = ? WHERE id = ?;',
+          makeUpDate,
+          stamp(),
+          makeupId
+        );
+        await commit();
       } catch (error) {
         logger.error('Error scheduling makeup:', error);
         throw error;
       }
     },
-    [db, refreshData]
+    [db, commit]
   );
 
   /**
@@ -531,45 +675,54 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const date = getCurrentDate();
 
       try {
-        const target = await db.getFirstAsync<MakeUp>('SELECT * FROM makeup WHERE id = ?;', makeupId);
+        const target = await db.getFirstAsync<MakeUp>('SELECT * FROM makeup WHERE id = ? AND deletedAt IS NULL;', makeupId);
         if (!target || target.completed) return;
 
+        const now = stamp();
         await db.withTransactionAsync(async () => {
           await db.runAsync(
-            'UPDATE makeup SET completed = 1, makeUpDate = COALESCE(makeUpDate, ?) WHERE id = ?;',
+            'UPDATE makeup SET completed = 1, makeUpDate = COALESCE(makeUpDate, ?), updatedAt = ? WHERE id = ?;',
             date,
+            now,
             makeupId
           );
           await db.runAsync(
-            'INSERT INTO attendance (id, studentId, date, time, status, type) VALUES (?, ?, ?, ?, ?, ?);',
+            'INSERT INTO attendance (id, studentId, date, time, status, type, updatedAt) VALUES (?, ?, ?, ?, ?, ?, ?);',
             createId(),
             target.studentId,
             date,
             getCurrentTime(),
             'scheduled',
-            'makeUp'
+            'makeUp',
+            now
           );
         });
-        await refreshData();
+        await commit();
       } catch (error) {
         logger.error('Error completing makeup:', error);
         throw error;
       }
     },
-    [db, refreshData]
+    [db, commit]
   );
 
   const deleteMakeup = useCallback(
     async (makeupId: string) => {
       try {
-        await db.runAsync('DELETE FROM makeup WHERE id = ?;', makeupId);
-        await refreshData();
+        const now = stamp();
+        await db.runAsync(
+          'UPDATE makeup SET deletedAt = ?, updatedAt = ? WHERE id = ?;',
+          now,
+          now,
+          makeupId
+        );
+        await commit();
       } catch (error) {
         logger.error('Error deleting makeup:', error);
         throw error;
       }
     },
-    [db, refreshData]
+    [db, commit]
   );
 
   /*
@@ -578,12 +731,16 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
    * 이유가 사라진다.
    */
   const loadAllAttendance = useCallback(
-    () => db.getAllAsync<Attendance>('SELECT * FROM attendance ORDER BY date, time;'),
+    () => db.getAllAsync<Attendance>(
+      'SELECT * FROM attendance WHERE deletedAt IS NULL ORDER BY date, time;'
+    ),
     [db]
   );
 
   const loadAllMakeups = useCallback(
-    () => db.getAllAsync<MakeUp>('SELECT * FROM makeup ORDER BY originalDate;'),
+    () => db.getAllAsync<MakeUp>(
+      'SELECT * FROM makeup WHERE deletedAt IS NULL ORDER BY originalDate;'
+    ),
     [db]
   );
 
@@ -594,7 +751,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const loadAttendanceRange = useCallback(
     (fromDate: string, toDate: string) =>
       db.getAllAsync<Attendance>(
-        'SELECT * FROM attendance WHERE date >= ? AND date <= ? ORDER BY date DESC, time DESC;',
+        'SELECT * FROM attendance WHERE date >= ? AND date <= ? AND deletedAt IS NULL ORDER BY date DESC, time DESC;',
         fromDate,
         toDate
       ),
@@ -615,7 +772,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         await db.withTransactionAsync(async () => {
           for (const student of incoming) {
             const existing = await db.getFirstAsync<{ id: string }>(
-              'SELECT id FROM students WHERE name = ? LIMIT 1;',
+              'SELECT id FROM students WHERE name = ? AND deletedAt IS NULL LIMIT 1;',
               student.name
             );
             if (existing) {
@@ -623,7 +780,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
               continue;
             }
             await db.runAsync(
-              'INSERT INTO students (id, name, grade, scheduledDays, scheduledStartTime, scheduledEndTime, dayTimes, fee) VALUES (?, ?, ?, ?, ?, ?, ?, ?);',
+              'INSERT INTO students (id, name, grade, scheduledDays, scheduledStartTime, scheduledEndTime, dayTimes, fee, updatedAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);',
               student.id,
               student.name,
               student.grade,
@@ -631,12 +788,13 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
               student.scheduledStartTime,
               student.scheduledEndTime,
               serializeDayTimes(student),
-              student.fee ?? null
+              student.fee ?? null,
+              stamp()
             );
             added += 1;
           }
         });
-        await refreshData();
+        await commit();
       } catch (error) {
         logger.error('Error importing students:', error);
         throw error;
@@ -644,7 +802,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       return { added, skipped };
     },
-    [db, refreshData]
+    [db, commit]
   );
 
   // 값 객체를 매 렌더 새로 만들면 모든 소비 화면이 함께 리렌더된다.
@@ -675,6 +833,10 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       loadAttendanceRange,
       importStudents,
       refreshData,
+      lastSyncAt,
+      syncUnavailable,
+      syncing,
+      syncNow,
     }),
     [
       students,
@@ -702,6 +864,10 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       loadAttendanceRange,
       importStudents,
       refreshData,
+      lastSyncAt,
+      syncUnavailable,
+      syncing,
+      syncNow,
     ]
   );
 

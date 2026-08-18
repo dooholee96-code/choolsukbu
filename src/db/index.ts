@@ -10,7 +10,7 @@ import * as SQLite from 'expo-sqlite';
 let db: SQLite.SQLiteDatabase | null = null;
 
 /** 스키마 버전. 컬럼을 바꿀 때 올리고 runMigrations에 분기를 추가한다. */
-const DATABASE_VERSION = 3;
+const DATABASE_VERSION = 4;
 
 export const initDB = async () => {
   if (!db) {
@@ -31,7 +31,9 @@ export const initDB = async () => {
       scheduledStartTime TEXT,
       scheduledEndTime TEXT,
       dayTimes TEXT,
-      fee INTEGER
+      fee INTEGER,
+      updatedAt TEXT,
+      deletedAt TEXT
     );
     CREATE TABLE IF NOT EXISTS attendance (
       id TEXT PRIMARY KEY,
@@ -40,6 +42,8 @@ export const initDB = async () => {
       time TEXT NOT NULL,
       status TEXT NOT NULL,
       type TEXT NOT NULL,
+      updatedAt TEXT,
+      deletedAt TEXT,
       FOREIGN KEY (studentId) REFERENCES students (id)
     );
     CREATE TABLE IF NOT EXISTS makeup (
@@ -48,6 +52,8 @@ export const initDB = async () => {
       originalDate TEXT NOT NULL,
       makeUpDate TEXT,
       completed INTEGER DEFAULT 0,
+      updatedAt TEXT,
+      deletedAt TEXT,
       FOREIGN KEY (studentId) REFERENCES students (id)
     );
     CREATE TABLE IF NOT EXISTS schedule_exception (
@@ -58,7 +64,14 @@ export const initDB = async () => {
       startTime TEXT,
       endTime TEXT,
       note TEXT,
+      updatedAt TEXT,
+      deletedAt TEXT,
       FOREIGN KEY (studentId) REFERENCES students (id)
+    );
+    CREATE TABLE IF NOT EXISTS device (
+      id TEXT PRIMARY KEY,
+      deviceId TEXT NOT NULL,
+      lastSyncAt TEXT
     );
     CREATE INDEX IF NOT EXISTS idx_attendance_date ON attendance (date);
     CREATE INDEX IF NOT EXISTS idx_attendance_student_date ON attendance (studentId, date);
@@ -108,6 +121,36 @@ const runMigrations = async () => {
     if (!columns.some((column) => column.name === 'dayTimes')) {
       await database.execAsync('ALTER TABLE students ADD COLUMN dayTimes TEXT;');
     }
+  }
+
+  // v4: 동기화용 메타. updatedAt은 두 기기 기록이 겹칠 때 최신을 가리는 근거이고,
+  // deletedAt은 삭제가 상대 기기 파일에서 되살아나지 않게 하는 묘비다.
+  // 이미 있는 행은 지금 시각으로 채운다 — 값이 비어 있으면 병합에서 항상 진다.
+  if (currentVersion < 4) {
+    const now = new Date().toISOString();
+
+    for (const table of ['students', 'attendance', 'makeup', 'schedule_exception']) {
+      const columns = await database.getAllAsync<{ name: string }>(
+        `PRAGMA table_info(${table});`
+      );
+      for (const column of ['updatedAt', 'deletedAt']) {
+        if (!columns.some((existing) => existing.name === column)) {
+          await database.execAsync(`ALTER TABLE ${table} ADD COLUMN ${column} TEXT;`);
+        }
+      }
+      await database.runAsync(
+        `UPDATE ${table} SET updatedAt = ? WHERE updatedAt IS NULL;`,
+        now
+      );
+    }
+
+    await database.execAsync(`
+      CREATE TABLE IF NOT EXISTS device (
+        id TEXT PRIMARY KEY,
+        deviceId TEXT NOT NULL,
+        lastSyncAt TEXT
+      );
+    `);
   }
 
   await database.execAsync(`PRAGMA user_version = ${DATABASE_VERSION};`);

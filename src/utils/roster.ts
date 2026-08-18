@@ -1,5 +1,6 @@
 import { ScheduleException, Student } from '../types';
 import { getDayOfWeek } from './date';
+import { timesForDay } from './schedule';
 
 /**
  * 그 날 실제로 와야 하는 원생 한 명.
@@ -56,10 +57,14 @@ export const buildRoster = (
 
     if (!isRegular && !extra) continue;
 
+    // 요일마다 시간이 다를 수 있으므로 그 요일의 시간을 쓴다.
+    // 예외에 시간이 붙어 있으면 그쪽이 이긴다.
+    const regular = timesForDay(student, dayOfWeek);
+
     entries.push({
       student,
-      startTime: extra?.startTime ?? student.scheduledStartTime,
-      endTime: extra?.endTime ?? student.scheduledEndTime,
+      startTime: extra?.startTime ?? regular.start,
+      endTime: extra?.endTime ?? regular.end,
       // 정규 수업이 있는 날에 예외가 겹치면 시간만 바뀐 것이므로 특강으로 보지 않는다.
       isExtra: Boolean(extra) && !isRegular,
     });

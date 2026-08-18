@@ -10,7 +10,7 @@ import * as SQLite from 'expo-sqlite';
 let db: SQLite.SQLiteDatabase | null = null;
 
 /** 스키마 버전. 컬럼을 바꿀 때 올리고 runMigrations에 분기를 추가한다. */
-const DATABASE_VERSION = 2;
+const DATABASE_VERSION = 3;
 
 export const initDB = async () => {
   if (!db) {
@@ -30,6 +30,7 @@ export const initDB = async () => {
       scheduledDays TEXT,
       scheduledStartTime TEXT,
       scheduledEndTime TEXT,
+      dayTimes TEXT,
       fee INTEGER
     );
     CREATE TABLE IF NOT EXISTS attendance (
@@ -95,6 +96,18 @@ const runMigrations = async () => {
       );
       CREATE INDEX IF NOT EXISTS idx_exception_date ON schedule_exception (date);
     `);
+  }
+
+  // v3: 요일별 수업 시간. 위의 CREATE TABLE이 새 설치를 처리하므로 여기서는
+  // 이미 students 테이블이 있는 기기에만 컬럼을 붙인다. NULL이면 모든 요일이
+  // scheduledStartTime/EndTime을 쓰므로 기존 데이터는 그대로 동작한다.
+  if (currentVersion < 3) {
+    const columns = await database.getAllAsync<{ name: string }>(
+      'PRAGMA table_info(students);'
+    );
+    if (!columns.some((column) => column.name === 'dayTimes')) {
+      await database.execAsync('ALTER TABLE students ADD COLUMN dayTimes TEXT;');
+    }
   }
 
   await database.execAsync(`PRAGMA user_version = ${DATABASE_VERSION};`);

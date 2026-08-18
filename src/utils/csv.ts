@@ -1,6 +1,7 @@
 import Papa from 'papaparse';
 import { Student, DayOfWeek } from '../types';
 import { createId } from './id';
+import { parseDayTimes } from './schedule';
 
 const VALID_DAYS: DayOfWeek[] = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
@@ -15,8 +16,11 @@ const isTimeString = (value: unknown): value is string =>
 
 /**
  * 원생 명단 CSV를 파싱한다.
- * 기대 헤더: name, grade, scheduledDays, scheduledStartTime, scheduledEndTime, fee(선택)
+ * 기대 헤더: name, grade, scheduledDays, scheduledStartTime, scheduledEndTime,
+ *            dayTimes(선택), fee(선택)
  * scheduledDays는 'Mon,Wed,Fri' 처럼 쉼표로 잇는다.
+ * dayTimes는 'Mon=14:00-16:00|Wed=17:00-19:00' 형태로, 기본 시간과 다른 요일만 적는다.
+ * 이 열이 없는 옛 파일도 그대로 읽힌다 — 모든 요일이 기본 시간이 된다.
  *
  * 이전 구현은 (1) 헤더가 하나라도 빠지면 row.scheduledDays.split에서 그대로 죽고,
  * (2) papaparse가 문자열 입력에서는 error 콜백을 부르지 않고 results.errors에
@@ -66,6 +70,7 @@ export const parseCSV = (csvData: string): Promise<ParseCSVResult> => {
             scheduledDays,
             scheduledStartTime: start,
             scheduledEndTime: end,
+            dayTimes: parseDayTimes(row.dayTimes),
             fee: parsedFee > 0 ? parsedFee : undefined,
           });
         });

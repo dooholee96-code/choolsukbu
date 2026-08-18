@@ -3,6 +3,7 @@ import styled, { useTheme } from 'styled-components/native';
 import { Student, Attendance } from '../types';
 import Button from './common/Button';
 import { arrivalOffsetLabel, formatTimeLabel } from '../utils/date';
+import { scheduleLines } from '../utils/schedule';
 import { Ionicons } from '@expo/vector-icons';
 
 type Status = Attendance['status'];
@@ -233,8 +234,13 @@ const StudentCard: React.FC<StudentCardProps> = ({
     [onEditTime, student, attendance]
   );
 
+  // 부모가 그 날 시간을 넘겼으면 그것만 보여준다 (오늘 화면).
+  // 안 넘겼으면 원생 목록이므로 요일별 시간을 모두 늘어놓는다.
+  const lines = startTime && endTime
+    ? [`${formatTimeLabel(startTime)} – ${formatTimeLabel(endTime)}`]
+    : scheduleLines(student);
+
   const effectiveStart = startTime ?? student.scheduledStartTime;
-  const effectiveEnd = endTime ?? student.scheduledEndTime;
 
   // 결석에는 도착 시각이 없으므로 지각을 따질 것도 없다.
   const offset =
@@ -256,9 +262,11 @@ const StudentCard: React.FC<StudentCardProps> = ({
         <TextContainer>
           <NameText numberOfLines={1}>{student.name}</NameText>
           <SubText numberOfLines={1}>{student.grade}</SubText>
-          <SubText numberOfLines={1}>
-            {formatTimeLabel(effectiveStart)} – {formatTimeLabel(effectiveEnd)}
-          </SubText>
+          {lines.map((line) => (
+            <SubText key={line} numberOfLines={1}>
+              {line}
+            </SubText>
+          ))}
           {isExtra && (
             <ExtraTag>
               <ExtraTagText>추가 일정</ExtraTagText>

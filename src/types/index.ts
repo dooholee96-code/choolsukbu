@@ -1,12 +1,24 @@
 export type DayOfWeek = 'Mon' | 'Tue' | 'Wed' | 'Thu' | 'Fri' | 'Sat' | 'Sun';
 
+export interface DaySchedule {
+  start: string; // HH:mm format
+  end: string; // HH:mm format
+}
+
 export interface Student {
   id: string;
   name: string;
   grade: string;
   scheduledDays: DayOfWeek[];
+  /** 기본 수업 시간. dayTimes에 없는 요일은 이 값을 쓴다. */
   scheduledStartTime: string; // HH:mm format
   scheduledEndTime: string; // HH:mm format
+  /**
+   * 요일마다 수업 시간이 다를 때만 채운다. '월 2시, 수 5시' 같은 반이 흔해서
+   * 시간을 하나로만 두면 둘 중 하나는 항상 틀린 값이 된다.
+   * 비어 있으면 모든 요일이 기본 시간이다.
+   */
+  dayTimes?: Partial<Record<DayOfWeek, DaySchedule>>;
   fee?: number; // Optional, for future use
 }
 

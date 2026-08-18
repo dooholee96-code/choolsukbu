@@ -5,6 +5,7 @@ import * as Sharing from 'expo-sharing';
 import * as DocumentPicker from 'expo-document-picker';
 import { Attendance, MakeUp, ScheduleException, Student } from '../types';
 import { logger } from './logger';
+import { serializeDayTimes } from './schedule';
 
 /**
  * 기기 밖으로 데이터를 꺼내는 유일한 경로.
@@ -25,9 +26,20 @@ export const buildStudentsCsv = (students: Student[]): string =>
       scheduledDays: s.scheduledDays.join(','),
       scheduledStartTime: s.scheduledStartTime,
       scheduledEndTime: s.scheduledEndTime,
+      dayTimes: serializeDayTimes(s) ?? '',
       fee: s.fee ?? '',
     })),
-    { columns: ['name', 'grade', 'scheduledDays', 'scheduledStartTime', 'scheduledEndTime', 'fee'] }
+    {
+      columns: [
+        'name',
+        'grade',
+        'scheduledDays',
+        'scheduledStartTime',
+        'scheduledEndTime',
+        'dayTimes',
+        'fee',
+      ],
+    }
   );
 
 const STATUS_LABEL: Record<Attendance['status'], string> = {

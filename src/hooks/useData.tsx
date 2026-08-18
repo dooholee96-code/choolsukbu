@@ -13,6 +13,7 @@ import { getDB } from '../db';
 import { createId } from '../utils/id';
 import { getCurrentDate, getCurrentTime } from '../utils/date';
 import { logger } from '../utils/logger';
+import { parseDayTimes, serializeDayTimes } from '../utils/schedule';
 
 interface DataContextType {
   students: Student[];
@@ -117,13 +118,17 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     loadedDate.current = today;
 
     try {
-      const allStudents = await db.getAllAsync<Omit<Student, 'scheduledDays'> & {
-        scheduledDays: string;
-      }>('SELECT * FROM students ORDER BY name;');
+      const allStudents = await db.getAllAsync<
+        Omit<Student, 'scheduledDays' | 'dayTimes'> & {
+          scheduledDays: string;
+          dayTimes: string | null;
+        }
+      >('SELECT * FROM students ORDER BY name;');
       setStudents(
         allStudents.map((row) => ({
           ...row,
           scheduledDays: parseScheduledDays(row.scheduledDays),
+          dayTimes: parseDayTimes(row.dayTimes),
         }))
       );
 
@@ -191,13 +196,14 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     async (student: Student) => {
       try {
         await db.runAsync(
-          'INSERT INTO students (id, name, grade, scheduledDays, scheduledStartTime, scheduledEndTime, fee) VALUES (?, ?, ?, ?, ?, ?, ?);',
+          'INSERT INTO students (id, name, grade, scheduledDays, scheduledStartTime, scheduledEndTime, dayTimes, fee) VALUES (?, ?, ?, ?, ?, ?, ?, ?);',
           student.id,
           student.name,
           student.grade,
           JSON.stringify(student.scheduledDays),
           student.scheduledStartTime,
           student.scheduledEndTime,
+          serializeDayTimes(student),
           student.fee ?? null
         );
         await refreshData();
@@ -213,12 +219,13 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     async (student: Student) => {
       try {
         await db.runAsync(
-          'UPDATE students SET name = ?, grade = ?, scheduledDays = ?, scheduledStartTime = ?, scheduledEndTime = ?, fee = ? WHERE id = ?;',
+          'UPDATE students SET name = ?, grade = ?, scheduledDays = ?, scheduledStartTime = ?, scheduledEndTime = ?, dayTimes = ?, fee = ? WHERE id = ?;',
           student.name,
           student.grade,
           JSON.stringify(student.scheduledDays),
           student.scheduledStartTime,
           student.scheduledEndTime,
+          serializeDayTimes(student),
           student.fee ?? null,
           student.id
         );
@@ -616,13 +623,14 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
               continue;
             }
             await db.runAsync(
-              'INSERT INTO students (id, name, grade, scheduledDays, scheduledStartTime, scheduledEndTime, fee) VALUES (?, ?, ?, ?, ?, ?, ?);',
+              'INSERT INTO students (id, name, grade, scheduledDays, scheduledStartTime, scheduledEndTime, dayTimes, fee) VALUES (?, ?, ?, ?, ?, ?, ?, ?);',
               student.id,
               student.name,
               student.grade,
               JSON.stringify(student.scheduledDays),
               student.scheduledStartTime,
               student.scheduledEndTime,
+              serializeDayTimes(student),
               student.fee ?? null
             );
             added += 1;

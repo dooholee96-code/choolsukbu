@@ -11,7 +11,7 @@ import Button from '../components/common/Button';
 import { formatDateLabel, formatTimeLabel } from '../utils/date';
 import { buildRoster, closureNote, isClosedOn } from '../utils/roster';
 import { logger } from '../utils/logger';
-import { notify } from '../utils/dialog';
+import { confirm, notify } from '../utils/dialog';
 import { ScheduleException, Student } from '../types';
 
 const Root = styled.View`
@@ -168,8 +168,14 @@ const addDays = (date: Date, amount: number) => {
 const ScheduleModal: React.FC = () => {
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
-  const { students, loadExceptionsForDate, setClosure, addStudentException, removeException } =
-    useData();
+  const {
+    students,
+    loadExceptionsForDate,
+    loadAttendanceRange,
+    setClosure,
+    addStudentException,
+    removeException,
+  } = useData();
 
   const [date, setDate] = useState(() => new Date());
   const [exceptions, setExceptions] = useState<ScheduleException[]>([]);
@@ -237,6 +243,25 @@ const ScheduleModal: React.FC = () => {
     },
     [busy, reload]
   );
+
+  /**
+   * 휴강으로 지정하면 그 날 명단이 비어 홈 화면에서 사라진다. 이미 등원을 찍어
+   * 둔 날이라면 그 기록에 손댈 방법이 없어지므로 (이력에는 남는다) 먼저 알린다.
+   */
+  const handleClose = useCallback(async () => {
+    const existing = await loadAttendanceRange(dateKey, dateKey);
+    if (existing.length === 0) {
+      await run(() => setClosure(dateKey, true));
+      return;
+    }
+
+    confirm({
+      title: '이미 기록이 있습니다',
+      message: `이 날 출결 기록 ${existing.length}건이 이미 있습니다.\n휴강으로 지정하면 [오늘] 화면에서 보이지 않게 됩니다.\n기록 자체는 이력에 남습니다.`,
+      confirmLabel: '휴강으로 지정',
+      onConfirm: () => run(() => setClosure(dateKey, true)),
+    });
+  }, [dateKey, loadAttendanceRange, run, setClosure]);
 
   const handleDateChange = useCallback((event: DateTimePickerEvent, selected?: Date) => {
     if (Platform.OS !== 'ios') setShowDatePicker(false);
@@ -317,7 +342,7 @@ const ScheduleModal: React.FC = () => {
                 title="이 날 휴강으로 지정"
                 variant="secondary"
                 disabled={busy}
-                onPress={() => run(() => setClosure(dateKey, true))}
+                onPress={handleClose}
               />
             </>
           )}

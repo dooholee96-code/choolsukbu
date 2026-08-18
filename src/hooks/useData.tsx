@@ -1,4 +1,13 @@
-import React, { createContext, useState, useEffect, useContext, useCallback, useMemo } from 'react';
+import React, {
+  createContext,
+  useState,
+  useEffect,
+  useContext,
+  useCallback,
+  useMemo,
+  useRef,
+} from 'react';
+import { AppState } from 'react-native';
 import { Student, Attendance, MakeUp, DayOfWeek, ScheduleException, ExceptionKind } from '../types';
 import { getDB } from '../db';
 import { createId } from '../utils/id';
@@ -100,7 +109,13 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [todayExceptions, setTodayExceptions] = useState<ScheduleException[]>([]);
   const db = getDB();
 
+  /** 지금 화면에 올라와 있는 데이터가 어느 날짜의 것인지 */
+  const loadedDate = useRef(getCurrentDate());
+
   const refreshData = useCallback(async () => {
+    const today = getCurrentDate();
+    loadedDate.current = today;
+
     try {
       const allStudents = await db.getAllAsync<Omit<Student, 'scheduledDays'> & {
         scheduledDays: string;
@@ -120,7 +135,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       //  별도 쿼리로 가져오면 된다 — DB에는 그대로 남아 있다.)
       const todayRecords = await db.getAllAsync<Attendance>(
         'SELECT * FROM attendance WHERE date = ? AND type = ?;',
-        getCurrentDate(),
+        today,
         'checkIn'
       );
       setTodayAttendances(todayRecords);
@@ -133,7 +148,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       // 출결과 같은 이유로 오늘 것만 올린다. 홈 화면이 쓰는 범위가 딱 이만큼이다.
       const todayRules = await db.getAllAsync<ExceptionRow>(
         'SELECT * FROM schedule_exception WHERE date = ?;',
-        getCurrentDate()
+        today
       );
       setTodayExceptions(todayRules.map(mapException));
     } catch (error) {
@@ -143,6 +158,33 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   useEffect(() => {
     refreshData();
+  }, [refreshData]);
+
+  /**
+   * 날짜가 바뀌면 다시 읽는다.
+   *
+   * '오늘'은 refreshData가 도는 순간에만 정해지는데 refreshData는 쓰기가
+   * 일어날 때만 불린다. 학원 문을 닫고 아이패드를 그대로 두면 다음 날 아침에
+   * 어제 명단과 어제 등원 기록이 그대로 떠 있고, 오늘 와야 하는 학생은
+   * 한 명도 보이지 않는다.
+   *
+   * 포그라운드로 돌아올 때 한 번 보고, 화면을 계속 켜 둔 경우를 위해
+   * 1분마다 날짜 문자열만 비교한다. 바뀌지 않았으면 아무 일도 하지 않는다.
+   */
+  useEffect(() => {
+    const refreshIfDateChanged = () => {
+      if (getCurrentDate() !== loadedDate.current) refreshData();
+    };
+
+    const timer = setInterval(refreshIfDateChanged, 60_000);
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active') refreshIfDateChanged();
+    });
+
+    return () => {
+      clearInterval(timer);
+      subscription.remove();
+    };
   }, [refreshData]);
 
   const addStudent = useCallback(

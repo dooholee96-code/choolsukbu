@@ -70,8 +70,18 @@ const Stack = styled.View`
 const BackupModal: React.FC = () => {
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
-  const { students, loadAllAttendance, loadAllMakeups, loadAllExceptions, importStudents } =
-    useData();
+  const {
+    students,
+    loadAllAttendance,
+    loadAllMakeups,
+    loadAllExceptions,
+    importStudents,
+    lastSyncAt,
+    syncUnavailable,
+    syncError,
+    syncing,
+    syncNow,
+  } = useData();
   const [busy, setBusy] = useState(false);
 
   const run = useCallback(async (task: () => Promise<void>) => {
@@ -181,6 +191,29 @@ const BackupModal: React.FC = () => {
             앱을 지우거나 기기를 바꾸면 기록도 함께 사라집니다.
           </Lead>
 
+          <SectionTitle>기기 간 동기화</SectionTitle>
+          {syncUnavailable ? (
+            <Note>{syncUnavailable}</Note>
+          ) : (
+            <>
+              <Note>
+                {lastSyncAt
+                  ? `마지막으로 맞춘 시각 ${new Date(lastSyncAt).toLocaleString('ko-KR')}`
+                  : '아직 한 번도 맞추지 않았습니다.'}
+                {'\n'}같은 iCloud 계정을 쓰는 기기끼리 자동으로 맞춰집니다.
+                {syncError ? `\n\n마지막 시도 실패: ${syncError}` : ''}
+              </Note>
+              <Button
+                title={syncing ? '맞추는 중…' : '지금 맞추기'}
+                variant="secondary"
+                onPress={() => {
+                  syncNow().catch(() => {});
+                }}
+                disabled={syncing || busy}
+              />
+            </>
+          )}
+
           <SectionTitle>내보내기</SectionTitle>
           <Note>
             CSV 파일로 저장한 뒤 공유 시트에서 보관할 곳을 고릅니다. 엑셀에서 바로 열립니다.
@@ -195,7 +228,7 @@ const BackupModal: React.FC = () => {
           <SectionTitle>가져오기</SectionTitle>
           <Note>
             원생 명단만 가져옵니다. 내보내기로 만든 파일과 같은 형식이어야 합니다
-            {'\n'}(name, grade, scheduledDays, scheduledStartTime, scheduledEndTime, fee).
+            {'\n'}(name, grade, scheduledDays, scheduledStartTime, scheduledEndTime, dayTimes, fee).
             {'\n'}출결 기록은 덮어쓸 위험이 커서 가져오기를 지원하지 않습니다.
           </Note>
           <Button title="원생 명단 가져오기" variant="secondary" onPress={importRoster} disabled={busy} />

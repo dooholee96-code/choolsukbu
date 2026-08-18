@@ -1,11 +1,25 @@
 export type DayOfWeek = 'Mon' | 'Tue' | 'Wed' | 'Thu' | 'Fri' | 'Sat' | 'Sun';
 
+/**
+ * 동기화에 필요한 부가 정보. 화면은 쓰지 않는다.
+ *
+ * updatedAt은 같은 기록이 두 기기에 있을 때 어느 쪽이 최신인지 가리는 유일한
+ * 근거다. deletedAt은 지웠다는 사실 자체를 남긴다 — 행을 그냥 없애면 상대 기기
+ * 파일에 아직 남아 있어 다음 병합에서 되살아난다.
+ */
+export interface SyncMeta {
+  /** ISO 8601 (UTC). 기기 시계 기준이다. */
+  updatedAt?: string;
+  /** 값이 있으면 삭제된 기록. 화면에서는 숨기고 병합에만 쓴다. */
+  deletedAt?: string | null;
+}
+
 export interface DaySchedule {
   start: string; // HH:mm format
   end: string; // HH:mm format
 }
 
-export interface Student {
+export interface Student extends SyncMeta {
   id: string;
   name: string;
   grade: string;
@@ -22,7 +36,7 @@ export interface Student {
   fee?: number; // Optional, for future use
 }
 
-export interface Attendance {
+export interface Attendance extends SyncMeta {
   id: string;
   studentId: string;
   date: string; // YYYY-MM-DD format
@@ -31,7 +45,7 @@ export interface Attendance {
   type: 'checkIn' | 'makeUp';
 }
 
-export interface MakeUp {
+export interface MakeUp extends SyncMeta {
   id: string;
   studentId: string;
   originalDate: string; // YYYY-MM-DD format
@@ -50,7 +64,7 @@ export interface MakeUp {
  */
 export type ExceptionKind = 'closure' | 'extra' | 'skip';
 
-export interface ScheduleException {
+export interface ScheduleException extends SyncMeta {
   id: string;
   date: string; // YYYY-MM-DD format
   kind: ExceptionKind;

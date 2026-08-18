@@ -85,7 +85,8 @@ npx expo run:ios --device --configuration Release
 App.tsx                     루트. DB 초기화 게이트 + 네비게이터
 src/
   screens/                  Home(오늘) · Students(원생) · Makeup(보충) · History(이력)
-                            StudentFormModal · BackupModal · ScheduleModal
+                            StudentFormModal · SettingsModal · ScheduleModal
+                            LockScreen
   components/
     StudentCard.tsx · MakeupCard.tsx · ErrorBoundary.tsx
     common/                 Screen(반응형 셸) · GridRow(그리드 한 행) · Button · Chip
@@ -93,6 +94,7 @@ src/
     useData.tsx             화면이 보는 상태를 모으고 쓰기 뒤를 마무리한다
     useSync.ts              동기화를 언제 부를지 (무엇을 합치는지는 sync/)
     useResponsive.ts        창 폭 기준 사이즈 클래스
+  security/lock.ts          PIN·생체 인증 (키체인)
   data/                     테이블별 SQL. 화면도 동기화도 여기만 거친다
     students · attendance · makeup · exceptions · stamp
   db/index.ts               스키마 · 마이그레이션 앵커
@@ -275,6 +277,39 @@ CSV에도 `dayTimes` 열이 붙는다. 이 열이 없는 옛 파일도 그대로
 > 삭제는 되돌릴 수 없다. 퇴원생의 기록을 남겨야 한다면 삭제 대신 보관 상태를
 > 두는 편이 맞지만, 아직 그런 개념은 없다.
 
+## 앱 잠금
+
+수업용으로도 쓰는 아이패드라 아이들이 만질 수 있다. 원생 이름·학년·수강료가 한
+화면에 있으므로 화면 앞을 막는다.
+
+**DB를 암호화하지는 않는다.** 막으려는 것이 침입자가 아니라 호기심이고, 암호화는
+키를 잃는 순간 기록도 함께 잃는 위험을 새로 만든다 — 이 앱에는 서버가 없다.
+
+PIN은 소금과 함께 SHA-256으로 해싱해 키체인(`expo-secure-store`)에 둔다. 평문은
+어디에도 남지 않고, 소금이 기기마다 달라 같은 PIN이라도 저장값이 다르다.
+소금 길이를 앞에 붙이는 이유는 `salt:pin` 만으로는 경계가 모호해서다 — 소금이
+`x:123`이고 PIN이 `4`인 경우와 소금이 `x`이고 PIN이 `123:4`인 경우가 같은 값이 된다.
+
+Face ID·Touch ID가 먼저 뜨고 PIN은 그것이 안 될 때를 위한 것이다.
+**기기 암호 대체를 막지 않는다** — 얼굴 인식이 실패하고 PIN까지 잊으면 기록이
+그것으로 끝이기 때문이다.
+
+### 언제 잠기는가
+
+| | |
+|---|---|
+| 앱을 새로 열 때 | 항상 |
+| 백그라운드에 30초 넘게 있다 돌아올 때 | 자동 |
+| [오늘] 화면의 자물쇠 | 직접 |
+
+자물쇠 버튼이 필요한 이유: **앱을 켠 채로 아이패드를 건네주면 자동 잠금이 걸리지
+않는다.** 실제로 그 경우가 가장 흔하다.
+
+30초 유예는 설정 앱을 잠깐 다녀오는 것만으로 매번 다시 풀어야 하는 일을 막는다.
+
+키체인이 없는 플랫폼(웹)에서는 켤 수 있는 것처럼 보여 놓고 조용히 실패하는 대신
+쓸 수 없다고 말한다.
+
 ## 백업
 
 [원생] 탭 헤더의 저장 아이콘에서 연다. 기기 밖으로 데이터를 꺼내는 유일한 경로다.
@@ -405,7 +440,6 @@ App Store 등록 시 이 URL이 필요하다.
 
 ## 아직 없는 기능
 
-- 앱 잠금 — 미성년자 이름·학년·수강료를 다루는데 기기를 든 사람 누구나 열람할 수 있다.
 - 퇴원 보관 — 삭제만 있고 기록을 남긴 채 비활성화하는 상태가 없다.
 - 동명이인 — CSV 가져오기가 이름으로 중복을 판정하므로 같은 이름 두 명은 한 명으로
   합쳐진다. 직접 등록하는 것은 문제없다.

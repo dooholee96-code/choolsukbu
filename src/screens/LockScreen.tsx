@@ -1,0 +1,187 @@
+import React, { useCallback, useEffect, useState } from 'react';
+import styled from 'styled-components/native';
+import { Ionicons } from '@expo/vector-icons';
+import { authenticateWithBiometrics, hasBiometrics, verifyPin } from '../security/lock';
+import ForestBackground from '../components/common/ForestBackground';
+
+export const PIN_LENGTH = 4;
+
+const Root = styled.View`
+  flex: 1;
+  background-color: ${({ theme }) => theme.colors.background};
+  align-items: center;
+  justify-content: center;
+  padding: ${({ theme }) => theme.spacing.large}px;
+`;
+
+const Title = styled.Text`
+  font-family: ${({ theme }) => theme.fonts.bold};
+  font-size: 22px;
+  color: ${({ theme }) => theme.colors.textPrimary};
+  margin-top: ${({ theme }) => theme.spacing.medium}px;
+`;
+
+const Hint = styled.Text<{ $error: boolean }>`
+  font-family: ${({ theme }) => theme.fonts.regular};
+  font-size: 14px;
+  color: ${({ theme, $error }) =>
+    $error ? theme.colors.dangerStrong : theme.colors.textSecondary};
+  margin-top: 8px;
+  height: 20px;
+`;
+
+const Dots = styled.View`
+  flex-direction: row;
+  gap: 16px;
+  margin: ${({ theme }) => theme.spacing.large}px 0;
+`;
+
+const Dot = styled.View<{ $filled: boolean }>`
+  width: 14px;
+  height: 14px;
+  border-radius: 7px;
+  border-width: 1.5px;
+  border-color: ${({ theme }) => theme.colors.primaryStrong};
+  background-color: ${({ theme, $filled }) =>
+    $filled ? theme.colors.primaryStrong : 'transparent'};
+`;
+
+const Pad = styled.View`
+  flex-direction: row;
+  flex-wrap: wrap;
+  width: 260px;
+  justify-content: center;
+  gap: 12px;
+`;
+
+const Key = styled.TouchableOpacity`
+  width: 74px;
+  height: 62px;
+  border-radius: ${({ theme }) => theme.borderRadius.medium}px;
+  background-color: ${({ theme }) => theme.colors.cardBackground};
+  border-width: 1px;
+  border-color: ${({ theme }) => theme.colors.border};
+  align-items: center;
+  justify-content: center;
+`;
+
+const KeyText = styled.Text`
+  font-family: ${({ theme }) => theme.fonts.bold};
+  font-size: 22px;
+  color: ${({ theme }) => theme.colors.textPrimary};
+`;
+
+const BiometricButton = styled.TouchableOpacity`
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  margin-top: ${({ theme }) => theme.spacing.large}px;
+  padding: 12px 20px;
+`;
+
+const BiometricLabel = styled.Text`
+  font-family: ${({ theme }) => theme.fonts.bold};
+  font-size: 15px;
+  color: ${({ theme }) => theme.colors.primaryStrong};
+`;
+
+interface Props {
+  onUnlock: () => void;
+}
+
+const LockScreen: React.FC<Props> = ({ onUnlock }) => {
+  const [pin, setPin] = useState('');
+  const [error, setError] = useState(false);
+  const [biometricsReady, setBiometricsReady] = useState(false);
+
+  const tryBiometrics = useCallback(async () => {
+    if (await authenticateWithBiometrics()) onUnlock();
+  }, [onUnlock]);
+
+  // 얼굴 인식이 되는 기기면 열자마자 한 번 물어본다. 대부분 여기서 끝난다.
+  useEffect(() => {
+    (async () => {
+      const available = await hasBiometrics();
+      setBiometricsReady(available);
+      if (available) await tryBiometrics();
+    })();
+  }, [tryBiometrics]);
+
+  const press = useCallback(
+    async (digit: string) => {
+      setError(false);
+      const next = pin + digit;
+
+      if (next.length < PIN_LENGTH) {
+        setPin(next);
+        return;
+      }
+
+      if (await verifyPin(next)) {
+        setPin('');
+        onUnlock();
+        return;
+      }
+
+      // 틀리면 즉시 비운다. 지우고 다시 치게 하면 손이 한 번 더 간다.
+      setPin('');
+      setError(true);
+    },
+    [pin, onUnlock]
+  );
+
+  const back = useCallback(() => {
+    setError(false);
+    setPin((current) => current.slice(0, -1));
+  }, []);
+
+  return (
+    <Root>
+      <ForestBackground />
+      <Ionicons name="lock-closed-outline" size={40} />
+      <Title>출석부</Title>
+      <Hint $error={error}>{error ? 'PIN이 맞지 않습니다' : 'PIN을 입력하세요'}</Hint>
+
+      <Dots>
+        {Array.from({ length: PIN_LENGTH }, (_, index) => (
+          <Dot key={index} $filled={index < pin.length} />
+        ))}
+      </Dots>
+
+      <Pad>
+        {['1', '2', '3', '4', '5', '6', '7', '8', '9'].map((digit) => (
+          <Key
+            key={digit}
+            onPress={() => press(digit)}
+            accessibilityRole="button"
+            accessibilityLabel={digit}
+          >
+            <KeyText>{digit}</KeyText>
+          </Key>
+        ))}
+        <Key disabled style={{ opacity: 0 }} accessibilityElementsHidden>
+          <KeyText> </KeyText>
+        </Key>
+        <Key onPress={() => press('0')} accessibilityRole="button" accessibilityLabel="0">
+          <KeyText>0</KeyText>
+        </Key>
+        <Key onPress={back} accessibilityRole="button" accessibilityLabel="지우기">
+          <Ionicons name="backspace-outline" size={22} />
+        </Key>
+      </Pad>
+
+      {biometricsReady && (
+        <BiometricButton
+          onPress={tryBiometrics}
+          accessibilityRole="button"
+          accessibilityLabel="생체 인증으로 열기"
+        >
+          <Ionicons name="scan-outline" size={18} />
+          <BiometricLabel>Face ID / Touch ID로 열기</BiometricLabel>
+        </BiometricButton>
+      )}
+    </Root>
+  );
+};
+
+export default LockScreen;

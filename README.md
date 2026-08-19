@@ -31,11 +31,28 @@ npm install
 npm start        # Expo Go로 실행 (QR 스캔)
 npm run web      # 브라우저에서 실행. 반응형 확인이 가장 빠르다
 npm run typecheck
+npm test
 ```
 
 `npm run web`으로 열고 창 너비를 조절하면 1→2→3열 전환을 바로 볼 수 있다.
 
 > Expo Go에서는 **iPad 화면 방향 설정이 적용되지 않는다.** `ios.infoPlist`는 빌드 시점에 Info.plist로 들어가는데 Expo Go는 자체 Info.plist를 쓰기 때문이다. 방향 동작을 확인하려면 아래 네이티브 빌드가 필요하다.
+
+### 테스트
+
+`node --test`를 `tsx`로 돌린다. 러너를 따로 두지 않은 이유는, 검증이 필요한 곳이
+**React를 거치지 않는 순수 로직**이기 때문이다 — 병합 규칙, 요일별 시간, 명단 계산,
+PIN 해싱. 화면은 브라우저에서 직접 만져 보는 편이 빠르다.
+
+| 파일 | 무엇을 |
+|---|---|
+| `tests/merge.test.mts` | 두 기기 기록을 합치는 규칙 |
+| `tests/apply.test.mts` | 병합 결과를 쓰는 SQL — `node:sqlite`에 실제로 돌린다 |
+| `tests/schedule.test.mts` | 요일별 수업 시간, 명단, 지각 표시 |
+| `tests/lock.test.mts` | PIN 해싱 규칙 |
+
+`tests/helpers/db.mts`가 `expo-sqlite` 표면을 `node:sqlite` 위에 얹는다. 병합 SQL은
+가장 조용히 틀릴 수 있는 부분이라 실제 데이터베이스에 돌려봐야 한다.
 
 ## iPad에 설치하기
 
@@ -108,6 +125,7 @@ src/
                             schedule.ts  요일별 수업 시간
   constants/theme.ts        색·글꼴·간격·브레이크포인트
 assets/fonts/               고운돋움 · 고운바탕 Bold (약 15MB)
+tests/                      npm test — 병합·명단·요일별 시간·PIN 해싱
 ```
 
 ## 숲속 테마
@@ -301,6 +319,17 @@ Face ID·Touch ID가 먼저 뜨고 PIN은 그것이 안 될 때를 위한 것이
 | 앱을 새로 열 때 | 항상 |
 | 백그라운드에 30초 넘게 있다 돌아올 때 | 자동 |
 | [오늘] 화면의 자물쇠 | 직접 |
+
+**손으로 잠갔을 때는 Face ID를 자동으로 띄우지 않는다.** 띄우면 화면 앞에 있던
+원장선생님 얼굴로 그대로 열려서, 건네주기 직전에 잠근 의미가 사라진다.
+
+잠금 화면은 `Modal`로 올린다. 절대 위치 View로는 부족하다 — 원생 등록·설정·일정은
+native-stack이 별도 UIViewController로 띄우기 때문에, 리액트 루트에 형제로 놓인
+화면은 그 시트 **아래**에 깔린다. 폼을 열어 둔 채로 자동 잠금이 걸리면 이름·학년·
+수강료가 그대로 보이고 수정까지 된다.
+
+시작 게이트가 잠금 확인까지 기다린다. `locked`는 false로 시작하므로, 키체인 읽기가
+DB·글꼴보다 늦게 끝나면 잠긴 기기에서도 명단이 한 번 비친다.
 
 자물쇠 버튼이 필요한 이유: **앱을 켠 채로 아이패드를 건네주면 자동 잠금이 걸리지
 않는다.** 실제로 그 경우가 가장 흔하다.

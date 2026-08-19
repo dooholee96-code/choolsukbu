@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { View, ActivityIndicator, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, ActivityIndicator, Text, TouchableOpacity, Modal } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
@@ -89,12 +89,26 @@ function RootNavigator() {
 
 type DBState = 'loading' | 'ready' | 'error';
 
-/** 네비게이터를 통째로 덮는 잠금 화면. */
-function LockOverlay({ onUnlock }: { onUnlock: () => void }) {
+/**
+ * 잠금 화면은 Modal로 띄운다.
+ *
+ * 절대 위치 View로는 부족하다. 원생 등록·설정·일정은 native-stack이 별도의
+ * UIViewController로 올리기 때문에, 리액트 루트에 형제로 놓인 화면은 그 시트
+ * **아래**에 깔린다. 폼을 열어 둔 채로 자동 잠금이 걸리면 이름·학년·수강료가
+ * 그대로 보이고 수정까지 되는데 잠금 화면은 뒤에 숨는다.
+ *
+ * Modal은 iOS에서 지금 맨 위에 있는 컨트롤러 위로 다시 올라간다.
+ */
+function LockOverlay({ onUnlock, autoPrompt }: { onUnlock: () => void; autoPrompt: boolean }) {
   return (
-    <View style={StyleSheet.absoluteFill}>
-      <LockScreen onUnlock={onUnlock} />
-    </View>
+    <Modal visible animationType="fade" presentationStyle="fullScreen" supportedOrientations={[
+      'portrait',
+      'portrait-upside-down',
+      'landscape-left',
+      'landscape-right',
+    ]}>
+      <LockScreen onUnlock={onUnlock} autoPrompt={autoPrompt} />
+    </Modal>
   );
 }
 
@@ -137,7 +151,8 @@ export default function App() {
 
   const fontsSettled = fontsLoaded || Boolean(fontError);
 
-  if (dbState !== 'ready' || !fontsSettled) {
+  // 잠금 여부를 알기 전에 화면을 그리면, 잠긴 기기에서도 명단이 한 번 비친다.
+  if (dbState !== 'ready' || !fontsSettled || !lock.ready) {
     // 이전에는 초기화가 실패해도 상태를 바꾸지 않아 스피너에 영구히 갇혔다.
     return (
       <View style={centered}>
@@ -179,7 +194,9 @@ export default function App() {
               <NavigationContainer>
                 <RootNavigator />
               </NavigationContainer>
-              {lock.locked && <LockOverlay onUnlock={lock.unlock} />}
+              {lock.locked && (
+                <LockOverlay onUnlock={lock.unlock} autoPrompt={lock.reason !== 'manual'} />
+              )}
             </DataProvider>
           </AppLockContext.Provider>
         </ThemeProvider>

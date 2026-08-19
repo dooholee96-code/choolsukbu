@@ -87,53 +87,67 @@ const BiometricLabel = styled.Text`
 
 interface Props {
   onUnlock: () => void;
+  /**
+   * 손으로 잠근 것이면 얼굴 인식을 자동으로 띄우지 않는다. 화면 앞에 있던
+   * 원장선생님 얼굴로 그대로 열려서, 건네주기 직전에 잠근 의미가 사라진다.
+   */
+  autoPrompt: boolean;
 }
 
-const LockScreen: React.FC<Props> = ({ onUnlock }) => {
+const LockScreen: React.FC<Props> = ({ onUnlock, autoPrompt }) => {
   const [pin, setPin] = useState('');
   const [error, setError] = useState(false);
+  const [checking, setChecking] = useState(false);
   const [biometricsReady, setBiometricsReady] = useState(false);
 
   const tryBiometrics = useCallback(async () => {
     if (await authenticateWithBiometrics()) onUnlock();
   }, [onUnlock]);
 
-  // 얼굴 인식이 되는 기기면 열자마자 한 번 물어본다. 대부분 여기서 끝난다.
+  // 앱을 열거나 자리를 비웠다 돌아온 경우에만 자동으로 물어본다.
   useEffect(() => {
     (async () => {
       const available = await hasBiometrics();
       setBiometricsReady(available);
-      if (available) await tryBiometrics();
+      if (available && autoPrompt) await tryBiometrics();
     })();
-  }, [tryBiometrics]);
+    // 마운트 때 한 번만. autoPrompt는 이 화면이 사는 동안 바뀌지 않는다.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const press = useCallback(
     async (digit: string) => {
+      // 확인 중에 또 누르면 낡은 pin 위에 자리가 붙어 엉뚱한 값이 올라간다.
+      if (checking || pin.length >= PIN_LENGTH) return;
+
       setError(false);
       const next = pin + digit;
+      // 마지막 자리도 먼저 채운다. 확인이 끝난 뒤에 넣으면 네 번째 점이 아예 안 찬다.
+      setPin(next);
+      if (next.length < PIN_LENGTH) return;
 
-      if (next.length < PIN_LENGTH) {
-        setPin(next);
-        return;
-      }
-
-      if (await verifyPin(next)) {
+      setChecking(true);
+      try {
+        if (await verifyPin(next)) {
+          setPin('');
+          onUnlock();
+          return;
+        }
+        // 틀리면 즉시 비운다. 지우고 다시 치게 하면 손이 한 번 더 간다.
         setPin('');
-        onUnlock();
-        return;
+        setError(true);
+      } finally {
+        setChecking(false);
       }
-
-      // 틀리면 즉시 비운다. 지우고 다시 치게 하면 손이 한 번 더 간다.
-      setPin('');
-      setError(true);
     },
-    [pin, onUnlock]
+    [pin, checking, onUnlock]
   );
 
   const back = useCallback(() => {
+    if (checking) return;
     setError(false);
     setPin((current) => current.slice(0, -1));
-  }, []);
+  }, [checking]);
 
   return (
     <Root>

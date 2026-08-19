@@ -114,15 +114,22 @@ export const buildExceptionCsv = (
 };
 
 /**
- * CSV를 파일로 쓰고 공유 시트를 연다.
+ * 파일로 쓰고 공유 시트를 연다.
  *
  * 캐시 디렉터리에 쓰는 이유: 사용자가 공유 시트에서 저장할 곳을 고르고 나면
  * 앱 안의 사본은 쓸모가 없다. document에 두면 지우는 사람이 없어 계속 쌓인다.
  */
-export const exportCsv = async (fileName: string, content: string): Promise<void> => {
+export const exportFile = async (
+  fileName: string,
+  content: string,
+  kind: 'csv' | 'json' = 'csv'
+): Promise<void> => {
+  const mimeType = kind === 'json' ? 'application/json' : 'text/csv';
+  const uti = kind === 'json' ? 'public.json' : 'public.comma-separated-values-text';
+
   if (Platform.OS === 'web') {
     // 웹에는 공유 시트가 없다. 브라우저 다운로드로 대신한다.
-    const blob = new Blob([content], { type: 'text/csv;charset=utf-8' });
+    const blob = new Blob([content], { type: `${mimeType};charset=utf-8` });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -141,17 +148,25 @@ export const exportCsv = async (fileName: string, content: string): Promise<void
     throw new Error('이 기기에서는 공유 기능을 쓸 수 없습니다.');
   }
 
-  await Sharing.shareAsync(file.uri, {
-    mimeType: 'text/csv',
-    UTI: 'public.comma-separated-values-text',
-    dialogTitle: fileName,
-  });
+  await Sharing.shareAsync(file.uri, { mimeType, UTI: uti, dialogTitle: fileName });
 };
 
-/** CSV 파일을 고르게 하고 내용을 읽어 온다. 취소하면 null. */
-export const pickCsvText = async (): Promise<string | null> => {
+export const exportCsv = (fileName: string, content: string) =>
+  exportFile(fileName, content, 'csv');
+
+const CSV_TYPES = [
+  'text/csv',
+  'text/comma-separated-values',
+  'public.comma-separated-values-text',
+  'text/plain',
+];
+
+const JSON_TYPES = ['application/json', 'public.json', 'text/plain'];
+
+/** 파일을 고르게 하고 내용을 읽어 온다. 취소하면 null. */
+const pickText = async (types: string[]): Promise<string | null> => {
   const result = await DocumentPicker.getDocumentAsync({
-    type: ['text/csv', 'text/comma-separated-values', 'public.comma-separated-values-text', 'text/plain'],
+    type: types,
     copyToCacheDirectory: true,
   });
   if (result.canceled || !result.assets?.length) return null;
@@ -168,6 +183,9 @@ export const pickCsvText = async (): Promise<string | null> => {
     throw new Error('파일을 읽지 못했습니다.');
   }
 };
+
+export const pickCsvText = () => pickText(CSV_TYPES);
+export const pickBackupText = () => pickText(JSON_TYPES);
 
 /** 파일명에 쓸 오늘 날짜. */
 export const backupStamp = (date = new Date()): string =>

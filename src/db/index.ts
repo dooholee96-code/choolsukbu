@@ -1,4 +1,4 @@
-import * as SQLite from 'expo-sqlite';
+import type { SQLiteDatabase } from 'expo-sqlite';
 
 /**
  * 연결은 initDB()에서 비동기로 연다.
@@ -7,13 +7,20 @@ import * as SQLite from 'expo-sqlite';
  * 웹에서는 동기 open이 워커 응답을 기다리다 'Sync operation timeout'으로 죽어
  * React가 마운트되기도 전에 화면이 백지가 된다.
  */
-let db: SQLite.SQLiteDatabase | null = null;
+let db: SQLiteDatabase | null = null;
 
 /** 스키마 버전. 컬럼을 바꿀 때 올리고 runMigrations에 분기를 추가한다. */
 const DATABASE_VERSION = 4;
 
 export const initDB = async () => {
   if (!db) {
+    // 여는 순간에만 네이티브 모듈을 부른다. 최상단에서 부르면 스키마와
+    // 마이그레이션이 React Native에 묶여, 실제 데이터가 든 옛 버전
+    // 데이터베이스를 만들어 올려보는 검증을 할 수 없다.
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const SQLite = require('expo-sqlite') as {
+      openDatabaseAsync: (name: string) => Promise<SQLiteDatabase>;
+    };
     db = await SQLite.openDatabaseAsync('attendance.db');
   }
 
@@ -22,7 +29,13 @@ export const initDB = async () => {
   await db.execAsync('PRAGMA journal_mode = WAL;');
   await db.execAsync('PRAGMA foreign_keys = ON;');
 
-  await db.execAsync(`
+  await createSchema(db);
+  await runMigrations(db);
+};
+
+/** 새 설치용. 이미 있는 기기에서는 전부 no-op이고 migrate가 이어받는다. */
+export const createSchema = async (database: SQLiteDatabase) => {
+  await database.execAsync(`
     CREATE TABLE IF NOT EXISTS students (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
@@ -77,17 +90,19 @@ export const initDB = async () => {
     CREATE INDEX IF NOT EXISTS idx_attendance_student_date ON attendance (studentId, date);
     CREATE INDEX IF NOT EXISTS idx_exception_date ON schedule_exception (date);
   `);
-
-  await runMigrations();
 };
 
 /**
- * user_version을 앵커로 삼는 마이그레이션 훅.
- * 지금은 초기 버전을 기록만 한다. 이후 컬럼 추가 시 여기에 분기를 넣으면
- * 이미 앱을 설치한 기기에서도 스키마를 이어서 올릴 수 있다.
+ * user_version을 앵커로 삼는 마이그레이션.
+ *
+ * 각 단계는 여러 번 돌려도 같은 결과가 나오도록 썼다. user_version은 맨 끝에서
+ * 올리므로, 도중에 앱이 죽으면 다음 실행에서 처음부터 다시 도는데 그때 이미
+ * 끝난 단계를 또 밟기 때문이다.
+ *
+ * db를 인자로 받는 이유는 실제 데이터가 든 옛 버전 데이터베이스를 만들어
+ * 올려보는 검증을 하기 위해서다. 여기서 실수하면 사용자의 기록이 사라진다.
  */
-const runMigrations = async () => {
-  const database = getDB();
+export const runMigrations = async (database: SQLiteDatabase) => {
   const row = await database.getFirstAsync<{ user_version: number }>('PRAGMA user_version;');
   const currentVersion = row?.user_version ?? 0;
 
@@ -138,6 +153,7 @@ const runMigrations = async () => {
           await database.execAsync(`ALTER TABLE ${table} ADD COLUMN ${column} TEXT;`);
         }
       }
+      // 값이 비어 있으면 병합에서 항상 지므로, 있는 행은 지금 시각으로 채운다.
       await database.runAsync(
         `UPDATE ${table} SET updatedAt = ? WHERE updatedAt IS NULL;`,
         now
@@ -160,7 +176,7 @@ const runMigrations = async () => {
  * 열린 연결을 돌려준다. initDB()가 끝나기 전에는 호출할 수 없다.
  * App이 초기화 완료 후에만 DataProvider를 렌더하므로 정상 경로에서는 항상 안전하다.
  */
-export const getDB = (): SQLite.SQLiteDatabase => {
+export const getDB = (): SQLiteDatabase => {
   if (!db) {
     throw new Error('Database is not ready. initDB() must resolve before getDB().');
   }

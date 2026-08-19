@@ -122,3 +122,21 @@ export const updateTime = (db: SQLiteDatabase, attendanceId: string, time: strin
     stamp(),
     attendanceId
   );
+
+/**
+ * 하원 시각. null을 주면 지운다 (잘못 찍었을 때).
+ *
+ * 결석 행에는 붙이지 않는다 — 오지 않은 학생이 몇 시에 갔는지는 없는 값이고,
+ * 남으면 이력에서 조퇴처럼 읽힌다.
+ */
+export const setLeaveTime = (
+  db: SQLiteDatabase,
+  attendanceId: string,
+  time: string | null
+) =>
+  db.runAsync(
+    "UPDATE attendance SET leaveTime = ?, updatedAt = ? WHERE id = ? AND status != 'absent';",
+    time,
+    stamp(),
+    attendanceId
+  );

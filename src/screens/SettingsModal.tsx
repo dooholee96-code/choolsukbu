@@ -194,7 +194,7 @@ const SettingsModal: React.FC = () => {
         message:
           `${parsed.length}명을 가져옵니다.` +
           (skipped.length ? `\n형식이 맞지 않는 ${skipped.length}행은 건너뜁니다.` : '') +
-          '\n이미 같은 이름이 있으면 추가하지 않습니다.',
+          '\n이름·학년·구분이 모두 같은 원생은 추가하지 않습니다.',
         confirmLabel: '가져오기',
         onConfirm: async () => {
           try {
@@ -281,7 +281,10 @@ const SettingsModal: React.FC = () => {
           <SectionTitle>가져오기</SectionTitle>
           <Note>
             원생 명단만 가져옵니다. 내보내기로 만든 파일과 같은 형식이어야 합니다
-            {'\n'}(name, grade, scheduledDays, scheduledStartTime, scheduledEndTime, dayTimes, fee).
+            {'\n'}(name, grade, scheduledDays, scheduledStartTime, scheduledEndTime, dayTimes,
+            fee, note, withdrawnAt).
+            {'\n'}이름·학년·구분이 모두 같은 원생은 건너뜁니다. 동명이인은 구분(note)을 적어
+            주세요.
             {'\n'}출결 기록은 덮어쓸 위험이 커서 가져오기를 지원하지 않습니다.
           </Note>
           <Button title="원생 명단 가져오기" variant="secondary" onPress={importRoster} disabled={busy} />

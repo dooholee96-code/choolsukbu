@@ -10,7 +10,7 @@ import type { SQLiteDatabase } from 'expo-sqlite';
 let db: SQLiteDatabase | null = null;
 
 /** 스키마 버전. 컬럼을 바꿀 때 올리고 runMigrations에 분기를 추가한다. */
-const DATABASE_VERSION = 4;
+export const DATABASE_VERSION = 5;
 
 export const initDB = async () => {
   if (!db) {
@@ -45,6 +45,8 @@ export const createSchema = async (database: SQLiteDatabase) => {
       scheduledEndTime TEXT,
       dayTimes TEXT,
       fee INTEGER,
+      withdrawnAt TEXT,
+      note TEXT,
       updatedAt TEXT,
       deletedAt TEXT
     );
@@ -53,6 +55,7 @@ export const createSchema = async (database: SQLiteDatabase) => {
       studentId TEXT,
       date TEXT NOT NULL,
       time TEXT NOT NULL,
+      leaveTime TEXT,
       status TEXT NOT NULL,
       type TEXT NOT NULL,
       updatedAt TEXT,
@@ -102,6 +105,19 @@ export const createSchema = async (database: SQLiteDatabase) => {
  * db를 인자로 받는 이유는 실제 데이터가 든 옛 버전 데이터베이스를 만들어
  * 올려보는 검증을 하기 위해서다. 여기서 실수하면 사용자의 기록이 사라진다.
  */
+/**
+ * 없을 때만 컬럼을 붙인다.
+ *
+ * SQLite에는 ADD COLUMN IF NOT EXISTS가 없고, 이미 있는 컬럼을 또 붙이면
+ * 예외가 난다. 마이그레이션은 중간에 끊기면 처음부터 다시 도므로 그 예외가
+ * 실제로 일어난다.
+ */
+const addColumn = async (database: SQLiteDatabase, table: string, column: string) => {
+  const columns = await database.getAllAsync<{ name: string }>(`PRAGMA table_info(${table});`);
+  if (columns.some((existing) => existing.name === column)) return;
+  await database.execAsync(`ALTER TABLE ${table} ADD COLUMN ${column} TEXT;`);
+};
+
 export const runMigrations = async (database: SQLiteDatabase) => {
   const row = await database.getFirstAsync<{ user_version: number }>('PRAGMA user_version;');
   const currentVersion = row?.user_version ?? 0;
@@ -130,12 +146,7 @@ export const runMigrations = async (database: SQLiteDatabase) => {
   // 이미 students 테이블이 있는 기기에만 컬럼을 붙인다. NULL이면 모든 요일이
   // scheduledStartTime/EndTime을 쓰므로 기존 데이터는 그대로 동작한다.
   if (currentVersion < 3) {
-    const columns = await database.getAllAsync<{ name: string }>(
-      'PRAGMA table_info(students);'
-    );
-    if (!columns.some((column) => column.name === 'dayTimes')) {
-      await database.execAsync('ALTER TABLE students ADD COLUMN dayTimes TEXT;');
-    }
+    await addColumn(database, 'students', 'dayTimes');
   }
 
   // v4: 동기화용 메타. updatedAt은 두 기기 기록이 겹칠 때 최신을 가리는 근거이고,
@@ -145,14 +156,8 @@ export const runMigrations = async (database: SQLiteDatabase) => {
     const now = new Date().toISOString();
 
     for (const table of ['students', 'attendance', 'makeup', 'schedule_exception']) {
-      const columns = await database.getAllAsync<{ name: string }>(
-        `PRAGMA table_info(${table});`
-      );
-      for (const column of ['updatedAt', 'deletedAt']) {
-        if (!columns.some((existing) => existing.name === column)) {
-          await database.execAsync(`ALTER TABLE ${table} ADD COLUMN ${column} TEXT;`);
-        }
-      }
+      await addColumn(database, table, 'updatedAt');
+      await addColumn(database, table, 'deletedAt');
       // 값이 비어 있으면 병합에서 항상 지므로, 있는 행은 지금 시각으로 채운다.
       await database.runAsync(
         `UPDATE ${table} SET updatedAt = ? WHERE updatedAt IS NULL;`,
@@ -167,6 +172,16 @@ export const runMigrations = async (database: SQLiteDatabase) => {
         lastSyncAt TEXT
       );
     `);
+  }
+
+  // v5: 퇴원(withdrawnAt), 동명이인 구분(note), 하원 시각(leaveTime).
+  //
+  // 셋 다 비어 있는 것이 곧 '예전과 같음'이다 — 퇴원한 적 없고, 구분할 필요가
+  // 없고, 하원을 찍지 않은 상태. 그래서 기존 행은 손대지 않는다.
+  if (currentVersion < 5) {
+    await addColumn(database, 'students', 'withdrawnAt');
+    await addColumn(database, 'students', 'note');
+    await addColumn(database, 'attendance', 'leaveTime');
   }
 
   await database.execAsync(`PRAGMA user_version = ${DATABASE_VERSION};`);

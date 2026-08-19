@@ -7,6 +7,7 @@ import { useData } from '../hooks/useData';
 import Screen from '../components/common/Screen';
 import { Attendance, ScheduleException, Student } from '../types';
 import { formatDateLabel, formatTimeLabel } from '../utils/date';
+import { isWithdrawn, studentSubtitle } from '../utils/student';
 import { logger } from '../utils/logger';
 
 const Header = styled.View`
@@ -385,7 +386,8 @@ const HistoryScreen: React.FC = () => {
           renderItem={({ item }) => (
             <Row>
               <RowName numberOfLines={1}>{item.student.name}</RowName>
-              <RowMeta>{item.student.grade}</RowMeta>
+              <RowMeta>{studentSubtitle(item.student)}</RowMeta>
+              {isWithdrawn(item.student) && <RowMeta>퇴원</RowMeta>}
               <Badge $tone={theme.colors.successStrong}>출석 {item.scheduled}</Badge>
               <Badge $tone={theme.colors.secondaryStrong}>예외 {item.unexpected}</Badge>
               <Badge $tone={theme.colors.dangerStrong}>결석 {item.absent}</Badge>
@@ -417,8 +419,12 @@ const HistoryScreen: React.FC = () => {
           ) : (
             <Row>
               <RowName numberOfLines={1}>{item.student.name}</RowName>
-              <RowMeta>{item.student.grade}</RowMeta>
-              <RowMeta>{formatTimeLabel(item.record.time)}</RowMeta>
+              <RowMeta>{studentSubtitle(item.student)}</RowMeta>
+              <RowMeta>
+                {formatTimeLabel(item.record.time)}
+                {/* 하원까지 찍은 날은 머문 구간이 통째로 보여야 조퇴를 알아본다. */}
+                {item.record.leaveTime ? ` – ${formatTimeLabel(item.record.leaveTime)}` : ''}
+              </RowMeta>
               <Badge $tone={toneFor(item.record)}>{labelFor(item.record)}</Badge>
             </Row>
           )

@@ -10,6 +10,7 @@ import Screen from '../components/common/Screen';
 import GridRow from '../components/common/GridRow';
 import MakeupCard, { MakeupEntry } from '../components/MakeupCard';
 import { chunk } from '../utils/array';
+import { isWithdrawn } from '../utils/student';
 import { confirm } from '../utils/dialog';
 
 const Header = styled.View`
@@ -60,6 +61,10 @@ const MakeupScreen: React.FC = () => {
   /**
    * 보충 건에 학생 정보를 붙인다. 학생이 지워졌는데 보충만 남은 경우는
    * 표시할 이름이 없으므로 목록에서 뺀다.
+   *
+   * 퇴원생의 보충도 뺀다. 그만둔 학생에게 해 줄 수 있는 보충은 없고, 남겨두면
+   * 영영 지워지지 않는 줄이 된다. 기록 자체는 남으므로 복학하면 다시 나온다.
+   *
    * 날짜가 잡힌 건을 먼저, 그 안에서는 결석일이 오래된 순으로 보여준다.
    */
   const entries = useMemo<MakeupEntry[]>(() => {
@@ -68,7 +73,7 @@ const MakeupScreen: React.FC = () => {
     return makeups
       .flatMap((makeup) => {
         const student = byId.get(makeup.studentId);
-        return student ? [{ makeup, student }] : [];
+        return student && !isWithdrawn(student) ? [{ makeup, student }] : [];
       })
       .sort((a, b) => {
         const aDate = a.makeup.makeUpDate ?? '';

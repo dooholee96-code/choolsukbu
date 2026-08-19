@@ -1,21 +1,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
-import type { SQLiteDatabase } from 'expo-sqlite';
-import { createSchema, runMigrations } from '../src/db';
+import { createSchema, DATABASE_VERSION as LATEST, runMigrations } from '../src/db';
+import { wrapDb as wrap } from './helpers/db.mts';
 
 /**
  * 마이그레이션은 실수하면 사용자의 기록이 사라지는 유일한 자리다.
  * 옛 버전 데이터베이스를 실제 데이터와 함께 만들어 올려본다.
  */
-const wrap = (raw: DatabaseSync): SQLiteDatabase =>
-  ({
-    getAllAsync: async (sql: string, ...p: unknown[]) => raw.prepare(sql).all(...(p as never[])),
-    getFirstAsync: async (sql: string, ...p: unknown[]) =>
-      raw.prepare(sql).get(...(p as never[])) ?? null,
-    runAsync: async (sql: string, ...p: unknown[]) => raw.prepare(sql).run(...(p as never[])),
-    execAsync: async (sql: string) => raw.exec(sql),
-  }) as unknown as SQLiteDatabase;
 
 /** v1 시절의 스키마. 일정 예외도, 요일별 시간도, 동기화 메타도 없었다. */
 const openV1 = () => {
@@ -45,7 +37,7 @@ const openV1 = () => {
   return raw;
 };
 
-test('v1 데이터베이스가 v4로 올라가도 기록이 그대로 있다', async () => {
+test('v1 데이터베이스가 최신 버전으로 올라가도 기록이 그대로 있다', async () => {
   const raw = openV1();
   const db = wrap(raw);
 
@@ -58,7 +50,7 @@ test('v1 데이터베이스가 v4로 올라가도 기록이 그대로 있다', a
   await createSchema(db);
   await runMigrations(db);
 
-  assert.equal((raw.prepare('PRAGMA user_version').get() as { user_version: number }).user_version, 4);
+  assert.equal((raw.prepare('PRAGMA user_version').get() as { user_version: number }).user_version, LATEST);
   assert.equal(
     (raw.prepare('SELECT COUNT(*) AS n FROM attendance').get() as { n: number }).n,
     before.attendance.n,
@@ -110,20 +102,46 @@ test('도중에 죽어도 다시 돌리면 이어서 올라간다', async () => 
   await runMigrations(db);
   await runMigrations(db);
 
-  assert.equal((raw.prepare('PRAGMA user_version').get() as { user_version: number }).user_version, 4);
+  assert.equal((raw.prepare('PRAGMA user_version').get() as { user_version: number }).user_version, LATEST);
   assert.equal((raw.prepare('SELECT COUNT(*) AS n FROM attendance').get() as { n: number }).n, 120);
   assert.equal((raw.prepare('SELECT COUNT(*) AS n FROM students').get() as { n: number }).n, 3);
 });
 
-test('이미 v4인 데이터베이스는 건드리지 않는다', async () => {
+test('이미 최신인 데이터베이스는 건드리지 않는다', async () => {
   const raw = new DatabaseSync(':memory:');
   const db = wrap(raw);
   await createSchema(db);
   await runMigrations(db);
 
-  raw.exec(`INSERT INTO students VALUES ('s1','김민준','중2','["Mon"]','16:00','18:00',NULL,NULL,'2026-01-01T00:00:00.000Z',NULL);`);
+  raw.exec(
+    `INSERT INTO students (id, name, grade, scheduledDays, scheduledStartTime, scheduledEndTime, updatedAt)
+     VALUES ('s1','김민준','중2','["Mon"]','16:00','18:00','2026-01-01T00:00:00.000Z');`
+  );
   await runMigrations(db);
 
   const student = raw.prepare('SELECT * FROM students').get() as Record<string, unknown>;
   assert.equal(student.updatedAt, '2026-01-01T00:00:00.000Z', 'updatedAt이 다시 덮이면 안 된다');
+});
+
+test('v5에서 붙은 칸은 비어 있고, 그 비어 있음이 곧 예전 상태다', async () => {
+  // 퇴원한 적 없고, 구분할 필요가 없고, 하원을 찍지 않은 상태. 여기에 값이
+  // 잘못 들어가면 옛 원생이 통째로 퇴원 처리되거나 없던 조퇴가 생긴다.
+  const raw = openV1();
+  const db = wrap(raw);
+  await createSchema(db);
+  await runMigrations(db);
+
+  const withdrawn = raw
+    .prepare('SELECT COUNT(*) AS n FROM students WHERE withdrawnAt IS NOT NULL')
+    .get() as { n: number };
+  const noted = raw
+    .prepare('SELECT COUNT(*) AS n FROM students WHERE note IS NOT NULL')
+    .get() as { n: number };
+  const left = raw
+    .prepare('SELECT COUNT(*) AS n FROM attendance WHERE leaveTime IS NOT NULL')
+    .get() as { n: number };
+
+  assert.equal(withdrawn.n, 0, '있던 원생이 퇴원 처리되면 안 된다');
+  assert.equal(noted.n, 0);
+  assert.equal(left.n, 0, '없던 하원 시각이 생기면 안 된다');
 });

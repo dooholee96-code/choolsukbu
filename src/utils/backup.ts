@@ -28,6 +28,8 @@ export const buildStudentsCsv = (students: Student[]): string =>
       scheduledEndTime: s.scheduledEndTime,
       dayTimes: serializeDayTimes(s) ?? '',
       fee: s.fee ?? '',
+      note: s.note ?? '',
+      withdrawnAt: s.withdrawnAt ?? '',
     })),
     {
       columns: [
@@ -38,6 +40,8 @@ export const buildStudentsCsv = (students: Student[]): string =>
         'scheduledEndTime',
         'dayTimes',
         'fee',
+        'note',
+        'withdrawnAt',
       ],
     }
   );
@@ -57,12 +61,14 @@ export const buildAttendanceCsv = (records: Attendance[], students: Student[]): 
       records.map((r) => ({
         date: r.date,
         time: r.time,
+        leaveTime: r.leaveTime ?? '',
         name: byId.get(r.studentId)?.name ?? '(삭제된 원생)',
         grade: byId.get(r.studentId)?.grade ?? '',
+        note: byId.get(r.studentId)?.note ?? '',
         status: STATUS_LABEL[r.status] ?? r.status,
         type: r.type === 'makeUp' ? '보충' : '정규',
       })),
-      { columns: ['date', 'time', 'name', 'grade', 'status', 'type'] }
+      { columns: ['date', 'time', 'leaveTime', 'name', 'grade', 'note', 'status', 'type'] }
     )
   );
 };
@@ -75,11 +81,12 @@ export const buildMakeupCsv = (makeups: MakeUp[], students: Student[]): string =
     Papa.unparse(
       makeups.map((m) => ({
         name: byId.get(m.studentId)?.name ?? '(삭제된 원생)',
+        note: byId.get(m.studentId)?.note ?? '',
         originalDate: m.originalDate,
         makeUpDate: m.makeUpDate ?? '',
         completed: m.completed ? '완료' : '대기',
       })),
-      { columns: ['name', 'originalDate', 'makeUpDate', 'completed'] }
+      { columns: ['name', 'note', 'originalDate', 'makeUpDate', 'completed'] }
     )
   );
 };

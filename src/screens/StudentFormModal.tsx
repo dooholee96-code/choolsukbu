@@ -15,6 +15,8 @@ import type { RootStackParamList } from '../types/navigation';
 import { logger } from '../utils/logger';
 import { confirm, notify } from '../utils/dialog';
 import { DAY_LABEL, DAYS } from '../utils/schedule';
+import { getCurrentDate } from '../utils/date';
+import { withdrawnLabel } from '../utils/student';
 
 const Root = styled.View`
   flex: 1;
@@ -135,6 +137,22 @@ const HintText = styled.Text`
   margin-bottom: ${({ theme }) => theme.spacing.small}px;
 `;
 
+/** 퇴원 상태를 폼 맨 위에서 알린다. 모르고 시간표만 고치는 일이 없어야 한다. */
+const WithdrawnBanner = styled.View`
+  background-color: ${({ theme }) => theme.colors.secondary}20;
+  border-radius: ${({ theme }) => theme.borderRadius.medium}px;
+  padding: ${({ theme }) => theme.spacing.medium}px;
+  margin-bottom: ${({ theme }) => theme.spacing.medium}px;
+  align-items: center;
+`;
+
+const WithdrawnText = styled.Text`
+  font-family: ${({ theme }) => theme.fonts.bold};
+  font-size: 15px;
+  color: ${({ theme }) => theme.colors.secondaryStrong};
+  margin-bottom: ${({ theme }) => theme.spacing.small}px;
+`;
+
 /** 오늘 날짜의 특정 시각. 피커는 Date를 요구하지만 날짜 부분은 쓰지 않는다. */
 const timeAt = (hours: number, minutes = 0) => {
   const date = new Date();
@@ -153,7 +171,7 @@ const StudentFormModal: React.FC = () => {
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
   const { params } = useRoute<RouteProp<RootStackParamList, 'StudentFormModal'>>();
-  const { students, addStudent, updateStudent, deleteStudent } = useData();
+  const { students, addStudent, updateStudent, deleteStudent, setStudentWithdrawn } = useData();
 
   // 수정 대상. 신규 등록이면 undefined다.
   const editing = params?.studentId
@@ -163,6 +181,7 @@ const StudentFormModal: React.FC = () => {
 
   const [name, setName] = useState(editing?.name ?? '');
   const [grade, setGrade] = useState(editing?.grade ?? '');
+  const [note, setNote] = useState(editing?.note ?? '');
   const [selectedDays, setSelectedDays] = useState<DayOfWeek[]>(editing?.scheduledDays ?? []);
   // 신규 등록의 기본값을 둘 다 new Date()로 두면 시작과 종료가 같아져 구간 길이가
   // 0이 되고, 사용자가 시간을 건드리지 않으면 모든 등원이 '예외'로 기록된다.
@@ -209,12 +228,19 @@ const StudentFormModal: React.FC = () => {
       [day]: { ...timeForDay(day), [edge]: format(value, 'HH:mm') },
     }));
 
-  const handleSave = async () => {
-    if (!name.trim() || !grade.trim() || selectedDays.length === 0) {
-      notify('입력 확인', '이름, 학년, 수업 요일을 모두 입력해 주세요.');
-      return;
-    }
+  /**
+   * 이름이 겹치는 다른 원생. 구분을 적어두지 않으면 등원을 찍을 때 어느 쪽인지
+   * 알 방법이 없어서, 저장 전에 한 번 알린다.
+   */
+  const nameTwin = students.find(
+    (other) =>
+      other.id !== editing?.id &&
+      !other.withdrawnAt &&
+      other.name.trim() === name.trim() &&
+      name.trim() !== ''
+  );
 
+  const save = async () => {
     // 요일은 선택 순서가 아니라 주간 순서로 저장한다.
     const orderedDays = DAYS.filter((day) => selectedDays.includes(day));
     const parsedFee = Number(fee.replace(/[^0-9]/g, ''));
@@ -237,6 +263,8 @@ const StudentFormModal: React.FC = () => {
       scheduledEndTime: format(endTime, 'HH:mm'),
       dayTimes: perDayTimes,
       fee: parsedFee > 0 ? parsedFee : undefined,
+      note: note.trim() || null,
+      withdrawnAt: editing?.withdrawnAt ?? null,
     };
 
     setIsSaving(true);
@@ -251,12 +279,71 @@ const StudentFormModal: React.FC = () => {
     }
   };
 
+  const handleSave = () => {
+    if (!name.trim() || !grade.trim() || selectedDays.length === 0) {
+      notify('입력 확인', '이름, 학년, 수업 요일을 모두 입력해 주세요.');
+      return;
+    }
+
+    // 구분을 이미 적었으면 헷갈릴 일이 없으니 그냥 저장한다.
+    if (!nameTwin || note.trim()) {
+      save();
+      return;
+    }
+
+    confirm({
+      title: '같은 이름이 있습니다',
+      message:
+        `${nameTwin.name} (${nameTwin.grade}) 학생이 이미 있습니다.\n` +
+        '구분을 적어두면 등원을 찍을 때 헷갈리지 않습니다.\n' +
+        "예: '월수반', '강북초'",
+      confirmLabel: '그대로 저장',
+      onConfirm: save,
+    });
+  };
+
+  const handleWithdraw = () => {
+    if (!editing) return;
+
+    confirm({
+      title: '퇴원 처리',
+      message:
+        `${editing.name} 학생을 오늘부로 퇴원 처리할까요?\n` +
+        '오늘부터 명단에 나오지 않습니다.\n' +
+        '출결 이력은 그대로 남고, 언제든 되돌릴 수 있습니다.',
+      confirmLabel: '퇴원',
+      onConfirm: async () => {
+        try {
+          await setStudentWithdrawn(editing.id, getCurrentDate());
+          navigation.goBack();
+        } catch (error) {
+          logger.error('Failed to withdraw student', error);
+          notify('퇴원 실패', '퇴원 처리를 하지 못했습니다. 다시 시도해 주세요.');
+        }
+      },
+    });
+  };
+
+  const handleReinstate = () => {
+    if (!editing) return;
+
+    setStudentWithdrawn(editing.id, null)
+      .then(() => navigation.goBack())
+      .catch((error) => {
+        logger.error('Failed to reinstate student', error);
+        notify('복학 실패', '복학 처리를 하지 못했습니다. 다시 시도해 주세요.');
+      });
+  };
+
   const handleDelete = () => {
     if (!editing) return;
 
     confirm({
       title: '원생 삭제',
-      message: `${editing.name} 학생을 삭제할까요?\n출결 기록과 보충 건도 함께 삭제되며 되돌릴 수 없습니다.`,
+      message:
+        `${editing.name} 학생을 삭제할까요?\n` +
+        '출결 기록과 보충 건도 함께 삭제되며 되돌릴 수 없습니다.\n\n' +
+        '그만둔 학생이라면 [퇴원 처리]를 쓰세요. 명단에서만 빠지고 기록은 남습니다.',
       confirmLabel: '삭제',
       destructive: true,
       onConfirm: async () => {
@@ -379,6 +466,18 @@ const StudentFormModal: React.FC = () => {
           <Form>
             <TitleText>{isEditing ? '원생 정보 수정' : '원생 등록'}</TitleText>
 
+            {editing?.withdrawnAt && (
+              <WithdrawnBanner>
+                <WithdrawnText>{withdrawnLabel(editing)}</WithdrawnText>
+                <Button
+                  title="복학 처리"
+                  variant="secondary"
+                  size="compact"
+                  onPress={handleReinstate}
+                />
+              </WithdrawnBanner>
+            )}
+
             <Label>이름</Label>
             <StyledTextInput
               value={name}
@@ -392,6 +491,18 @@ const StudentFormModal: React.FC = () => {
               value={grade}
               onChangeText={setGrade}
               placeholder="학년"
+              returnKeyType="next"
+            />
+
+            <Label>구분 (선택)</Label>
+            <HintText>
+              같은 이름의 원생이 있을 때 씁니다. 이름 옆에 그대로 붙습니다.
+              {nameTwin ? `\n지금 ${nameTwin.name} 학생이 이미 있습니다.` : ''}
+            </HintText>
+            <StyledTextInput
+              value={note}
+              onChangeText={setNote}
+              placeholder="예: 월수반, 강북초"
               returnKeyType="next"
             />
 
@@ -474,6 +585,15 @@ const StudentFormModal: React.FC = () => {
               <View>
                 <Button title="취소" variant="secondary" onPress={() => navigation.goBack()} />
               </View>
+              {/* 그만둔 학생에게 쓰는 것은 이쪽이다. 삭제는 잘못 등록했을 때만. */}
+              {isEditing && !editing?.withdrawnAt && (
+                <View>
+                  <Button title="퇴원 처리" variant="secondary" onPress={handleWithdraw} />
+                  <HintText style={{ marginTop: 6, textAlign: 'center' }}>
+                    명단에서만 빠지고 출결 기록은 남습니다.
+                  </HintText>
+                </View>
+              )}
               {isEditing && (
                 <View>
                   <Button title="원생 삭제" variant="danger" onPress={handleDelete} />

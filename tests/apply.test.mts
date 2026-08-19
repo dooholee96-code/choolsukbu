@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import type { SQLiteDatabase } from 'expo-sqlite';
 import { openTestDb } from './helpers/db.mts';
 import { applyMerge, readAll } from '../src/sync/store';
 import { mergeSnapshots, SNAPSHOT_VERSION, type SyncSnapshot } from '../src/sync/merge';
@@ -22,11 +23,11 @@ const snapshot = (over: Partial<SyncSnapshot>): SyncSnapshot => ({
   students: [], attendance: [], makeups: [], exceptions: [], ...over,
 });
 
-const seed = async (db: ReturnType<typeof openTestDb>, rows: Partial<Result>) =>
+const seed = async (db: SQLiteDatabase, rows: Partial<Result>) =>
   applyMerge(db, empty, { ...empty, ...rows });
 
 test('상대 기기가 보낸 원생과 등원이 들어간다', async () => {
-  const db = openTestDb();
+  const db = await openTestDb();
   await seed(db, { students: [student('s1', '김민준', '2026-08-18T10:00:00.000Z')], attendance: [at('a1', 's1', '16:00', '2026-08-18T16:00:00.000Z')] });
 
   const local = await readAll(db);
@@ -41,7 +42,7 @@ test('상대 기기가 보낸 원생과 등원이 들어간다', async () => {
 });
 
 test('새 원생과 그 학생의 등원이 함께 와도 외래키가 걸리지 않는다', async () => {
-  const db = openTestDb();
+  const db = await openTestDb();
   const local = await readAll(db);
   await applyMerge(db, local, mergeSnapshots(local, [
     snapshot({ students: [student('s3', '박서준', '2026-08-18T10:00:00.000Z')], attendance: [at('a3', 's3', '16:00', '2026-08-18T16:00:00.000Z')] }),
@@ -53,7 +54,7 @@ test('새 원생과 그 학생의 등원이 함께 와도 외래키가 걸리지
 });
 
 test('중복 등원은 하나만 남고 진 행은 사라진다', async () => {
-  const db = openTestDb();
+  const db = await openTestDb();
   await seed(db, { students: [student('s1', '김민준', '2026-08-18T10:00:00.000Z')], attendance: [at('a1', 's1', '16:00', '2026-08-18T16:00:00.000Z')] });
 
   const local = await readAll(db);
@@ -68,7 +69,7 @@ test('중복 등원은 하나만 남고 진 행은 사라진다', async () => {
 
 test('중복만 정리해도 반영 건수가 0이 아니다', async () => {
   // 0을 돌려주면 부르는 쪽이 화면을 새로 읽지도, 바뀐 것을 올리지도 않는다.
-  const db = openTestDb();
+  const db = await openTestDb();
   await seed(db, { students: [student('s1', '김민준', '2026-08-18T10:00:00.000Z')], attendance: [at('a1', 's1', '16:00', '2026-08-18T16:00:00.000Z')] });
 
   const local = await readAll(db);
@@ -79,7 +80,7 @@ test('중복만 정리해도 반영 건수가 0이 아니다', async () => {
 });
 
 test('상대가 지운 원생은 화면에서 사라지고 묘비는 남는다', async () => {
-  const db = openTestDb();
+  const db = await openTestDb();
   await seed(db, { students: [student('s1', '김민준', '2026-08-18T10:00:00.000Z')] });
 
   const local = await readAll(db);
@@ -93,7 +94,7 @@ test('상대가 지운 원생은 화면에서 사라지고 묘비는 남는다',
 });
 
 test('바뀐 것이 없으면 아무것도 쓰지 않는다', async () => {
-  const db = openTestDb();
+  const db = await openTestDb();
   await seed(db, { students: [student('s1', '김민준', '2026-08-18T10:00:00.000Z')] });
   const local = await readAll(db);
   assert.equal(await applyMerge(db, local, mergeSnapshots(local, [])), 0);

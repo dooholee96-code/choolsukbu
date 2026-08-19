@@ -1,6 +1,7 @@
 import { ScheduleException, Student } from '../types';
-import { getDayOfWeek } from './date';
+import { getDayOfWeek, toDateKey } from './date';
 import { timesForDay } from './schedule';
+import { isWithdrawnOn } from './student';
 
 /**
  * 그 날 실제로 와야 하는 원생 한 명.
@@ -31,6 +32,10 @@ export const closureNote = (exceptions: ScheduleException[]): string =>
  *
  * 휴강이면 정규든 특강이든 전부 비운다. 학원 문이 닫힌 날에 특강만 남으면
  * 두 예외가 서로 모순되는데, 휴강 쪽이 상위 개념이라 그쪽을 따른다.
+ *
+ * 퇴원생은 퇴원일부터 빠진다. 날짜로 판정하는 이유는 이력과 지난 날짜의 일정
+ * 화면 때문이다 — 3월에 그만둔 학생이 2월 명단에서까지 사라지면, 그 학생이
+ * 다니던 동안의 기록을 다시 볼 방법이 없다.
  */
 export const buildRoster = (
   students: Student[],
@@ -40,6 +45,7 @@ export const buildRoster = (
   if (isClosedOn(exceptions)) return [];
 
   const dayOfWeek = getDayOfWeek(date);
+  const dateKey = toDateKey(date);
   const skipped = new Set(
     exceptions.filter((rule) => rule.kind === 'skip' && rule.studentId).map((rule) => rule.studentId)
   );
@@ -52,6 +58,8 @@ export const buildRoster = (
   const entries: RosterEntry[] = [];
 
   for (const student of students) {
+    if (isWithdrawnOn(student, dateKey)) continue;
+
     const extra = extras.get(student.id);
     const isRegular = student.scheduledDays.includes(dayOfWeek) && !skipped.has(student.id);
 

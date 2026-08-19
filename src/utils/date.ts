@@ -2,7 +2,10 @@ import { format, getDay, isValid, parse } from 'date-fns';
 import { ko } from 'date-fns/locale';
 import { DayOfWeek } from '../types';
 
-export const getCurrentDate = () => format(new Date(), 'yyyy-MM-dd');
+/** Date를 'YYYY-MM-DD'로. 저장된 날짜 문자열과 비교할 수 있는 유일한 형태다. */
+export const toDateKey = (date: Date) => format(date, 'yyyy-MM-dd');
+
+export const getCurrentDate = () => toDateKey(new Date());
 export const getCurrentTime = () => format(new Date(), 'HH:mm');
 
 export const getDayOfWeek = (date: Date): DayOfWeek => {
@@ -82,16 +85,45 @@ export const arrivalOffsetLabel = (
   actualTime: string,
   scheduledStartTime: string
 ): string | null => {
-  const actual = toMinutes(actualTime);
-  const start = toMinutes(scheduledStartTime);
-  if (actual === null || start === null) return null;
+  const diff = signedOffset(actualTime, scheduledStartTime);
+  if (diff === null || Math.abs(diff) < NOTABLE_OFFSET_MINUTES) return null;
 
-  let diff = actual - start;
+  return `${formatDuration(Math.abs(diff))} ${diff > 0 ? '늦음' : '일찍'}`;
+};
+
+/**
+ * 두 시각의 차이를 분으로. 늦으면 양수.
+ *
+ * 자정을 넘는 수업(22:00 시작)에서 00:30은 단순 뺄셈이면 '21시간 30분 이르다'가
+ * 되므로, 12시간을 넘는 차이는 반대쪽으로 감아 해석한다.
+ */
+const signedOffset = (actualTime: string, referenceTime: string): number | null => {
+  const actual = toMinutes(actualTime);
+  const reference = toMinutes(referenceTime);
+  if (actual === null || reference === null) return null;
+
+  let diff = actual - reference;
   if (diff > 720) diff -= 1440;
   if (diff < -720) diff += 1440;
+  return diff;
+};
 
-  if (Math.abs(diff) < NOTABLE_OFFSET_MINUTES) return null;
-  return `${formatDuration(Math.abs(diff))} ${diff > 0 ? '늦음' : '일찍'}`;
+/**
+ * 하원이 예정 종료보다 얼마나 이르거나 늦었는지. 차이가 작으면 null.
+ *
+ * 일찍 간 쪽에만 '조퇴'를 붙인다. 남아서 더 있다 간 것은 알려줄 값이긴 해도
+ * 부모에게 설명할 일이 생기는 쪽은 항상 일찍 간 날이다.
+ */
+export const departureOffsetLabel = (
+  actualTime: string,
+  scheduledEndTime: string
+): string | null => {
+  const diff = signedOffset(actualTime, scheduledEndTime);
+  if (diff === null || Math.abs(diff) < NOTABLE_OFFSET_MINUTES) return null;
+
+  return diff < 0
+    ? `조퇴 · ${formatDuration(-diff)} 일찍`
+    : `${formatDuration(diff)} 더 있음`;
 };
 
 export const formatTimeLabel = (time: string): string => {

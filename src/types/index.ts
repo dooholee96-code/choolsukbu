@@ -34,6 +34,20 @@ export interface Student extends SyncMeta {
    */
   dayTimes?: Partial<Record<DayOfWeek, DaySchedule>>;
   fee?: number; // Optional, for future use
+  /**
+   * 퇴원일 'YYYY-MM-DD'. 값이 있으면 그 날부터 명단에 나오지 않는다.
+   *
+   * 삭제와는 다르다. 삭제는 출결 이력까지 같이 지워서 나중에 정산이나 확인을 할
+   * 수 없게 되는데, 학원에서 사람이 나가는 일은 기록을 없애야 할 일이 아니다.
+   */
+  withdrawnAt?: string | null;
+  /**
+   * 동명이인 구분용 짧은 꼬리표. 이름 옆에 그대로 붙는다.
+   *
+   * 이 앱에는 학번 같은 외부 식별자가 없어서, 김민준이 둘이면 화면에서도
+   * CSV에서도 구분할 방법이 이름밖에 없다. '월수반', '강북초' 같은 한 마디면 된다.
+   */
+  note?: string | null;
 }
 
 export interface Attendance extends SyncMeta {
@@ -43,6 +57,14 @@ export interface Attendance extends SyncMeta {
   time: string; // HH:mm format
   status: 'scheduled' | 'unexpected' | 'absent';
   type: 'checkIn' | 'makeUp';
+  /**
+   * 하원 시각 'HH:mm'. 아직 안 갔거나 찍지 않았으면 없다.
+   *
+   * 등원만 남기면 '몇 시에 갔느냐'는 물음에 답할 수 없다. 조퇴는 그 물음이
+   * 실제로 오는 자리이고 — 아이를 일찍 데려간 날 부모가 확인을 요청한다 —
+   * 예정 종료보다 이르면 화면에서 조퇴로 표시한다.
+   */
+  leaveTime?: string | null;
 }
 
 export interface MakeUp extends SyncMeta {

@@ -2,8 +2,9 @@ import React, { useCallback } from 'react';
 import styled, { useTheme } from 'styled-components/native';
 import { Student, Attendance } from '../types';
 import Button from './common/Button';
-import { arrivalOffsetLabel, formatTimeLabel } from '../utils/date';
+import { arrivalOffsetLabel, departureOffsetLabel, formatTimeLabel } from '../utils/date';
 import { scheduleLines } from '../utils/schedule';
+import { studentSubtitle, withdrawnLabel } from '../utils/student';
 import { Ionicons } from '@expo/vector-icons';
 
 type Status = Attendance['status'];
@@ -33,6 +34,15 @@ interface StudentCardProps {
   isExtra?: boolean;
   /** 기록된 등원 시각 교정. 넘기면 시각이 눌리는 버튼이 된다. */
   onEditTime?: (student: Student, attendance: Attendance) => void;
+  /** 지금 시각으로 하원을 찍는다. 아직 하원 기록이 없을 때만 보인다. */
+  onCheckOut?: (student: Student, attendance: Attendance) => void;
+  /** 기록된 하원 시각 교정 */
+  onEditLeaveTime?: (student: Student, attendance: Attendance) => void;
+  /**
+   * 이름이 겹치는 원생이 있는지. 있으면 구분(note)이 비어 있다는 사실 자체를
+   * 카드에서 알린다 — 둘 중 누구에게 찍는지 모르는 채로 두는 것이 제일 위험하다.
+   */
+  hasNameTwin?: boolean;
 }
 
 /*
@@ -171,17 +181,25 @@ const STATUS_LABEL: Record<Status, string> = {
   absent: '결석',
 };
 
-const ExtraTag = styled.View`
+type PillTone = 'extra' | 'muted' | 'warn';
+
+const pillColor = (theme: ReturnType<typeof useTheme>, tone: PillTone) =>
+  tone === 'muted' ? theme.colors.textSecondary : theme.colors.secondary;
+
+const pillTextColor = (theme: ReturnType<typeof useTheme>, tone: PillTone) =>
+  tone === 'muted' ? theme.colors.textSecondary : theme.colors.secondaryStrong;
+
+const Pill = styled.View<{ $tone: PillTone }>`
   align-self: flex-start;
-  background-color: ${({ theme }) => theme.colors.secondary}20;
+  background-color: ${({ theme, $tone }) => pillColor(theme, $tone)}20;
   padding-vertical: 2px;
   padding-horizontal: 7px;
   border-radius: 10px;
   margin-top: 4px;
 `;
 
-const ExtraTagText = styled.Text`
-  color: ${({ theme }) => theme.colors.secondaryStrong};
+const PillText = styled.Text<{ $tone: PillTone }>`
+  color: ${({ theme, $tone }) => pillTextColor(theme, $tone)};
   font-size: 11px;
   font-family: ${({ theme }) => theme.fonts.bold};`;
 
@@ -195,6 +213,26 @@ const OffsetText = styled.Text`
 
 const TimeButton = styled.TouchableOpacity`
   padding-vertical: 2px;
+`;
+
+/** 등원·하원을 구분해 주는 앞머리. 시각이 둘이면 어느 쪽인지 늘 보여야 한다. */
+const TimeLead = styled.Text`
+  font-family: ${({ theme }) => theme.fonts.regular};
+  font-size: 11px;
+  color: ${({ theme }) => theme.colors.textSecondary};
+`;
+
+const TimeText = styled.Text`
+  font-family: ${({ theme }) => theme.fonts.regular};
+  font-size: 13px;
+  color: ${({ theme }) => theme.colors.textPrimary};
+  text-align: right;
+`;
+
+/** 퇴원생 카드는 흐리게. 명단에 섞여도 한눈에 갈린다. */
+const Faded = styled.View`
+  flex-grow: 1;
+  opacity: 0.55;
 `;
 
 const getInitials = (name: string) => {
@@ -224,6 +262,9 @@ const StudentCard: React.FC<StudentCardProps> = ({
   endTime,
   isExtra = false,
   onEditTime,
+  onCheckOut,
+  onEditLeaveTime,
+  hasNameTwin = false,
 }) => {
   const handleCheckIn = useCallback(() => onCheckIn?.(student), [onCheckIn, student]);
   const handleMarkAbsent = useCallback(() => onMarkAbsent?.(student), [onMarkAbsent, student]);
@@ -232,6 +273,14 @@ const StudentCard: React.FC<StudentCardProps> = ({
   const handleEditTime = useCallback(
     () => attendance && onEditTime?.(student, attendance),
     [onEditTime, student, attendance]
+  );
+  const handleCheckOut = useCallback(
+    () => attendance && onCheckOut?.(student, attendance),
+    [onCheckOut, student, attendance]
+  );
+  const handleEditLeaveTime = useCallback(
+    () => attendance && onEditLeaveTime?.(student, attendance),
+    [onEditLeaveTime, student, attendance]
   );
 
   // 부모가 그 날 시간을 넘겼으면 그것만 보여준다 (오늘 화면).
@@ -242,11 +291,18 @@ const StudentCard: React.FC<StudentCardProps> = ({
 
   const effectiveStart = startTime ?? student.scheduledStartTime;
 
+  const effectiveEnd = endTime ?? student.scheduledEndTime;
+
   // 결석에는 도착 시각이 없으므로 지각을 따질 것도 없다.
+  const attended = Boolean(attendance) && attendance?.status !== 'absent';
   const offset =
-    attendance && attendance.status !== 'absent'
-      ? arrivalOffsetLabel(attendance.time, effectiveStart)
+    attendance && attended ? arrivalOffsetLabel(attendance.time, effectiveStart) : null;
+  const leaveOffset =
+    attendance?.leaveTime && attended
+      ? departureOffsetLabel(attendance.leaveTime, effectiveEnd)
       : null;
+
+  const withdrawn = withdrawnLabel(student);
 
   // 이 색은 styled 템플릿 밖(JSX prop)에서 쓰이므로 훅으로 직접 꺼내야 한다.
   // 이전 코드는 import 없이 전역 theme을 참조해서 이 카드가 그려지는 순간
@@ -261,16 +317,27 @@ const StudentCard: React.FC<StudentCardProps> = ({
         </Avatar>
         <TextContainer>
           <NameText numberOfLines={1}>{student.name}</NameText>
-          <SubText numberOfLines={1}>{student.grade}</SubText>
+          <SubText numberOfLines={1}>{studentSubtitle(student)}</SubText>
           {lines.map((line) => (
             <SubText key={line} numberOfLines={1}>
               {line}
             </SubText>
           ))}
           {isExtra && (
-            <ExtraTag>
-              <ExtraTagText>추가 일정</ExtraTagText>
-            </ExtraTag>
+            <Pill $tone="extra">
+              <PillText $tone="extra">추가 일정</PillText>
+            </Pill>
+          )}
+          {withdrawn !== '' && (
+            <Pill $tone="muted">
+              <PillText $tone="muted">{withdrawn}</PillText>
+            </Pill>
+          )}
+          {/* 이름이 겹치는데 구분이 비어 있으면, 누구에게 찍는지 알 방법이 없다. */}
+          {hasNameTwin && !student.note?.trim() && (
+            <Pill $tone="warn">
+              <PillText $tone="warn">이름 겹침 — 구분 필요</PillText>
+            </Pill>
           )}
           {showFee && student.fee != null && (
             <SubText numberOfLines={1}>₩{student.fee.toLocaleString()}/월</SubText>
@@ -291,12 +358,37 @@ const StudentCard: React.FC<StudentCardProps> = ({
                 accessibilityRole="button"
                 accessibilityLabel={`${student.name} 등원 시각 수정`}
               >
-                <SubText>{formatTimeLabel(attendance.time)}</SubText>
+                {attended && <TimeLead>등원</TimeLead>}
+                <TimeText>{formatTimeLabel(attendance.time)}</TimeText>
               </TimeButton>
             ) : (
               <SubText>{formatTimeLabel(attendance.time)}</SubText>
             )}
             {offset && <OffsetText>{offset}</OffsetText>}
+
+            {/* 하원. 결석에는 붙지 않는다 — 오지 않은 학생이 간 시각은 없는 값이다. */}
+            {attended && attendance.leaveTime && (
+              <TimeButton
+                onPress={handleEditLeaveTime}
+                disabled={!onEditLeaveTime}
+                accessibilityRole="button"
+                accessibilityLabel={`${student.name} 하원 시각 수정`}
+              >
+                <TimeLead>하원</TimeLead>
+                <TimeText>{formatTimeLabel(attendance.leaveTime)}</TimeText>
+              </TimeButton>
+            )}
+            {leaveOffset && <OffsetText>{leaveOffset}</OffsetText>}
+            {attended && !attendance.leaveTime && onCheckOut && (
+              <TextAction
+                onPress={handleCheckOut}
+                accessibilityRole="button"
+                accessibilityLabel={`${student.name} 하원 처리`}
+              >
+                <TextActionLabel $tone="muted">하원</TextActionLabel>
+              </TextAction>
+            )}
+
             {onUndo ? (
               <TextAction
                 onPress={handleUndo}
@@ -334,7 +426,9 @@ const StudentCard: React.FC<StudentCardProps> = ({
     </CardContainer>
   );
 
-  if (!onPress) return card;
+  const body = withdrawn === '' ? card : <Faded>{card}</Faded>;
+
+  if (!onPress) return body;
 
   return (
     <PressableCard
@@ -343,7 +437,7 @@ const StudentCard: React.FC<StudentCardProps> = ({
       accessibilityRole="button"
       accessibilityLabel={`${student.name} 정보 수정`}
     >
-      {card}
+      {body}
     </PressableCard>
   );
 };

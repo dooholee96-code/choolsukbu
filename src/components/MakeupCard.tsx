@@ -4,6 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import Button from './common/Button';
 import { MakeUp, Student } from '../types';
 import { formatDateLabel } from '../utils/date';
+import { studentSubtitle } from '../utils/student';
 
 export interface MakeupEntry {
   makeup: MakeUp;
@@ -91,7 +92,7 @@ const MakeupCard: React.FC<MakeupCardProps> = ({ entry, onSchedule, onComplete, 
       <TopRow>
         <NameText numberOfLines={1}>
           {student.name}
-          <MetaLabel>{`  ${student.grade}`}</MetaLabel>
+          <MetaLabel>{`  ${studentSubtitle(student)}`}</MetaLabel>
         </NameText>
         <DeleteAction
           onPress={handleDelete}

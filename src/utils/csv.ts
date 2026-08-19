@@ -14,13 +14,20 @@ export interface ParseCSVResult {
 const isTimeString = (value: unknown): value is string =>
   typeof value === 'string' && /^\d{1,2}:\d{2}$/.test(value.trim());
 
+/** 'YYYY-MM-DD'만 받는다. 형식이 다르면 퇴원하지 않은 것으로 본다. */
+const asDateKey = (value: string | undefined): string | null => {
+  const trimmed = value?.trim() ?? '';
+  return /^\d{4}-\d{2}-\d{2}$/.test(trimmed) ? trimmed : null;
+};
+
 /**
  * 원생 명단 CSV를 파싱한다.
  * 기대 헤더: name, grade, scheduledDays, scheduledStartTime, scheduledEndTime,
- *            dayTimes(선택), fee(선택)
+ *            dayTimes(선택), fee(선택), note(선택), withdrawnAt(선택)
  * scheduledDays는 'Mon,Wed,Fri' 처럼 쉼표로 잇는다.
  * dayTimes는 'Mon=14:00-16:00|Wed=17:00-19:00' 형태로, 기본 시간과 다른 요일만 적는다.
- * 이 열이 없는 옛 파일도 그대로 읽힌다 — 모든 요일이 기본 시간이 된다.
+ * note는 동명이인 구분용 한 마디, withdrawnAt은 'YYYY-MM-DD' 퇴원일이다.
+ * 이 열들이 없는 옛 파일도 그대로 읽힌다 — 없으면 기본값으로 떨어진다.
  *
  * 이전 구현은 (1) 헤더가 하나라도 빠지면 row.scheduledDays.split에서 그대로 죽고,
  * (2) papaparse가 문자열 입력에서는 error 콜백을 부르지 않고 results.errors에
@@ -72,6 +79,8 @@ export const parseCSV = (csvData: string): Promise<ParseCSVResult> => {
             scheduledEndTime: end,
             dayTimes: parseDayTimes(row.dayTimes),
             fee: parsedFee > 0 ? parsedFee : undefined,
+            note: row.note?.trim() || null,
+            withdrawnAt: asDateKey(row.withdrawnAt),
           });
         });
 

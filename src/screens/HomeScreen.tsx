@@ -13,6 +13,7 @@ import GridRow from '../components/common/GridRow';
 import StudentCard from '../components/StudentCard';
 import { isTimeWithinRange, getCurrentTime } from '../utils/date';
 import { buildRoster, closureNote, isClosedOn, RosterEntry } from '../utils/roster';
+import { duplicateNames } from '../utils/student';
 import { chunk } from '../utils/array';
 import { confirm } from '../utils/dialog';
 import { Student, Attendance } from '../types';
@@ -175,6 +176,7 @@ const HomeScreen: React.FC = () => {
     markAbsent,
     undoTodayAttendance,
     updateAttendanceTime,
+    setLeaveTime,
     lastSyncAt,
     syncUnavailable,
     syncError,
@@ -185,7 +187,11 @@ const HomeScreen: React.FC = () => {
   const navigation = useNavigation();
   const lock = useAppLockContext();
 
-  const [timeTarget, setTimeTarget] = useState<Attendance | null>(null);
+  /** 시각 피커가 고치고 있는 대상. 등원과 하원 둘 다 같은 피커를 쓴다. */
+  const [timeTarget, setTimeTarget] = useState<{
+    attendance: Attendance;
+    edge: 'in' | 'out';
+  } | null>(null);
 
   const closed = isClosedOn(todayExceptions);
   const note = closureNote(todayExceptions);
@@ -214,6 +220,9 @@ const HomeScreen: React.FC = () => {
     () => buildRoster(students, todayExceptions, new Date()),
     [students, todayExceptions]
   );
+
+  /** 이름이 겹치는 원생이 있으면 카드가 그 사실을 알린다. */
+  const twins = useMemo(() => duplicateNames(students), [students]);
 
   const rosterById = useMemo(() => {
     const map = new Map<string, RosterEntry>();
@@ -316,8 +325,21 @@ const HomeScreen: React.FC = () => {
   );
 
   const handleEditTime = useCallback(
-    (_student: Student, attendance: Attendance) => setTimeTarget(attendance),
+    (_student: Student, attendance: Attendance) => setTimeTarget({ attendance, edge: 'in' }),
     []
+  );
+
+  const handleEditLeaveTime = useCallback(
+    (_student: Student, attendance: Attendance) => setTimeTarget({ attendance, edge: 'out' }),
+    []
+  );
+
+  /** 지금 시각으로 하원. 대부분은 아이가 나가는 순간에 누르므로 물어볼 것이 없다. */
+  const handleCheckOut = useCallback(
+    (_student: Student, attendance: Attendance) => {
+      setLeaveTime(attendance.id, getCurrentTime()).catch(() => {});
+    },
+    [setLeaveTime]
   );
 
   const handleTimeChange = useCallback(
@@ -325,10 +347,13 @@ const HomeScreen: React.FC = () => {
       if (Platform.OS !== 'ios') setTimeTarget(null);
       if (event.type === 'dismissed' || !selected || !timeTarget) return;
 
-      updateAttendanceTime(timeTarget.id, format(selected, 'HH:mm'));
+      const time = format(selected, 'HH:mm');
+      if (timeTarget.edge === 'in') updateAttendanceTime(timeTarget.attendance.id, time);
+      else setLeaveTime(timeTarget.attendance.id, time);
+
       if (Platform.OS === 'ios') setTimeTarget(null);
     },
-    [timeTarget, updateAttendanceTime]
+    [timeTarget, updateAttendanceTime, setLeaveTime]
   );
 
   const openSchedule = useCallback(() => navigation.navigate('ScheduleModal'), [navigation]);
@@ -459,6 +484,9 @@ const HomeScreen: React.FC = () => {
                   onMarkAbsent={section.checkable ? handleMarkAbsent : undefined}
                   onUndo={section.checkable ? undefined : handleUndo}
                   onEditTime={section.checkable ? undefined : handleEditTime}
+                  onCheckOut={section.checkable ? undefined : handleCheckOut}
+                  onEditLeaveTime={section.checkable ? undefined : handleEditLeaveTime}
+                  hasNameTwin={twins.has(student.name.trim())}
                 />
               );
             }}
@@ -477,10 +505,15 @@ const HomeScreen: React.FC = () => {
 
       {timeTarget && (
         <DateTimePicker
-          value={dateFromTime(timeTarget.time)}
+          value={dateFromTime(
+            (timeTarget.edge === 'in'
+              ? timeTarget.attendance.time
+              : timeTarget.attendance.leaveTime) ?? getCurrentTime()
+          )}
           mode="time"
           display={Platform.OS === 'ios' ? 'spinner' : 'default'}
           onChange={handleTimeChange}
+          accessibilityLabel={timeTarget.edge === 'in' ? '등원 시각' : '하원 시각'}
         />
       )}
     </Screen>

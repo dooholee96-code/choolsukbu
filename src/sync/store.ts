@@ -69,14 +69,15 @@ export const applyMerge = async (
   await db.withTransactionAsync(async () => {
     for (const row of students) {
       await db.runAsync(
-        `INSERT INTO students (id, name, grade, scheduledDays, scheduledStartTime, scheduledEndTime, dayTimes, fee, updatedAt, deletedAt)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO students (id, name, grade, scheduledDays, scheduledStartTime, scheduledEndTime, dayTimes, fee, withdrawnAt, note, updatedAt, deletedAt)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(id) DO UPDATE SET
            name = excluded.name, grade = excluded.grade,
            scheduledDays = excluded.scheduledDays,
            scheduledStartTime = excluded.scheduledStartTime,
            scheduledEndTime = excluded.scheduledEndTime,
            dayTimes = excluded.dayTimes, fee = excluded.fee,
+           withdrawnAt = excluded.withdrawnAt, note = excluded.note,
            updatedAt = excluded.updatedAt, deletedAt = excluded.deletedAt;`,
         row.id,
         row.name,
@@ -86,6 +87,8 @@ export const applyMerge = async (
         row.scheduledEndTime,
         serializeDayTimes(row),
         row.fee ?? null,
+        row.withdrawnAt ?? null,
+        row.note ?? null,
         row.updatedAt ?? null,
         row.deletedAt ?? null
       );
@@ -100,15 +103,16 @@ export const applyMerge = async (
 
     for (const row of attendance) {
       await db.runAsync(
-        `INSERT INTO attendance (id, studentId, date, time, status, type, updatedAt, deletedAt)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO attendance (id, studentId, date, time, leaveTime, status, type, updatedAt, deletedAt)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(id) DO UPDATE SET
-           time = excluded.time, status = excluded.status,
+           time = excluded.time, leaveTime = excluded.leaveTime, status = excluded.status,
            updatedAt = excluded.updatedAt, deletedAt = excluded.deletedAt;`,
         row.id,
         row.studentId,
         row.date,
         row.time,
+        row.leaveTime ?? null,
         row.status,
         row.type,
         row.updatedAt ?? null,

@@ -31,6 +31,11 @@ interface DataContextType {
   updateStudent: (student: Student) => Promise<void>;
   /** 원생과 그에 딸린 출결·보충 기록을 함께 삭제한다 */
   deleteStudent: (studentId: string) => Promise<void>;
+  /**
+   * 퇴원 처리. 그 날부터 명단에서 빠지지만 출결 이력은 남는다.
+   * date에 null을 주면 복학이다.
+   */
+  setStudentWithdrawn: (studentId: string, date: string | null) => Promise<void>;
   /** CSV 가져오기. 이미 있는 이름은 건너뛰고 넣은 수를 돌려준다. */
   importStudents: (students: Student[]) => Promise<{ added: number; skipped: number }>;
 
@@ -41,6 +46,8 @@ interface DataContextType {
   undoTodayAttendance: (studentId: string) => Promise<void>;
   /** 기록해 둔 등원 시각을 고친다. 뒤늦게 찍었을 때 실제 도착 시각으로 맞춘다. */
   updateAttendanceTime: (attendanceId: string, time: string) => Promise<void>;
+  /** 하원 시각을 남긴다. null이면 지운다 (잘못 찍었을 때). */
+  setLeaveTime: (attendanceId: string, time: string | null) => Promise<void>;
 
   scheduleMakeup: (makeupId: string, makeUpDate: string) => Promise<void>;
   completeMakeup: (makeupId: string) => Promise<void>;
@@ -188,6 +195,8 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         write('updateStudent', () => students.updateStudentRow(db, student)),
       deleteStudent: (studentId) =>
         write('deleteStudent', () => students.softDeleteStudent(db, studentId)),
+      setStudentWithdrawn: (studentId, date) =>
+        write('setWithdrawn', () => students.setWithdrawn(db, studentId, date)),
       importStudents: async (incoming) => {
         const result = await students.importStudentRows(db, incoming);
         await commit();
@@ -214,6 +223,8 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         ),
       updateAttendanceTime: (attendanceId, time) =>
         write('updateAttendanceTime', () => attendance.updateTime(db, attendanceId, time)),
+      setLeaveTime: (attendanceId, time) =>
+        write('setLeaveTime', () => attendance.setLeaveTime(db, attendanceId, time)),
 
       scheduleMakeup: (makeupId, makeUpDate) =>
         write('scheduleMakeup', () => makeup.setMakeupDate(db, makeupId, makeUpDate)),

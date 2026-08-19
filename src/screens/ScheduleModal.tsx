@@ -10,6 +10,7 @@ import { useData } from '../hooks/useData';
 import Button from '../components/common/Button';
 import { formatDateLabel, formatTimeLabel } from '../utils/date';
 import { buildRoster, closureNote, isClosedOn } from '../utils/roster';
+import { isWithdrawnOn, studentSubtitle } from '../utils/student';
 import { logger } from '../utils/logger';
 import { confirm, notify } from '../utils/dialog';
 import { ScheduleException, Student } from '../types';
@@ -214,9 +215,14 @@ const ScheduleModal: React.FC = () => {
       .filter((row): row is { rule: ScheduleException; student: Student } => Boolean(row.student));
   }, [exceptions, students]);
 
+  // 퇴원생은 부를 수 없다. 명단에서 뺐는데 '추가로 부르기'에는 남아 있으면,
+  // 나간 학생을 특강에 넣는 길이 그대로 열려 있는 셈이다.
   const addable = useMemo(
-    () => students.filter((student) => !rosterIds.has(student.id)),
-    [students, rosterIds]
+    () =>
+      students.filter(
+        (student) => !rosterIds.has(student.id) && !isWithdrawnOn(student, dateKey)
+      ),
+    [students, rosterIds, dateKey]
   );
 
   const exceptionByStudent = useMemo(() => {
@@ -360,7 +366,7 @@ const ScheduleModal: React.FC = () => {
                       <RowMain>
                         <RowName>{entry.student.name}</RowName>
                         <RowSub>
-                          {entry.student.grade} · {formatTimeLabel(entry.startTime)} –{' '}
+                          {studentSubtitle(entry.student)} · {formatTimeLabel(entry.startTime)} –{' '}
                           {formatTimeLabel(entry.endTime)}
                         </RowSub>
                         {entry.isExtra && (
@@ -398,7 +404,7 @@ const ScheduleModal: React.FC = () => {
                     <Row key={rule.id}>
                       <RowMain>
                         <RowName>{student.name}</RowName>
-                        <RowSub>{student.grade}</RowSub>
+                        <RowSub>{studentSubtitle(student)}</RowSub>
                         <Tag $tone="skip">
                           <TagText $tone="skip">빠짐</TagText>
                         </Tag>
@@ -429,7 +435,7 @@ const ScheduleModal: React.FC = () => {
                     <RowMain>
                       <RowName>{student.name}</RowName>
                       <RowSub>
-                        {student.grade} · {formatTimeLabel(student.scheduledStartTime)} –{' '}
+                        {studentSubtitle(student)} · {formatTimeLabel(student.scheduledStartTime)} –{' '}
                         {formatTimeLabel(student.scheduledEndTime)}
                       </RowSub>
                     </RowMain>

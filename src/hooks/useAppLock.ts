@@ -2,11 +2,22 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { AppState } from 'react-native';
 import { isLockEnabled } from '../security/lock';
 
+/**
+ * 왜 잠겼는가. 얼굴 인식을 자동으로 띄울지가 여기서 갈린다.
+ *
+ * 손으로 잠근 직후에 Face ID가 자동으로 뜨면, 화면 앞에 있던 원장선생님 얼굴로
+ * 그대로 열려 버린다. 건네주기 직전에 잠그는 것이 이 기능의 요점인데 그게 무너진다.
+ */
+export type LockReason = 'launch' | 'away' | 'manual';
+
 export interface AppLock {
+  /** 잠금 설정을 아직 읽는 중인가. 읽기 전에 화면을 그리면 명단이 한 번 비친다. */
+  ready: boolean;
   /** 잠금이 켜져 있는가 */
   enabled: boolean;
   /** 지금 잠겨 있는가. 켜져 있어도 방금 열었으면 false다. */
   locked: boolean;
+  reason: LockReason;
   /** 잠금 설정을 다시 읽는다. 설정 화면에서 켜고 끈 뒤 부른다. */
   refresh: () => Promise<void>;
   unlock: () => void;
@@ -30,17 +41,17 @@ const GRACE_MS = 30_000;
  * 필요하다 — 실제로 그 경우가 가장 흔하다.
  */
 export const useAppLock = (): AppLock => {
+  const [ready, setReady] = useState(false);
   const [enabled, setEnabled] = useState(false);
   const [locked, setLocked] = useState(false);
+  const [reason, setReason] = useState<LockReason>('launch');
 
-  /** 잠금이 켜져 있는지 아직 확인하기 전인가. 확인 전에는 잠그지 않는다. */
-  const ready = useRef(false);
   const leftAt = useRef<number | null>(null);
 
   const refresh = useCallback(async () => {
     const on = await isLockEnabled();
     setEnabled(on);
-    ready.current = true;
+    setReady(true);
 
     // 막 켰다면 잠긴 상태로 두지 않는다. 방금 설정한 사람은 이미 본인이다.
     if (!on) setLocked(false);
@@ -50,15 +61,17 @@ export const useAppLock = (): AppLock => {
   useEffect(() => {
     (async () => {
       const on = await isLockEnabled();
-      ready.current = true;
       setEnabled(on);
       setLocked(on);
+      setReason('launch');
+      // 잠글지 정한 뒤에 ready를 켠다. 순서가 뒤집히면 명단이 한 번 비친다.
+      setReady(true);
     })();
   }, []);
 
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (state) => {
-      if (!ready.current || !enabled) return;
+      if (!ready || !enabled) return;
 
       if (state === 'background') {
         leftAt.current = Date.now();
@@ -68,15 +81,21 @@ export const useAppLock = (): AppLock => {
       if (state === 'active' && leftAt.current !== null) {
         const away = Date.now() - leftAt.current;
         leftAt.current = null;
-        if (away > GRACE_MS) setLocked(true);
+        if (away > GRACE_MS) {
+          setReason('away');
+          setLocked(true);
+        }
       }
     });
 
     return () => subscription.remove();
-  }, [enabled]);
+  }, [ready, enabled]);
 
   const unlock = useCallback(() => setLocked(false), []);
-  const lock = useCallback(() => setLocked(true), []);
+  const lock = useCallback(() => {
+    setReason('manual');
+    setLocked(true);
+  }, []);
 
-  return { enabled, locked, refresh, unlock, lock };
+  return { ready, enabled, locked, reason, refresh, unlock, lock };
 };

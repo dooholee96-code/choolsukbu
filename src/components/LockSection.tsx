@@ -55,7 +55,8 @@ interface Props {
  * 그래서 PIN은 네 자리면 충분하고, 얼굴 인식이 되는 기기에서는 그쪽이 먼저 뜬다.
  */
 const LockSection: React.FC<Props> = ({ onChanged }) => {
-  const [supported, setSupported] = useState(true);
+  // null이면 아직 모른다. true로 시작하면 웹에서 '잠금 켜기'가 한 번 번쩍인다.
+  const [supported, setSupported] = useState<boolean | null>(null);
   const [enabled, setEnabled] = useState(false);
   const [biometrics, setBiometrics] = useState(false);
   const [entering, setEntering] = useState(false);
@@ -130,7 +131,7 @@ const LockSection: React.FC<Props> = ({ onChanged }) => {
     <>
       <SectionTitle>앱 잠금</SectionTitle>
 
-      {!supported ? (
+      {supported === null ? null : !supported ? (
         <Note>앱 잠금은 iPhone·iPad에서만 쓸 수 있습니다.</Note>
       ) : enabled ? (
         <>

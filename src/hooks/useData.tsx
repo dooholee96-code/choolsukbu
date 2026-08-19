@@ -6,6 +6,7 @@ import { getCurrentDate } from '../utils/date';
 import { logger } from '../utils/logger';
 import { useSync } from './useSync';
 import type { SyncOutcome } from '../sync';
+import { buildBackup, readBackup, restoreBackup, summarize, type BackupSummary } from '../sync/backup';
 import * as students from '../data/students';
 import * as attendance from '../data/attendance';
 import * as makeup from '../data/makeup';
@@ -63,6 +64,11 @@ interface DataContextType {
   loadAttendanceRange: (fromDate: string, toDate: string) => Promise<Attendance[]>;
   loadExceptionsForDate: (date: string) => Promise<ScheduleException[]>;
   loadExceptionsRange: (fromDate: string, toDate: string) => Promise<ScheduleException[]>;
+
+  /** 기기 전체를 파일 하나로. CSV와 달리 되돌릴 수 있다. */
+  exportBackup: () => Promise<string>;
+  /** 백업 파일을 읽어 되돌린다. 덮어쓰기가 아니라 병합이라 최신 기록은 살아남는다. */
+  restoreBackup: (text: string) => Promise<{ summary: BackupSummary; applied: number } | null>;
 
   refreshData: () => Promise<void>;
   lastSyncAt: string | null;
@@ -226,6 +232,16 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         ),
       removeException: (exceptionId) =>
         write('removeException', () => exceptions.softDeleteException(db, exceptionId)),
+
+      exportBackup: () => buildBackup(db),
+      restoreBackup: async (text) => {
+        const snapshot = readBackup(text);
+        if (!snapshot) return null;
+
+        const applied = await restoreBackup(db, snapshot);
+        await commit();
+        return { summary: summarize(snapshot), applied };
+      },
 
       loadAllAttendance: () => attendance.listAllAttendance(db),
       loadAllMakeups: () => makeup.listAllMakeupRows(db),

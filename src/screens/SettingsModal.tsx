@@ -14,6 +14,8 @@ import {
   buildStudentsCsv,
   exportCsv,
   pickCsvText,
+  pickBackupText,
+  exportFile,
 } from '../utils/backup';
 import { confirm, notify } from '../utils/dialog';
 import LockSection from '../components/LockSection';
@@ -79,6 +81,8 @@ const SettingsModal: React.FC = () => {
     loadAllMakeups,
     loadAllExceptions,
     importStudents,
+    exportBackup,
+    restoreBackup,
     lastSyncAt,
     syncUnavailable,
     syncError,
@@ -98,6 +102,37 @@ const SettingsModal: React.FC = () => {
       setBusy(false);
     }
   }, []);
+
+  /**
+   * 기기 전체를 파일 하나로. CSV는 사람이 읽으려고 만든 것이라 되돌릴 수 없다 —
+   * id도 관계도 없어서 출결을 어느 원생 것으로 붙일지 알 수 없다.
+   */
+  const exportWhole = () =>
+    run(async () => {
+      await exportFile(`출석부_전체백업_${backupStamp()}.json`, await exportBackup(), 'json');
+    });
+
+  const restoreWhole = () =>
+    run(async () => {
+      const text = await pickBackupText();
+      if (text === null) return;
+
+      const result = await restoreBackup(text);
+      if (!result) {
+        notify('복원할 수 없는 파일', '이 앱이 만든 전체 백업 파일(.json)을 골라 주세요.');
+        return;
+      }
+
+      const { summary, applied } = result;
+      notify(
+        applied > 0 ? '복원했습니다' : '되돌릴 것이 없습니다',
+        `백업 시점: ${new Date(summary.exportedAt).toLocaleString('ko-KR')}\n` +
+          `원생 ${summary.students} · 출결 ${summary.attendance} · 보충 ${summary.makeups}\n\n` +
+          (applied > 0
+            ? `${applied}건을 되돌렸습니다.`
+            : '이미 이 기기에 모두 있는 기록입니다.')
+      );
+    });
 
   const exportStudents = () =>
     run(async () => {
@@ -219,9 +254,22 @@ const SettingsModal: React.FC = () => {
             </>
           )}
 
-          <SectionTitle>내보내기</SectionTitle>
+          <SectionTitle>전체 백업</SectionTitle>
           <Note>
-            CSV 파일로 저장한 뒤 공유 시트에서 보관할 곳을 고릅니다. 엑셀에서 바로 열립니다.
+            기록 전부를 파일 하나로 저장하고, 그 파일로 되돌립니다. 기기를 바꾸거나
+            앱을 지웠을 때 쓰는 것은 이쪽입니다.
+            {'\n'}복원은 덮어쓰기가 아니라 합치기라, 백업 이후에 찍은 기록은 그대로
+            남고 같은 파일을 두 번 복원해도 두 배가 되지 않습니다.
+          </Note>
+          <Stack>
+            <Button title="전체 백업 저장" onPress={exportWhole} disabled={busy} />
+            <Button title="백업에서 복원" variant="secondary" onPress={restoreWhole} disabled={busy} />
+          </Stack>
+
+          <SectionTitle>표로 내보내기</SectionTitle>
+          <Note>
+            엑셀에서 열어 보려고 만드는 것입니다. 되돌릴 수는 없습니다 — 사람이 읽는
+            형식이라 기록끼리의 연결이 빠집니다. 복구용으로는 위의 전체 백업을 쓰세요.
           </Note>
           <Stack>
             <Button title="원생 명단" onPress={exportStudents} disabled={busy} />

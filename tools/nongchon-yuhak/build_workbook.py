@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import datetime as dt
 import sys
+from collections import Counter
 
 import openpyxl
 from openpyxl.formatting.rule import CellIsRule, FormulaRule
@@ -371,7 +372,7 @@ ENROLL_HEADERS = [
 ]
 
 APP_HEADERS = [
-    "신청ID", "학생ID", "성명", "접수 학기", "접수 학년도", "학기구분", "모집 차수",
+    "신청ID", "원본 행", "학생ID", "성명", "접수 학기", "접수 학년도", "학기구분", "모집 차수",
     "도달 단계", "배정 판정", "판정 근거", "미선정 단계", "미선정 사유(원문)", "미선정 사유(분류)",
     "접수 표기(원본)", "순(원본)", "예비유학생", "중학교 진학", "관내 전학", "기타",
     "유학 학년도(원본)", "배정 희망서", "참가 신청서", "최종 배정", "중간 종료 사유",
@@ -554,7 +555,7 @@ def sheet_applications(ws, data):
     for a in data["applications"]:
         raw = a.raw
         rows.append([
-            a.app_id, a.student_id, T.s(raw["성명"]),
+            a.app_id, a.row, a.student_id, T.s(raw["성명"]),
             T.sem_label(a.intake_year, a.intake_term) if a.intake_year else None,
             a.intake_year, f"{a.intake_term}학기" if a.intake_term else None,
             f"{a.intake_round}차" if a.intake_round else None,
@@ -573,7 +574,7 @@ def sheet_applications(ws, data):
 
     widths = {h: 12 for h in APP_HEADERS}
     widths.update({
-        "신청ID": 9, "학생ID": 9, "성명": 11, "접수 학기": 11, "접수 학년도": 9,
+        "신청ID": 9, "원본 행": 8, "학생ID": 9, "성명": 11, "접수 학기": 11, "접수 학년도": 9,
         "학기구분": 8, "모집 차수": 8, "도달 단계": 16, "배정 판정": 10, "판정 근거": 34,
         "미선정 단계": 10, "미선정 사유(원문)": 30, "미선정 사유(분류)": 16, "접수 표기(원본)": 14,
         "중학교 진학": 26, "관내 전학": 22, "기타": 24, "유학 학년도(원본)": 16,
@@ -1027,27 +1028,93 @@ OFFICIAL = [
 START = 9
 
 
+def raw_text(v):
+    """다듬기 전의 원본 값을 글자로."""
+    if v is None:
+        return ""
+    if isinstance(v, dt.datetime):
+        return v.date().isoformat()
+    if isinstance(v, dt.date):
+        return v.isoformat()
+    if isinstance(v, float) and v.is_integer():
+        return str(int(v))
+    return str(v)
+
+
+def reconcile(data):
+    """원본 값을 옮기면서 무엇을 다듬었는지, 원본 한 줄이 어디로 갔는지."""
+    trimmed = []
+    cells = 0
+    for a in data["applications"]:
+        for key in T.COL:
+            cells += 1
+            v = a.raw[key]
+            before, after = raw_text(v), (T.s(v) or "")
+            if before != after:
+                trimmed.append((a.row, key, before, after))
+    verdicts = Counter(a.decision for a in data["applications"])
+    return {
+        "rows": len(data["applications"]),
+        "cells": cells,
+        "trimmed": trimmed,
+        "verdicts": verdicts,
+        "enrollments": len(data["enrollments"]),
+    }
+
+
 def sheet_issues(ws, data):
     t = ws.cell(1, 1, "데이터 검증")
     t.font = Font(name=FONT, size=15, bold=True, color=INK)
     n = ws.cell(2, 1,
-                "발표 자료와 숫자가 맞는지 먼저 확인하고, 그 다음에 손볼 것을 추립니다. "
-                "'집계 영향 없음'인 항목은 숫자를 흔들지 않으므로 급히 고치지 않아도 됩니다.")
+                "먼저 원본과 어긋난 곳이 없는지, 그 다음 발표 자료와 숫자가 맞는지 보고, "
+                "마지막에 손볼 것을 추립니다. '집계 영향 없음'인 항목은 숫자를 흔들지 않으므로 "
+                "급히 고치지 않아도 됩니다.")
     n.font = Font(name=FONT, size=9, color="595959")
 
+    rec = reconcile(data)
+    r = 3
+    for i, h in enumerate(["원본과 맞춰 본 것", "결과", "설명"], start=1):
+        style_head(ws, r, i, h, fill=ACCENT, width=(24 if i == 1 else 14) if i < 3 else 62)
+    lines = [
+        ("원본 데이터 행", f"{rec['rows']:,}행", "신청이력이 원본 한 줄에 한 줄씩 맞물립니다. '원본 행' 열로 찾아가세요."),
+        ("옮긴 칸", f"{rec['cells']:,}칸",
+         f"원본 30개 열을 모두 신청이력에 그대로 두었습니다. 그중 {len(rec['trimmed'])}칸만 다듬었습니다."),
+        ("배정 → 유학이력", f"{rec['verdicts'].get('배정', 0):,}건",
+         f"유학이력 {rec['enrollments']:,}행으로 펼쳤습니다"
+         f"(한 건당 평균 {rec['enrollments'] / max(rec['verdicts'].get('배정', 1), 1):.1f}학기)."),
+        ("미배정", f"{rec['verdicts'].get('미배정', 0):,}건", "신청이력에만 남습니다. 유학하지 않은 건입니다."),
+        ("확인필요", f"{rec['verdicts'].get('확인필요', 0):,}건", "신청이력에 남기고 아래 목록에 올렸습니다."),
+    ]
+    for j, (a, b, c) in enumerate(lines):
+        rr = r + 1 + j
+        put(ws, rr, 1, a, bold=True, fill=SUB_FILL, align="left")
+        put(ws, rr, 2, b, bold=True)
+        put(ws, rr, 3, c, align="left", size=9, color="595959")
+    r += 1 + len(lines)
+
+    if rec["trimmed"]:
+        put(ws, r + 1, 1, "다듬은 칸", bold=True, fill=SUB_FILL, align="left")
+        put(ws, r + 1, 2, f"{len(rec['trimmed'])}칸", bold=True)
+        put(ws, r + 1, 3,
+            " · ".join(f"{row}행 {key}: '{before}' → '{after}'"
+                       for row, key, before, after in rec["trimmed"][:6]),
+            align="left", size=9, color="595959")
+        r += 1
+    r += 2
+
     for i, h in enumerate(["학년도", "발표 자료", "워크북", "시군별 대조"], start=1):
-        style_head(ws, 3, i, h, fill=ACCENT, width=(11 if i < 4 else 46))
+        style_head(ws, r, i, h, fill=ACCENT, width=(11 if i < 4 else 62))
     by_year = {}
     for e in data["enrollments"]:
         if e.year == 2026 and e.term != 1:
             continue
         by_year.setdefault(e.year, set()).add(e.student_id)
     for j, (year, official, note) in enumerate(OFFICIAL):
-        r = 4 + j
-        put(ws, r, 1, f"{year}학년도" + (" 1학기" if year == 2026 else ""), bold=True, fill=SUB_FILL)
-        put(ws, r, 2, official, fmt="#,##0")
-        put(ws, r, 3, len(by_year.get(year, ())), bold=True, fmt="#,##0")
-        put(ws, r, 4, note, align="left", size=9,
+        rr = r + 1 + j
+        put(ws, rr, 1, f"{year}학년도" + (" 1학기" if year == 2026 else ""), bold=True, fill=SUB_FILL)
+        put(ws, rr, 2, official, fmt="#,##0")
+        put(ws, rr, 3, len(by_year.get(year, ())), bold=True, fmt="#,##0")
+        put(ws, rr, 4, note, align="left", size=9,
             color="A61C1C" if note != "일치" else "17652A")
 
     rows = [
@@ -1060,22 +1127,23 @@ def sheet_issues(ws, data):
         {"번호": 6, "구분": 10, "집계 영향": 9, "유형": 18, "학생ID": 14, "성명": 11,
          "신청ID": 14, "원본 행": 10, "내용": 74, "처리 메모": 22},
         wrap_cols={"내용", "처리 메모"},
-        start_row=START,
+        start_row=r + len(OFFICIAL) + 3,
     )
+    head_row = last_row - len(data["issues"])
     add_dropdown(ws, ISSUE_HEADERS, "처리 메모", ["확인 완료", "수정함", "원본이 맞음", "보류"], last_row)
     c = col_of(ISSUE_HEADERS, "구분")
     ws.conditional_formatting.add(
-        f"A{START + 1}:{get_column_letter(len(ISSUE_HEADERS))}{last_row}",
-        FormulaRule(formula=[f'${c}{START + 1}="조치 필요"'],
+        f"A{head_row + 1}:{get_column_letter(len(ISSUE_HEADERS))}{last_row}",
+        FormulaRule(formula=[f'${c}{head_row + 1}="조치 필요"'],
                     fill=PatternFill("solid", fgColor="FCE4E4")),
     )
     ws.conditional_formatting.add(
-        f"{c}{START + 1}:{c}{last_row}",
+        f"{c}{head_row + 1}:{c}{last_row}",
         CellIsRule(operator="equal", formula=['"참고"'],
                    font=Font(name=FONT, size=10, color="808080")),
     )
-    for r in range(START + 1, last_row + 1):
-        ws.cell(r, ISSUE_HEADERS.index("처리 메모") + 1).fill = INPUT_FILL
+    for rr in range(head_row + 1, last_row + 1):
+        ws.cell(rr, ISSUE_HEADERS.index("처리 메모") + 1).fill = INPUT_FILL
 
 
 def sheet_source(ws, src_path):

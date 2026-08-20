@@ -381,11 +381,12 @@ def build(path: str):
     enrollments: list[Enrollment] = []
     issues: list[dict] = []
 
-    def add_issue(kind, level, app: Application | None, detail):
+    def add_issue(kind, level, app: Application | None, detail, impact="있음"):
         issues.append(
             {
                 "유형": kind,
                 "심각도": level,
+                "집계 영향": impact,
                 "원본행": app.row if app else None,
                 "신청ID": app.app_id if app else None,
                 "학생ID": app.student_id if app else None,
@@ -397,12 +398,12 @@ def build(path: str):
     for app in apps:
         raw = app.raw
         if app.intake_date is None:
-            add_issue("접수일 없음", "높음", app, "접수일(시작일)이 비어 있어 학기를 계산할 수 없음")
+            add_issue("접수일 없음", "조치 필요", app, "접수일(시작일)이 비어 있어 학기를 계산할 수 없음")
             continue
         if app.decision == "확인필요":
             kind = ("최종배정 후 전학 확인 필요"
                     if s(raw["종료일"]) in ASSIGNED_TOKENS else "배정 결과 미기재")
-            add_issue(kind, "높음", app, app.decision_basis)
+            add_issue(kind, "조치 필요", app, app.decision_basis)
             continue
         if app.decision != "배정":
             continue
@@ -417,16 +418,18 @@ def build(path: str):
             end_i, ongoing = max(start_i, CURRENT_INDEX), True
         else:
             end_i, ongoing = max(start_i, CURRENT_INDEX), True
-            add_issue(
-                "종료일 미기재",
-                "보통",
-                app,
-                f"배정 건이나 종료일 칸이 '{end_raw or '(비어 있음)'}' — 재학 중으로 간주함",
-            )
+            if start_i < CURRENT_INDEX:
+                add_issue(
+                    "종료일 미기재",
+                    "확인 권장",
+                    app,
+                    f"지난 학기에 시작한 배정 건이나 종료일 칸이 '{end_raw or '(비어 있음)'}' "
+                    "— 재학 중으로 간주함",
+                )
         if end_i < start_i:
             add_issue(
                 "종료일 역전",
-                "높음",
+                "조치 필요",
                 app,
                 f"종료일({end_raw})이 시작 학기({sem_label(app.intake_year, app.intake_term)})보다 이름 — 1개 학기로 처리",
             )
@@ -434,7 +437,8 @@ def build(path: str):
 
         base_grade = normalize_grade(s(raw["전입학년"]))
         if base_grade and base_grade not in GRADE_INDEX:
-            add_issue("학년 표기 오류", "보통", app, f"전입시 학년 '{base_grade}' 은 표준 학년 값이 아님")
+            add_issue("학년 표기 오류", "확인 권장", app,
+                      f"전입시 학년 '{base_grade}' 은 표준 학년 값이 아님", impact="없음")
         region = (s(raw["유학지역"]) or "").strip() or None
         school = s(raw["유학학교"])
         end_reason = s(raw["중간종료사유"])
@@ -480,7 +484,7 @@ def build(path: str):
             if want != got:
                 add_issue(
                     "유학 학년도 불일치",
-                    "보통",
+                    "확인 권장",
                     app,
                     f"원본 기재 {sorted(want)} ↔ 접수일·종료일로 계산 {sorted(got)}",
                 )
@@ -519,7 +523,8 @@ def build(path: str):
             issues.append(
                 {
                     "유형": "현재 학년 불일치",
-                    "심각도": "낮음",
+                    "심각도": "참고",
+                    "집계 영향": "없음",
                     "원본행": app.row,
                     "신청ID": app.app_id,
                     "학생ID": app.student_id,
@@ -537,7 +542,8 @@ def build(path: str):
             issues.append(
                 {
                     "유형": "같은 학기 중복 재학",
-                    "심각도": "높음",
+                    "심각도": "조치 필요",
+                    "집계 영향": "있음",
                     "원본행": None,
                     "신청ID": f"{other.app_id}, {e.app_id}",
                     "학생ID": e.student_id,
@@ -559,7 +565,8 @@ def build(path: str):
             issues.append(
                 {
                     "유형": "동일인 여부 확인",
-                    "심각도": "보통",
+                    "심각도": "참고",
+                    "집계 영향": "없음",
                     "원본행": ", ".join(str(a.row) for a in st.apps),
                     "신청ID": ", ".join(a.app_id for a in st.apps),
                     "학생ID": sid,
@@ -580,7 +587,8 @@ def build(path: str):
             issues.append(
                 {
                     "유형": "동명이인",
-                    "심각도": "낮음",
+                    "심각도": "참고",
+                    "집계 영향": "없음",
                     "원본행": None,
                     "신청ID": None,
                     "학생ID": ", ".join(sorted(sids)),
@@ -589,7 +597,8 @@ def build(path: str):
                 }
             )
 
-    issues.sort(key=lambda x: ({"높음": 0, "보통": 1, "낮음": 2}[x["심각도"]], x["유형"], x["원본행"] or 0))
+    rank = {"조치 필요": 0, "확인 권장": 1, "참고": 2}
+    issues.sort(key=lambda x: (rank[x["심각도"]], x["유형"], str(x["원본행"] or "")))
 
     semesters = sorted({sem_index(e.year, e.term) for e in enrollments})
     return {

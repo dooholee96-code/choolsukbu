@@ -47,17 +47,17 @@ def rng(sheet: str, headers: list[str], name: str, limit: int) -> str:
     return f"'{sheet}'!${c}$2:${c}${limit}"
 
 
-def write_table(ws, headers, rows, widths, *, date_cols=(), wrap_cols=(), band=True):
-    """헤더 1행 + 데이터. 틀 고정과 필터까지 걸어둔다."""
+def write_table(ws, headers, rows, widths, *, date_cols=(), wrap_cols=(), band=True, start_row=1):
+    """헤더 한 줄 + 데이터. 틀 고정과 필터까지 걸어둔다."""
     for i, h in enumerate(headers, start=1):
-        c = ws.cell(1, i, h)
+        c = ws.cell(start_row, i, h)
         c.font = Font(name=FONT, size=10, bold=True, color="FFFFFF")
         c.fill = HEAD_FILL
         c.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
         c.border = BOX
-    ws.row_dimensions[1].height = 34
+    ws.row_dimensions[start_row].height = 34
 
-    for r, row in enumerate(rows, start=2):
+    for r, row in enumerate(rows, start=start_row + 1):
         for i, v in enumerate(row, start=1):
             c = ws.cell(r, i, v)
             c.font = Font(name=FONT, size=10)
@@ -70,14 +70,15 @@ def write_table(ws, headers, rows, widths, *, date_cols=(), wrap_cols=(), band=T
             if headers[i - 1] in date_cols:
                 c.number_format = DATE_FMT
                 c.alignment = Alignment(horizontal="center", vertical="center")
-            if band and r % 2 == 0:
+            if band and (r - start_row) % 2 == 0:
                 c.fill = BAND
 
     for name, w in widths.items():
         ws.column_dimensions[col_of(headers, name)].width = w
-    ws.freeze_panes = "C2"
-    ws.auto_filter.ref = f"A1:{get_column_letter(len(headers))}{max(len(rows) + 1, 2)}"
-    return len(rows) + 1
+    ws.freeze_panes = f"C{start_row + 1}"
+    last = max(start_row + len(rows), start_row + 1)
+    ws.auto_filter.ref = f"A{start_row}:{get_column_letter(len(headers))}{last}"
+    return last
 
 
 def add_dropdown(ws, headers, name, options, last_row):
@@ -173,7 +174,13 @@ def sheet_guide(ws, data, src_name):
     line("지역별현황 / 학교별현황", "시군별·학교별 인원을 학기별로 늘어놓은 표.")
     line("체제비관리", "학생별 지원 시작 학기와 도청 3년 지원 만료 시점, 잔여 학기.")
     line("설정_지원단가", "체제비 단가. 지침이 바뀌면 노란 칸의 숫자만 고치면 됩니다.")
-    line("데이터검증", f"원본에서 발견한 확인이 필요한 항목 {len(data['issues'])}건.")
+    line(
+        "데이터검증",
+        f"확인 항목 {len(data['issues'])}건. 맨 위에 발표 자료와의 대조표가 있고, "
+        f"그 아래 목록은 '조치 필요'({sum(1 for i in data['issues'] if i['심각도'] == '조치 필요')}건)와 "
+        f"'참고'({sum(1 for i in data['issues'] if i['심각도'] == '참고')}건)로 나뉩니다. "
+        "'참고'는 집계 숫자에 영향이 없습니다.",
+    )
     line("원본_전체", "원본 1번 시트를 값 그대로 옮겨 둔 사본. 대조용이며 고치지 않습니다.")
     gap()
 
@@ -859,29 +866,68 @@ def sheet_cost(ws, data):
     )
 
 
-ISSUE_HEADERS = ["번호", "심각도", "유형", "학생ID", "성명", "신청ID", "원본 행", "내용", "처리 메모"]
+ISSUE_HEADERS = ["번호", "구분", "집계 영향", "유형", "학생ID", "성명", "신청ID",
+                 "원본 행", "내용", "처리 메모"]
+
+
+# 도교육청 발표 자료 '연도별 시·군 유학생 수' ('26. 1학기 모집 기준)
+OFFICIAL = [
+    (2022, 27, "일치"), (2023, 85, "일치"), (2024, 165, "일치"), (2025, 269, "일치"),
+    (2026, 333, "고창 1명 차이 — 학교 오보고분, 실제 332명"),
+]
+
+START = 9
 
 
 def sheet_issues(ws, data):
+    t = ws.cell(1, 1, "데이터 검증")
+    t.font = Font(name=FONT, size=15, bold=True, color=INK)
+    n = ws.cell(2, 1,
+                "발표 자료와 숫자가 맞는지 먼저 확인하고, 그 다음에 손볼 것을 추립니다. "
+                "'집계 영향 없음'인 항목은 숫자를 흔들지 않으므로 급히 고치지 않아도 됩니다.")
+    n.font = Font(name=FONT, size=9, color="595959")
+
+    for i, h in enumerate(["학년도", "발표 자료", "워크북", "시군별 대조"], start=1):
+        style_head(ws, 3, i, h, fill=ACCENT, width=(11 if i < 4 else 46))
+    by_year = {}
+    for e in data["enrollments"]:
+        if e.year == 2026 and e.term != 1:
+            continue
+        by_year.setdefault(e.year, set()).add(e.student_id)
+    for j, (year, official, note) in enumerate(OFFICIAL):
+        r = 4 + j
+        put(ws, r, 1, f"{year}학년도" + (" 1학기" if year == 2026 else ""), bold=True, fill=SUB_FILL)
+        put(ws, r, 2, official, fmt="#,##0")
+        put(ws, r, 3, len(by_year.get(year, ())), bold=True, fmt="#,##0")
+        put(ws, r, 4, note, align="left", size=9,
+            color="A61C1C" if note != "일치" else "17652A")
+
     rows = [
-        [i, x["심각도"], x["유형"], x["학생ID"], x["성명"], x["신청ID"], x["원본행"], x["내용"], None]
+        [i, x["심각도"], x["집계 영향"], x["유형"], x["학생ID"], x["성명"], x["신청ID"],
+         x["원본행"], x["내용"], None]
         for i, x in enumerate(data["issues"], start=1)
     ]
     last_row = write_table(
         ws, ISSUE_HEADERS, rows,
-        {"번호": 6, "심각도": 8, "유형": 18, "학생ID": 14, "성명": 11, "신청ID": 14,
-         "원본 행": 8, "내용": 78, "처리 메모": 24},
+        {"번호": 6, "구분": 10, "집계 영향": 9, "유형": 18, "학생ID": 14, "성명": 11,
+         "신청ID": 14, "원본 행": 10, "내용": 74, "처리 메모": 22},
         wrap_cols={"내용", "처리 메모"},
+        start_row=START,
     )
-    add_dropdown(ws, ISSUE_HEADERS, "처리 메모", ["확인 완료", "수정함", "원본이 맞음", "보류"], 500)
-    c = col_of(ISSUE_HEADERS, "심각도")
+    add_dropdown(ws, ISSUE_HEADERS, "처리 메모", ["확인 완료", "수정함", "원본이 맞음", "보류"], last_row)
+    c = col_of(ISSUE_HEADERS, "구분")
     ws.conditional_formatting.add(
-        f"A2:{get_column_letter(len(ISSUE_HEADERS))}{last_row}",
-        FormulaRule(formula=[f'${c}2="높음"'], fill=PatternFill("solid", fgColor="FCE4E4")),
+        f"A{START + 1}:{get_column_letter(len(ISSUE_HEADERS))}{last_row}",
+        FormulaRule(formula=[f'${c}{START + 1}="조치 필요"'],
+                    fill=PatternFill("solid", fgColor="FCE4E4")),
     )
-    for r in range(2, last_row + 1):
+    ws.conditional_formatting.add(
+        f"{c}{START + 1}:{c}{last_row}",
+        CellIsRule(operator="equal", formula=['"참고"'],
+                   font=Font(name=FONT, size=10, color="808080")),
+    )
+    for r in range(START + 1, last_row + 1):
         ws.cell(r, ISSUE_HEADERS.index("처리 메모") + 1).fill = INPUT_FILL
-    ws.column_dimensions["I"].width = 24
 
 
 def sheet_source(ws, src_path):

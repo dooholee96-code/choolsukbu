@@ -34,3 +34,8 @@ web-build/
 
 # 검증용 임시 스크립트. 저장소에 남기지 않는다.
 /.tmp-test
+
+# 농어촌유학 명단은 개인정보라 저장소에 두지 않는다. tools/nongchon-yuhak/README.md 참고.
+*.xlsx
+*.xls
+__pycache__/

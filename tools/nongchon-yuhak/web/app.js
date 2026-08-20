@@ -61,7 +61,7 @@ async function loadFile(file) {
   err.textContent = "";
   try {
     const buf = await file.arrayBuffer();
-    const wb = XLSX.read(buf, { type: "array", cellDates: true });
+    const wb = XLSX.read(buf, { type: "array", cellDates: false });
     D = buildData(wb);
     fileLabel = file.name;
     el("landing").hidden = true;

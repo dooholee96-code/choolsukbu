@@ -17,6 +17,10 @@ import transform as T
 
 CHROME = "/opt/pw-browsers/chromium-1194/chrome-linux/chrome"
 
+# 시간대마다 돌린다. 엑셀 날짜를 Date 로 받으면 한국(UTC+9)처럼 앞선 시간대에서
+# 하루가 밀려 학기가 통째로 어긋나는 일이 있었다. 그 함정을 다시 밟지 않기 위해서다.
+TIMEZONES = ["Asia/Seoul", "UTC", "America/New_York", "Pacific/Honolulu"]
+
 DUMP = """() => {
   const sc = stageCounts();
   const byYear = {}, byRegion = {}, bySem = {};
@@ -77,12 +81,13 @@ def python_side(src: str) -> dict:
     }
 
 
-async def js_side(page_path: str, src: str) -> dict:
+async def js_side(page_path: str, src: str, tz: str = "Asia/Seoul") -> dict:
     from playwright.async_api import async_playwright
 
     async with async_playwright() as pw:
         browser = await pw.chromium.launch(executable_path=CHROME)
-        page = await browser.new_page()
+        context = await browser.new_context(timezone_id=tz, locale="ko-KR")
+        page = await context.new_page()
         errors: list[str] = []
         page.on("pageerror", lambda e: errors.append(str(e)))
         await page.goto("file://" + str(Path(page_path).resolve()))
@@ -107,15 +112,23 @@ def diff(a: dict, b: dict, path: str = "") -> list[str]:
 
 def main(page_path: str, src: str) -> int:
     py = python_side(src)
-    js = asyncio.run(js_side(page_path, src))
-    problems = diff(py, js)
+    items = len(py["years"]) + len(py["regions"]) + len(py["sems"]) + len(py["stages"]) + 4
     print(f"학생 {py['students']} / 신청 {py['apps']} / 유학이력 {py['enrollments']} / 확인 항목 {py['issues']}")
     print("단계:", json.dumps(py["stages"], ensure_ascii=False))
-    print(f"대조 항목 {len(py['years']) + len(py['regions']) + len(py['sems']) + len(py['stages']) + 4}건")
-    for p in problems[:20]:
-        print("  !", p)
-    print("파이썬과 화면이 같은 답을 냅니다" if not problems else f"{len(problems)}건 어긋남")
-    return 0 if not problems else 1
+    print(f"시간대마다 {items}건씩 대조")
+
+    all_problems = []
+    for tz in TIMEZONES:
+        js = asyncio.run(js_side(page_path, src, tz))
+        problems = diff(py, js)
+        print(f"  {tz:<20} {'일치' if not problems else f'{len(problems)}건 어긋남'}")
+        for p in problems[:6]:
+            print("      !", p)
+        all_problems += problems
+
+    print("파이썬과 화면이 같은 답을 냅니다" if not all_problems
+          else f"모두 {len(all_problems)}건 어긋남")
+    return 0 if not all_problems else 1
 
 
 if __name__ == "__main__":

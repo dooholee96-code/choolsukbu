@@ -161,6 +161,29 @@ function reachedStage(app) {
 
 /* ── 읽기 ────────────────────────────────────────────── */
 
+/* 엑셀 날짜를 Date 로 받아서는 안 된다. 라이브러리가 시간대를 태워 주는데,
+   한국(UTC+9)처럼 앞선 시간대에서는 하루가 밀려 3월 1일이 2월 28일이 된다.
+   그러면 학기가 통째로 어긋난다. 일련번호에서 연·월·일만 뽑아 쓴다. */
+function cellDate(cell) {
+  if (!cell) return null;
+  if (cell.t === "d" && cell.v instanceof Date) {
+    // 그래도 Date 로 온 경우: 시각을 버리고 날짜만 쓴다
+    const d = cell.v;
+    return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  }
+  if (cell.t !== "n" || typeof cell.v !== "number") return null;
+  const looksLikeDate =
+    (cell.z && XLSX.SSF && XLSX.SSF.is_date && XLSX.SSF.is_date(String(cell.z))) ||
+    (cell.v > 25569 && cell.v < 80000);   // 1970년 이후, 2119년 이전
+  if (!looksLikeDate) return null;
+  const p = XLSX.SSF.parse_date_code(cell.v);
+  if (!p || !p.y) return null;
+  return new Date(p.y, p.m - 1, p.d);
+}
+
+/* 날짜로 읽어야 하는 원본 열 */
+const DATE_KEYS = new Set(["접수일", "종료일"]);
+
 function readRows(workbook) {
   const name = workbook.SheetNames.includes(SOURCE_SHEET)
     ? SOURCE_SHEET
@@ -173,7 +196,8 @@ function readRows(workbook) {
     const raw = { _row: r };
     for (const [key, c] of Object.entries(COL)) {
       const cell = ws[XLSX.utils.encode_cell({ r: r - 1, c: c - 1 })];
-      raw[key] = cell ? (cell.t === "d" ? cell.v : cell.v) : null;
+      if (!cell) { raw[key] = null; continue; }
+      raw[key] = DATE_KEYS.has(key) ? (cellDate(cell) ?? cell.v) : cell.v;
     }
     if (!txt(raw.성명)) continue;
     rows.push(raw);

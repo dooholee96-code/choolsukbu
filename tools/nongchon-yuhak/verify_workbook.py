@@ -1,0 +1,167 @@
+"""만든 워크북의 수식을 전부 계산해서 값이 맞는지 확인한다.
+
+  python verify_workbook.py <워크북.xlsx> <원본.xlsx>
+
+LibreOffice 로 재계산할 수 없는 환경이 있어서 formula_eval.py 로 직접 계산한다.
+계산이 되는지만 보지 않고, 집계 시트가 낸 숫자를 원데이터에서 따로 센 값과
+맞춰 본다.
+"""
+
+from __future__ import annotations
+
+import re
+import sys
+
+import openpyxl
+from openpyxl.utils import get_column_letter
+
+import formula_eval as F
+import transform as T
+
+# 엑셀 2007 이전 함수만 쓴다. 이후 함수는 접두사 문제로 다른 프로그램에서 깨진다.
+ALLOWED = {
+    "COUNTIF", "COUNTIFS", "SUM", "IF", "OR", "AND", "MIN", "MAX",
+    "INDEX", "MATCH", "IFERROR", "SUMPRODUCT", "SUMIF", "SUMIFS",
+}
+BANNED = {"XLOOKUP", "XMATCH", "SORT", "FILTER", "UNIQUE", "SEQUENCE",
+          "TEXTJOIN", "CONCAT", "IFS", "SWITCH", "MAXIFS", "MINIFS"}
+
+FUNC_RE = re.compile(r"([A-Z_][A-Z0-9_.]*)\s*\(")
+
+
+def all_formulas(wb):
+    for ws in wb.worksheets:
+        for row in ws.iter_rows():
+            for c in row:
+                if isinstance(c.value, str) and c.value.startswith("="):
+                    yield ws.title, c.coordinate, c.value
+
+
+def check_syntax(wb):
+    problems = []
+    for sheet, coord, text in all_formulas(wb):
+        fns = {m.group(1) for m in FUNC_RE.finditer(text.upper())}
+        if fns & BANNED:
+            problems.append(f"{sheet}!{coord}: 다른 프로그램에서 깨지는 함수 {sorted(fns & BANNED)}")
+        if fns - ALLOWED - BANNED:
+            problems.append(f"{sheet}!{coord}: 확인이 필요한 함수 {sorted(fns - ALLOWED - BANNED)}")
+        if text.count("(") != text.count(")"):
+            problems.append(f"{sheet}!{coord}: 괄호가 맞지 않음 — {text[:70]}")
+        for m in re.finditer(r"'([^']+)'!", text):
+            if m.group(1) not in wb.sheetnames:
+                problems.append(f"{sheet}!{coord}: 없는 시트 '{m.group(1)}'")
+    return problems
+
+
+def expected(data):
+    """원데이터에서 따로 센 값."""
+    total, stay, region, school = {}, {}, {}, {}
+    for e in data["enrollments"]:
+        lab = T.sem_label(e.year, e.term)
+        total[lab] = total.get(lab, 0) + 1
+        if e.end_date is None or e.end_date >= e.term_end:
+            stay[lab] = stay.get(lab, 0) + 1
+        region[(lab, e.region)] = region.get((lab, e.region), 0) + 1
+        school[(lab, e.school)] = school.get((lab, e.school), 0) + 1
+    return total, stay, region, school
+
+
+def header_col(ws, header, row=1):
+    for c in range(1, ws.max_column + 1):
+        if ws.cell(row, c).value == header:
+            return get_column_letter(c)
+    raise KeyError(f"{ws.title} 에 '{header}' 열이 없음")
+
+
+def check_values(wb, book, data):
+    problems, checked = [], 0
+    total, stay, region, school = expected(data)
+
+    # 학기별집계
+    ws = wb["학기별집계"]
+    for r in range(5, 5 + len(data["semesters"])):
+        lab = ws.cell(r, 1).value
+        for col, want, what in ((2, total, "유학생 수(공식 기준)"), (3, stay, "학기말 재적")):
+            checked += 1
+            got = book.value("학기별집계", f"{get_column_letter(col)}{r}")
+            if int(got or 0) != want.get(lab, 0):
+                problems.append(f"학기별집계 {lab} {what}: 수식 {got} ≠ 원데이터 {want.get(lab, 0)}")
+        checked += 1
+        got = book.value("학기별집계", f"D{r}")
+        want_out = total.get(lab, 0) - stay.get(lab, 0)
+        if int(got or 0) != want_out:
+            problems.append(f"학기별집계 {lab} 학기 중 종료: 수식 {got} ≠ 원데이터 {want_out}")
+
+    # 지역별현황 / 학교별현황 격자
+    for sheet, key_col, want in (("지역별현황", 1, region), ("학교별현황", 2, school)):
+        ws = wb[sheet]
+        sems = []
+        c = key_col + 1
+        while isinstance(ws.cell(2, c).value, str) and "학기" in ws.cell(2, c).value:
+            sems.append((get_column_letter(c), ws.cell(2, c).value))
+            c += 1
+        r = 3
+        while True:
+            key = ws.cell(r, key_col).value
+            if not key or key == "합계":
+                break
+            for letter, lab in sems:
+                checked += 1
+                got = book.value(sheet, f"{letter}{r}")
+                if int(got or 0) != want.get((lab, key), 0):
+                    problems.append(
+                        f"{sheet} {key} {lab}: 수식 {got} ≠ 원데이터 {want.get((lab, key), 0)}"
+                    )
+            r += 1
+        # 합계 행
+        for letter, lab in sems:
+            checked += 1
+            got = book.value(sheet, f"{letter}{r}")
+            if int(got or 0) != total.get(lab, 0):
+                problems.append(f"{sheet} 합계 {lab}: 수식 {got} ≠ 원데이터 {total.get(lab, 0)}")
+
+    # 학생마스터의 유학 학기수 합이 유학이력 행 수와 같아야 한다
+    ws = wb["학생마스터"]
+    col = header_col(ws, "유학 학기수")
+    s = 0
+    for r in range(2, ws.max_row + 1):
+        if ws.cell(r, 1).value is None:
+            break
+        s += int(book.value("학생마스터", f"{col}{r}") or 0)
+    checked += 1
+    if s != len(data["enrollments"]):
+        problems.append(f"학생마스터 유학 학기수 합계 {s} ≠ 유학이력 {len(data['enrollments'])}행")
+
+    return problems, checked
+
+
+def main(book_path, source_path):
+    wb = openpyxl.load_workbook(book_path)
+    formulas = list(all_formulas(wb))
+    syntax = check_syntax(wb)
+
+    book = F.Book(wb)
+    for sheet, coord, _ in formulas:
+        book.value(sheet, coord)
+
+    data = T.build(source_path)
+    values, checked = check_values(wb, book, data)
+
+    print(f"수식 {len(formulas)}개")
+    print(f"  문법 검사   : {'통과' if not syntax else f'{len(syntax)}건 문제'}")
+    for p in syntax[:15]:
+        print("   !", p)
+    print(f"  계산 오류   : {len(book.errors)}건")
+    for e in book.errors[:15]:
+        print("   !", e)
+    print(f"  값 대조     : {checked}건 중 {len(values)}건 불일치")
+    for p in values[:15]:
+        print("   !", p)
+
+    ok = not syntax and not book.errors and not values
+    print("모두 통과" if ok else "확인 필요")
+    return 0 if ok else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1], sys.argv[2]))

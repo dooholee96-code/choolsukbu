@@ -217,6 +217,7 @@ class Application:
     intake_year: int | None = None
     intake_term: int | None = None
     intake_round: int | None = None
+    term_start: dt.date | None = None
     decision: str = ""
     decision_basis: str = ""
     reject_stage: str | None = None
@@ -261,6 +262,7 @@ class Enrollment:
     start_date: dt.date | None
     end_date: dt.date | None
     app_id: str
+    term_end: dt.date | None = None
 
 
 def load_rows(path: str) -> list[dict]:
@@ -282,14 +284,19 @@ def decide(raw: dict) -> tuple[str, str]:
     end = s(raw["종료일"])
     wish = s(raw["배정희망서"])
 
+    if end and "미전학" in end:
+        return "미배정", f"종료일 칸에 '{end.splitlines()[0]}' — 최종배정 후 전학하지 않음"
+    if end in ASSIGNED_TOKENS:
+        return "확인필요", (
+            f"종료일 칸에 '{end}' 라고만 적혀 있어 실제 전학 여부를 알 수 없음 "
+            "— 공식 시군별 집계에도 빠져 있는 건"
+        )
     if final in ASSIGNED_TOKENS:
         return "배정", f"최종배정 = {final}"
     if final in UNASSIGNED_TOKENS:
         return "미배정", f"최종배정 = {final}"
     if final:
         return "미배정", f"최종배정 칸에 사유 기재: {final[:40]}"
-    if end in ASSIGNED_TOKENS:
-        return "배정", f"종료일 칸에 배정 결과 기재({end}) — 원본 입력 위치 오류"
     if end and (end.startswith("현재") or as_date(raw["종료일"])):
         return "배정", f"최종배정 비어 있으나 종료일({end[:20]}) 기재"
     if wish == "선정":
@@ -338,7 +345,10 @@ def build(path: str):
         app.intake_date = d
         if d:
             app.intake_year, app.intake_term = sem_of(d)
+            # 접수일 칸의 '일' 자리는 날짜가 아니라 모집 차수다 (2025-09-02 = 2025년 2학기 2차 모집)
             app.intake_round = d.day if d.day <= 9 else 1
+            # 차수 자리만 떼고 월은 남긴다 — 2022년 시범사업은 실제로 10월에 시작했다
+            app.term_start = d.replace(day=1)
         app.decision, app.decision_basis = decide(raw)
         if app.decision != "배정":
             wish, submit, final = (
@@ -390,7 +400,9 @@ def build(path: str):
             add_issue("접수일 없음", "높음", app, "접수일(시작일)이 비어 있어 학기를 계산할 수 없음")
             continue
         if app.decision == "확인필요":
-            add_issue("배정 결과 미기재", "높음", app, app.decision_basis)
+            kind = ("최종배정 후 전학 확인 필요"
+                    if s(raw["종료일"]) in ASSIGNED_TOKENS else "배정 결과 미기재")
+            add_issue(kind, "높음", app, app.decision_basis)
             continue
         if app.decision != "배정":
             continue
@@ -453,9 +465,10 @@ def build(path: str):
                     home_school=s(raw["원소속교"]),
                     status=status,
                     end_reason=end_reason if (i == end_i and not ongoing) else None,
-                    start_date=sem_start(y, t) if i > start_i else app.intake_date,
+                    start_date=sem_start(y, t) if i > start_i else app.term_start,
                     end_date=sem_end(y, t) if i < end_i else (end_date or None),
                     app_id=app.app_id,
+                    term_end=sem_end(y, t),
                 )
             )
 
@@ -537,6 +550,26 @@ def build(path: str):
             )
         else:
             seen[k] = e
+
+    # 한 사람으로 묶었으나 원 소속교가 다른 경우 — 이사 후 재신청일 수도, 동명이인일 수도 있다
+    for sid in order:
+        st = students[sid]
+        schools = {s(a.raw["원소속교"]) for a in st.apps if s(a.raw["원소속교"])}
+        if len(schools) > 1:
+            issues.append(
+                {
+                    "유형": "동일인 여부 확인",
+                    "심각도": "보통",
+                    "원본행": ", ".join(str(a.row) for a in st.apps),
+                    "신청ID": ", ".join(a.app_id for a in st.apps),
+                    "학생ID": sid,
+                    "성명": st.name,
+                    "내용": (
+                        "이름과 보호자 연락처가 같아 한 사람으로 묶었으나 원 소속교가 다름 "
+                        f"({' / '.join(sorted(schools))}) — 이사 후 재신청인지 동명이인인지 확인 필요"
+                    ),
+                }
+            )
 
     # 동명이인 경고
     name_map: dict[str, set] = defaultdict(set)

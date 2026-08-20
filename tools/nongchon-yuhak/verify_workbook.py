@@ -120,17 +120,45 @@ def check_values(wb, book, data):
             if int(got or 0) != total.get(lab, 0):
                 problems.append(f"{sheet} 합계 {lab}: 수식 {got} ≠ 원데이터 {total.get(lab, 0)}")
 
-    # 학생마스터의 유학 학기수 합이 유학이력 행 수와 같아야 한다
-    ws = wb["학생마스터"]
+    # 학생현황의 유학 학기수 합이 유학이력 행 수와 같아야 한다
+    ws = wb["학생현황"]
     col = header_col(ws, "유학 학기수")
     s = 0
     for r in range(2, ws.max_row + 1):
         if ws.cell(r, 1).value is None:
             break
-        s += int(book.value("학생마스터", f"{col}{r}") or 0)
+        s += int(book.value("학생현황", f"{col}{r}") or 0)
     checked += 1
     if s != len(data["enrollments"]):
-        problems.append(f"학생마스터 유학 학기수 합계 {s} ≠ 유학이력 {len(data['enrollments'])}행")
+        problems.append(f"학생현황 유학 학기수 합계 {s} ≠ 유학이력 {len(data['enrollments'])}행")
+
+    # 학생현황의 '현재 단계' 는 학생 수와 맞아야 하고, 모집단계현황의 집계와도 같아야 한다
+    ws = wb["학생현황"]
+    stage_col = header_col(ws, "현재 단계")
+    seen = {}
+    for r in range(2, ws.max_row + 1):
+        if ws.cell(r, 1).value is None:
+            break
+        v = book.value("학생현황", f"{stage_col}{r}")
+        seen[v] = seen.get(v, 0) + 1
+    checked += 1
+    if sum(seen.values()) != len(data["students"]):
+        problems.append(
+            f"학생현황 현재 단계 합계 {sum(seen.values())} ≠ 학생 {len(data['students'])}명"
+        )
+    if set(seen) - set(T.STAGES):
+        problems.append(f"학생현황에 모르는 단계가 있음: {sorted(set(seen) - set(T.STAGES))}")
+
+    ws = wb["모집단계현황"]
+    for r in range(1, ws.max_row + 1):
+        name = ws.cell(r, 1).value
+        if name in T.STAGES and ws.cell(r, 3).value:
+            checked += 1
+            got = book.value("모집단계현황", f"B{r}")
+            if int(got or 0) != seen.get(name, 0):
+                problems.append(
+                    f"모집단계현황 '{name}': 수식 {got} ≠ 학생현황 {seen.get(name, 0)}"
+                )
 
     return problems, checked
 

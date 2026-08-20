@@ -97,6 +97,14 @@ REASON_RULES = [
     ("배정 우선순위 밀림", ["순위", "외동"]),
 ]
 
+# 학생이 거치는 단계. 앞의 다섯은 차례로 나아가는 단계이고, 뒤의 셋은 끝난 상태다.
+STAGES = [
+    "접수", "가배정", "참가신청서 제출", "최종배정", "유학중",
+    "유학종료", "중도복귀", "미선정·미전학",
+]
+# 학교 배정희망서·참가신청서 칸은 2025학년도 2학기 모집부터 기록되기 시작했다.
+STAGE_RECORDED_FROM = (2025, 2)
+
 ASSIGNED_TOKENS = {"배정", "최종배정"}
 UNASSIGNED_TOKENS = {"X", "x", "미배정"}
 
@@ -207,6 +215,19 @@ def normalize_residence(raw: str | None, year: int | None = None) -> str | None:
     return raw
 
 
+def reached_stage(app: "Application") -> str:
+    """그 신청 건이 어디까지 갔는지."""
+    if app.decision == "배정":
+        return "최종배정"
+    if app.decision == "확인필요":
+        return "최종배정 확인 필요"
+    if s(app.raw["참가신청서"]) == "제출":
+        return "참가신청서 제출"
+    if s(app.raw["배정희망서"]) == "선정":
+        return "가배정"
+    return "접수"
+
+
 @dataclass
 class Application:
     row: int
@@ -223,6 +244,7 @@ class Application:
     reject_stage: str | None = None
     reject_reason: str | None = None
     reject_class: str | None = None
+    stage: str = ""
 
 
 @dataclass
@@ -351,6 +373,14 @@ def build(path: str):
             app.term_start = d.replace(day=1)
         app.decision, app.decision_basis = decide(raw)
         if app.decision != "배정":
+            end_text = s(raw["종료일"]) or ""
+            if "미전학" in end_text:
+                app.reject_stage, app.reject_reason = "전학", "최종배정 후 미전학"
+                app.reject_class = "최종배정 후 미전학"
+                app.stage = reached_stage(app)
+                apps.append(app)
+                students[sid].apps.append(app)
+                continue
             wish, submit, final = (
                 s(raw["배정희망서"]),
                 s(raw["참가신청서"]),
@@ -365,6 +395,7 @@ def build(path: str):
             elif final in UNASSIGNED_TOKENS:
                 app.reject_stage, app.reject_reason = "도교육청", "미배정(사유 미기재)"
             app.reject_class = classify_reason(app.reject_reason)
+        app.stage = reached_stage(app)
         apps.append(app)
         students[sid].apps.append(app)
 
@@ -600,8 +631,47 @@ def build(path: str):
     rank = {"조치 필요": 0, "확인 권장": 1, "참고": 2}
     issues.sort(key=lambda x: (rank[x["심각도"]], x["유형"], str(x["원본행"] or "")))
 
+    profiles = {}
+    for sid in order:
+        st = students[sid]
+        st.apps.sort(key=lambda a: (sem_index(a.intake_year or 0, a.intake_term or 1), a.row))
+        latest = st.apps[-1]
+        lst = by_student.get(sid, [])
+        first, last = (lst[0], lst[-1]) if lst else (None, None)
+        ended = last.end_date if (last and last.status == "종료") else None
+        profiles[sid] = {
+            "접수": sem_label(latest.intake_year, latest.intake_term) if latest.intake_year else None,
+            "모집 차수": f"{latest.intake_round}차" if latest.intake_round else None,
+            "가배정": (sem_label(latest.intake_year, latest.intake_term)
+                     if s(latest.raw["배정희망서"]) == "선정" else None),
+            "참가신청서": (sem_label(latest.intake_year, latest.intake_term)
+                       if s(latest.raw["참가신청서"]) == "제출" else None),
+            "최종배정": (sem_label(latest.intake_year, latest.intake_term)
+                     if latest.decision == "배정" else None),
+            "유학 시작": first.start_date if first else None,
+            "유학 종료": ended,
+            "마지막 학기 마지막날": last.term_end if last else None,
+            "최근 신청 결과": latest.decision,
+            "최근 결과 사유": latest.reject_reason or latest.decision_basis,
+            "미선정 단계": latest.reject_stage,
+            "미선정 사유": latest.reject_class,
+            "최근 유학지역": last.region if last else None,
+            "최근 유학학교": last.school if last else None,
+            "최근 거주유형": last.residence if last else None,
+            "최근 거주지": last.place if last else None,
+            "현재 학년": (last.grade if last else None),
+            "유학 학년도": ", ".join(str(y) for y in sorted({e.year for e in lst})) or None,
+            "단계 기록 여부": (
+                "기록" if latest.intake_year
+                and sem_index(latest.intake_year, latest.intake_term)
+                >= sem_index(*STAGE_RECORDED_FROM)
+                else "미기록"
+            ),
+        }
+
     semesters = sorted({sem_index(e.year, e.term) for e in enrollments})
     return {
+        "profiles": profiles,
         "students": [students[sid] for sid in order],
         "applications": apps,
         "enrollments": enrollments,

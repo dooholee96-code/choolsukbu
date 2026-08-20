@@ -84,14 +84,28 @@ class Parser:
         return left
 
     def arith(self):
-        v = self.unary()
+        v = self.term()
         while self.peek()[1] in ("+", "-", "&"):
             op = self.take()
-            r = self.unary()
+            r = self.term()
             if op == "&":
                 v = f"{as_text(v)}{as_text(r)}"
             else:
                 v = num(v) + num(r) if op == "+" else num(v) - num(r)
+        return v
+
+    def term(self):
+        v = self.unary()
+        while self.peek()[1] in ("*", "/"):
+            op = self.take()
+            r = self.unary()
+            if op == "*":
+                v = num(v) * num(r)
+            else:
+                d = num(r)
+                if d == 0:
+                    raise Err("0 으로 나눔")
+                v = num(v) / d
         return v
 
     def unary(self):
@@ -134,9 +148,43 @@ class Parser:
             return Range(sheet, col1, row1, col2, row2)
         return self.book.value(sheet, f"{col1}{row1}")
 
+    def skip_arg(self):
+        """인자 하나를 계산하지 않고 건너뛴다."""
+        depth = 0
+        while self.i < len(self.t):
+            text = self.t[self.i][1]
+            if depth == 0 and text in (",", ")"):
+                return
+            if text == "(":
+                depth += 1
+            elif text == ")":
+                depth -= 1
+            self.i += 1
+
+    def call_if(self):
+        """IF 는 필요한 가지만 계산한다. 엑셀도 그렇게 하고, 그래야 0 으로 나누기를 피한다."""
+        cond = truthy(self.comparison())
+        result = False
+        if self.peek()[1] == ",":
+            self.take()
+            if cond:
+                result = self.comparison()
+            else:
+                self.skip_arg()
+        if self.peek()[1] == ",":
+            self.take()
+            if cond:
+                self.skip_arg()
+            else:
+                result = self.comparison()
+        self.take(")")
+        return result
+
     def call(self):
         name = self.take().upper()
         self.take("(")
+        if name == "IF":
+            return self.call_if()
         args = []
         if self.peek()[1] != ")":
             while True:
@@ -271,8 +319,12 @@ def apply_function(name, args, book):
     if name == "MAX":
         return max(num(v) for a in args for v in values(a))
     if name == "INDEX":
+        if len(args) != 2:
+            raise Err(f"INDEX 인자가 {len(args)}개 — 범위와 위치 두 개여야 함")
         cells = list(args[0].cells())
         i = int(num(args[1]))
+        if not 1 <= i <= len(cells):
+            raise Err(f"INDEX 위치 {i} 가 범위({len(cells)}칸) 밖")
         s, c = cells[i - 1]
         return book.value(s, c)
     if name == "IFERROR":

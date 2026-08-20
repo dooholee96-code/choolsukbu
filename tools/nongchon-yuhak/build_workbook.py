@@ -47,7 +47,8 @@ def rng(sheet: str, headers: list[str], name: str, limit: int) -> str:
     return f"'{sheet}'!${c}$2:${c}${limit}"
 
 
-def write_table(ws, headers, rows, widths, *, date_cols=(), wrap_cols=(), band=True, start_row=1):
+def write_table(ws, headers, rows, widths, *, date_cols=(), wrap_cols=(), band=True,
+                start_row=1, freeze="C"):
     """헤더 한 줄 + 데이터. 틀 고정과 필터까지 걸어둔다."""
     for i, h in enumerate(headers, start=1):
         c = ws.cell(start_row, i, h)
@@ -75,7 +76,7 @@ def write_table(ws, headers, rows, widths, *, date_cols=(), wrap_cols=(), band=T
 
     for name, w in widths.items():
         ws.column_dimensions[col_of(headers, name)].width = w
-    ws.freeze_panes = f"C{start_row + 1}"
+    ws.freeze_panes = f"{freeze}{start_row + 1}"
     last = max(start_row + len(rows), start_row + 1)
     ws.auto_filter.ref = f"A{start_row}:{get_column_letter(len(headers))}{last}"
     return last
@@ -161,7 +162,16 @@ def sheet_guide(ws, data, src_name):
     gap()
 
     head("시트 구성")
-    line("학생마스터", f"1행 = 학생 1명 ({len(data['students'])}명). 사람에 관한 정보는 여기만 고칩니다.")
+    line(
+        "학생현황",
+        f"1행 = 학생 1명 ({len(data['students'])}명). 총괄 시트입니다. "
+        "접수·가배정·참가신청서·최종배정·유학 시작·유학 종료 칸을 옆으로 늘어놓고, "
+        "'현재 단계' 는 그 칸들을 뒤에서부터 보고 수식이 정합니다. 칸을 채우면 단계가 따라 바뀝니다.",
+    )
+    line(
+        "모집단계현황",
+        "접수한 학생이 단계마다 얼마나 남는지, 그리고 지금 학생들이 어느 단계에 몇 명씩 있는지.",
+    )
     line(
         "유학이력",
         f"1행 = 학생 × 학기 ({len(e)}행). 실제로 유학한 학기를 한 줄씩 펼친 표로, 모든 집계의 바탕입니다.",
@@ -173,7 +183,7 @@ def sheet_guide(ws, data, src_name):
     line("학기별집계", "학년도·학기별 인원, 신규/계속, 성별, 거주 유형, 운영 지역·학교 수. 전부 수식입니다.")
     line("지역별현황 / 학교별현황", "시군별·학교별 인원을 학기별로 늘어놓은 표.")
     line("체제비관리", "학생별 지원 시작 학기와 도청 3년 지원 만료 시점, 잔여 학기.")
-    line("설정_지원단가", "체제비 단가. 지침이 바뀌면 노란 칸의 숫자만 고치면 됩니다.")
+    line("설정", "기준일과 체제비 단가. 지침이 바뀌면 노란 칸만 고치면 됩니다.")
     line(
         "데이터검증",
         f"확인 항목 {len(data['issues'])}건. 맨 위에 발표 자료와의 대조표가 있고, "
@@ -189,12 +199,12 @@ def sheet_guide(ws, data, src_name):
     line("회색 칸", "수식으로 채워지는 칸입니다. 값을 덮어쓰면 계산이 끊깁니다.")
     line(
         "새 유학생이 오면",
-        "① 학생마스터에 학생을 한 줄 추가하고(학생ID는 S0699처럼 이어서) "
+        "① 학생현황에 학생을 한 줄 추가하고(학생ID는 S0699처럼 이어서) "
         "② 신청이력에 신청 건을 한 줄 "
         "③ 유학이력에 학기당 한 줄씩 추가합니다. 집계 시트는 자동으로 따라옵니다.",
     )
     line("학기가 바뀌면", "계속 유학하는 학생은 유학이력에 새 학기 줄을 한 줄씩 더합니다.")
-    line("수식 범위", f"학생마스터 {LIMIT_STUDENT}행 / 신청이력 {LIMIT_APP}행 / 유학이력 {LIMIT_ENROLL}행까지 미리 잡아 두었습니다.")
+    line("수식 범위", f"학생현황 {LIMIT_STUDENT}행 / 신청이력 {LIMIT_APP}행 / 유학이력 {LIMIT_ENROLL}행까지 미리 잡아 두었습니다.")
     gap()
 
     head("숫자를 어떻게 셌나")
@@ -249,39 +259,41 @@ def sheet_guide(ws, data, src_name):
     head("주의")
     line(
         "개인정보",
-        "학생·보호자 이름과 연락처가 그대로 들어 있습니다. 외부 공유용으로는 학생마스터의 "
+        "학생·보호자 이름과 연락처가 그대로 들어 있습니다. 외부 공유용으로는 학생현황의 "
         "이름·연락처 열을 지운 사본을 따로 만들어 쓰십시오.",
     )
-    line("체제비 금액", "설정_지원단가 시트의 값은 2025. 전북 농촌유학 시행 지침 기준입니다. 지침이 바뀌면 그 시트를 고쳐야 합니다.")
+    line("체제비 금액", "설정 시트의 값은 2025. 전북 농촌유학 시행 지침 기준입니다. 지침이 바뀌면 그 시트를 고쳐야 합니다.")
 
 
-# ─────────────────────────────────────────────────────────── 설정_지원단가
+# ─────────────────────────────────────────────────────────── 설정
 
 RATE_CELLS = {
-    "가족1": "C5",
-    "가족2": "C6",
-    "가족3": "C7",
-    "홈스테이": "C8",
-    "센터": "C9",
-    "도청": "C12",
-    "지원학기": "C13",
+    "기준학기": "C5",
+    "기준일": "C6",
+    "가족1": "C9",
+    "가족2": "C10",
+    "가족3": "C11",
+    "홈스테이": "C12",
+    "센터": "C13",
+    "도청": "C16",
+    "지원학기": "C17",
 }
 
 
-def sheet_rates(ws):
+def sheet_settings(ws):
     ws.sheet_view.showGridLines = False
     ws.column_dimensions["A"].width = 2
     ws.column_dimensions["B"].width = 34
-    ws.column_dimensions["C"].width = 15
+    ws.column_dimensions["C"].width = 16
     ws.column_dimensions["D"].width = 64
 
-    t = ws.cell(2, 2, "체제비 지원 단가")
+    t = ws.cell(2, 2, "설정")
     t.font = Font(name=FONT, size=16, bold=True, color=INK)
-    n = ws.cell(3, 2, "노란 칸만 고치면 체제비관리 시트가 다시 계산됩니다.")
+    n = ws.cell(3, 2, "노란 칸만 고치면 학생현황·체제비관리 시트가 다시 계산됩니다.")
     n.font = Font(name=FONT, size=10, color="595959")
 
-    def band(row, text):
-        for col, val in ((2, text), (3, "월 지원액(원)"), (4, "근거")):
+    def band(row, text, unit="월 지원액(원)"):
+        for col, val in ((2, text), (3, unit), (4, "근거")):
             c = ws.cell(row, col, val)
             c.font = Font(name=FONT, size=10, bold=True, color="FFFFFF")
             c.fill = PatternFill("solid", fgColor=ACCENT)
@@ -306,37 +318,49 @@ def sheet_rates(ws):
         c.border = BOX
         c.alignment = Alignment(indent=1, vertical="center", wrap_text=True)
 
-    src_note = "2025. 전북 농촌유학 시행 지침 Ⅳ. 사업 내용 — 유학경비 지원"
-    band(4, "전북특별자치도교육청")
-    item(5, "가족체류형 (가구 내 유학생 1명)", 300000, src_note)
-    item(6, "가족체류형 (가구 내 유학생 2명)", 400000, src_note)
-    item(7, "가족체류형 (가구 내 유학생 3명 이상)", 500000, src_note)
-    item(8, "홈스테이형 (학생 1명당)", 300000, src_note)
-    item(9, "유학센터형 (학생 1명당)", 300000, src_note)
+    band(4, "기준 시점", "값")
+    item(5, "기준 학기", T.sem_label(T.CURRENT_YEAR, T.CURRENT_TERM),
+         "원본 종료일 칸의 '현재' 가 가리키는 학기", fmt="General")
+    item(6, "기준일", dt.date.today(),
+         "학생현황의 '현재 단계' 를 이 날짜로 판단합니다. "
+         "유학 시작일이 이 날짜보다 뒤면 아직 '최종배정' 으로 봅니다.", fmt=DATE_FMT)
 
-    band(11, "전북특별자치도청")
-    item(12, "도청 지원 (학생 1명당, 도10·시군10)", 200000, src_note + " / 최대 3년 지원")
-    item(13, "도청 지원 기간 (학기)", 6,
+    src_note = "2025. 전북 농촌유학 시행 지침 Ⅳ. 사업 내용 — 유학경비 지원"
+    band(8, "전북특별자치도교육청")
+    item(9, "가족체류형 (가구 내 유학생 1명)", 300000, src_note)
+    item(10, "가족체류형 (가구 내 유학생 2명)", 400000, src_note)
+    item(11, "가족체류형 (가구 내 유학생 3명 이상)", 500000, src_note)
+    item(12, "홈스테이형 (학생 1명당)", 300000, src_note)
+    item(13, "유학센터형 (학생 1명당)", 300000, src_note)
+
+    band(15, "전북특별자치도청")
+    item(16, "도청 지원 (학생 1명당, 도10·시군10)", 200000, src_note + " / 최대 3년 지원")
+    item(17, "도청 지원 기간 (학기)", 6,
          "최대 3년 = 6학기. 원본 메모: 2023년 3월 시작 → 2026년 2월까지 지원", fmt="0")
 
-    w = ws.cell(15, 2, "※ 유치원생은 다자녀 수에는 포함되나 유학경비 지원 대상에는 포함되지 않습니다(지침).")
+    w = ws.cell(19, 2, "※ 유치원생은 다자녀 수에는 포함되나 유학경비 지원 대상에는 포함되지 않습니다(지침).")
     w.font = Font(name=FONT, size=9, color="A61C1C")
 
 
-FAMILY_RANGE = "'설정_지원단가'!$C$5:$C$7"
+FAMILY_RANGE = "'설정'!$C$9:$C$11"
 
 
 def rate(key: str) -> str:
-    return f"'설정_지원단가'!${RATE_CELLS[key][0]}${RATE_CELLS[key][1:]}"
+    return f"'설정'!${RATE_CELLS[key][0]}${RATE_CELLS[key][1:]}"
 
 
 # ─────────────────────────────────────────────────────────── 데이터 시트
 
+# 1행 = 학생. '현재 단계' 는 옆 칸들을 보고 수식이 정한다.
 STUDENT_HEADERS = [
-    "학생ID", "성명", "성별", "학생 전화", "원 지역", "원 소속청", "원 소속교",
-    "보호자 성명", "보호자 연락처", "가구ID", "가구 학생수", "유학 상태",
-    "최초 시작일", "최종 종료일", "유학 학기수", "유학 학년도", "최근 유학지역",
-    "최근 유학학교", "최근 거주유형", "신청 횟수", "비고",
+    "학생ID", "성명", "성별", "현재 단계",
+    "접수", "모집 차수", "가배정", "참가신청서", "최종배정",
+    "유학 시작", "유학 종료", "종료 유형", "마지막 학기 마지막날",
+    "현재 학년", "유학 지역", "유학 학교", "거주 유형", "거주지",
+    "유학 학기수", "유학 학년도", "도청 지원 만료", "잔여 지원 학기",
+    "최근 신청 결과", "미선정 단계", "미선정 사유", "신청 횟수", "단계 기록",
+    "원 지역", "원 소속청", "원 소속교", "보호자 성명", "보호자 연락처",
+    "가구ID", "가구 학생수", "학생 전화", "비고",
 ]
 
 ENROLL_HEADERS = [
@@ -348,7 +372,7 @@ ENROLL_HEADERS = [
 
 APP_HEADERS = [
     "신청ID", "학생ID", "성명", "접수 학기", "접수 학년도", "학기구분", "모집 차수",
-    "배정 판정", "판정 근거", "미선정 단계", "미선정 사유(원문)", "미선정 사유(분류)",
+    "도달 단계", "배정 판정", "판정 근거", "미선정 단계", "미선정 사유(원문)", "미선정 사유(분류)",
     "접수 표기(원본)", "순(원본)", "예비유학생", "중학교 진학", "관내 전학", "기타",
     "유학 학년도(원본)", "배정 희망서", "참가 신청서", "최종 배정", "중간 종료 사유",
     "종료일(원본)", "학생 전화", "성별", "원 지역", "원 소속청", "원 소속교",
@@ -360,78 +384,109 @@ APP_HEADERS = [
 
 def sheet_students(ws, data):
     by_student = data["by_student"]
+    prof = data["profiles"]
     rows = []
     for st in data["students"]:
+        p = prof[st.student_id]
         lst = by_student.get(st.student_id, [])
-        last = lst[-1] if lst else None
-        years = sorted({e.year for e in lst})
-        if not lst:
-            status = "미배정"
-        elif last.status == "예정":
-            status = "배정예정"
-        elif last.status == "재학":
-            status = "재학중"
-        else:
-            status = "종료"
+        expire = None
+        if lst:
+            first = lst[0]
+            expire = T.sem_end(*T.sem_from_index(T.sem_index(first.year, first.term) + 5))
         rows.append([
-            st.student_id, st.name, st.gender, st.phone, st.home_region,
-            st.home_office, st.home_school, st.guardian, st.guardian_phone,
-            st.household_id,
-            None,  # 가구 학생수 (수식)
-            status,
-            lst[0].start_date if lst else None,
-            (last.end_date if last and last.status == "종료" else None) if lst else None,
-            None,  # 유학 학기수 (수식)
-            ", ".join(str(y) for y in years) or None,
-            last.region if last else None,
-            last.school if last else None,
-            last.residence if last else None,
-            None,  # 신청 횟수 (수식)
-            st.note,
+            st.student_id, st.name, st.gender,
+            None,                                   # 현재 단계 (수식)
+            p["접수"], p["모집 차수"], p["가배정"], p["참가신청서"], p["최종배정"],
+            p["유학 시작"], p["유학 종료"],
+            None,                                   # 종료 유형 (수식)
+            p["마지막 학기 마지막날"],
+            p["현재 학년"], p["최근 유학지역"], p["최근 유학학교"],
+            p["최근 거주유형"], p["최근 거주지"],
+            None,                                   # 유학 학기수 (수식)
+            p["유학 학년도"], expire,
+            None,                                   # 잔여 지원 학기 (수식)
+            p["최근 신청 결과"], p["미선정 단계"], p["미선정 사유"],
+            None,                                   # 신청 횟수 (수식)
+            p["단계 기록 여부"],
+            st.home_region, st.home_office, st.home_school,
+            st.guardian, st.guardian_phone, st.household_id,
+            None,                                   # 가구 학생수 (수식)
+            st.phone, st.note,
         ])
 
+    widths = {h: 12 for h in STUDENT_HEADERS}
+    widths.update({
+        "학생ID": 9, "성명": 11, "성별": 6, "현재 단계": 15,
+        "접수": 11, "모집 차수": 8, "가배정": 11, "참가신청서": 11, "최종배정": 11,
+        "유학 시작": 12, "유학 종료": 12, "종료 유형": 10, "마지막 학기 마지막날": 14,
+        "현재 학년": 8, "유학 지역": 10, "유학 학교": 11, "거주 유형": 11, "거주지": 20,
+        "유학 학기수": 8, "유학 학년도": 18, "도청 지원 만료": 13, "잔여 지원 학기": 10,
+        "최근 신청 결과": 11, "미선정 단계": 10, "미선정 사유": 18, "신청 횟수": 8,
+        "단계 기록": 9, "원 소속교": 14, "보호자 연락처": 15, "가구ID": 9,
+        "가구 학생수": 8, "학생 전화": 14, "비고": 26,
+    })
     last_row = write_table(
-        ws, STUDENT_HEADERS, rows,
-        {"학생ID": 9, "성명": 11, "성별": 6, "학생 전화": 14, "원 지역": 10,
-         "원 소속청": 12, "원 소속교": 14, "보호자 성명": 11, "보호자 연락처": 15,
-         "가구ID": 9, "가구 학생수": 8, "유학 상태": 10, "최초 시작일": 12,
-         "최종 종료일": 12, "유학 학기수": 8, "유학 학년도": 20, "최근 유학지역": 11,
-         "최근 유학학교": 12, "최근 거주유형": 12, "신청 횟수": 8, "비고": 30},
-        date_cols={"최초 시작일", "최종 종료일"},
-        wrap_cols={"비고"},
+        ws, STUDENT_HEADERS, rows, widths,
+        date_cols={"유학 시작", "유학 종료", "마지막 학기 마지막날", "도청 지원 만료"},
+        wrap_cols={"비고", "미선정 사유", "거주지"},
+        freeze="E",
     )
 
-    hid = col_of(STUDENT_HEADERS, "가구ID")
-    sid = col_of(STUDENT_HEADERS, "학생ID")
+    C = {h: col_of(STUDENT_HEADERS, h) for h in STUDENT_HEADERS}
     e_student = rng("유학이력", ENROLL_HEADERS, "학생ID", LIMIT_ENROLL)
     a_student = rng("신청이력", APP_HEADERS, "학생ID", LIMIT_APP)
 
     for r in range(2, last_row + 1):
-        f = [
-            ("가구 학생수", f"=COUNTIF(${hid}$2:${hid}${LIMIT_STUDENT},${hid}{r})"),
-            ("유학 학기수", f"=COUNTIF({e_student},${sid}{r})"),
-            ("신청 횟수", f"=COUNTIF({a_student},${sid}{r})"),
-        ]
-        for name, formula in f:
-            c = ws.cell(r, STUDENT_HEADERS.index(name) + 1, formula)
-            c.font = Font(name=FONT, size=10)
-            c.fill = DERIVED_FILL
-            c.border = BOX
-            c.alignment = Alignment(horizontal="center", vertical="center")
+        # 끝난 학기에 맞춰 끝났으면 유학종료, 학기 도중이면 중도복귀
+        put(ws, r, STUDENT_HEADERS.index("종료 유형") + 1,
+            f'=IF(${C["유학 종료"]}{r}="","",'
+            f'IF(${C["유학 종료"]}{r}>=${C["마지막 학기 마지막날"]}{r},"유학종료","중도복귀"))',
+            fill=DERIVED_FILL)
+        # 뒤 단계부터 차례로 본다. 아직 시작일이 오지 않았으면 최종배정에 머문다.
+        put(ws, r, STUDENT_HEADERS.index("현재 단계") + 1,
+            f'=IF(${C["유학 종료"]}{r}<>"",${C["종료 유형"]}{r},'
+            f'IF(AND(${C["유학 시작"]}{r}<>"",${C["유학 시작"]}{r}<={rate("기준일")}),"유학중",'
+            f'IF(${C["최종배정"]}{r}<>"","최종배정",'
+            f'IF(${C["참가신청서"]}{r}<>"","참가신청서 제출",'
+            f'IF(${C["가배정"]}{r}<>"","가배정","미선정·미전학")))))',
+            bold=True, fill=DERIVED_FILL, align="center")
+        put(ws, r, STUDENT_HEADERS.index("유학 학기수") + 1,
+            f'=COUNTIF({e_student},${C["학생ID"]}{r})', fill=DERIVED_FILL, fmt="#,##0")
+        put(ws, r, STUDENT_HEADERS.index("잔여 지원 학기") + 1,
+            f'=IF(${C["유학 학기수"]}{r}=0,"",'
+            f'MAX(0,{rate("지원학기")}-${C["유학 학기수"]}{r}))', fill=DERIVED_FILL, fmt="#,##0")
+        put(ws, r, STUDENT_HEADERS.index("신청 횟수") + 1,
+            f'=COUNTIF({a_student},${C["학생ID"]}{r})', fill=DERIVED_FILL, fmt="#,##0")
+        put(ws, r, STUDENT_HEADERS.index("가구 학생수") + 1,
+            f'=COUNTIF(${C["가구ID"]}$2:${C["가구ID"]}${LIMIT_STUDENT},${C["가구ID"]}{r})',
+            fill=DERIVED_FILL, fmt="#,##0")
 
     add_dropdown(ws, STUDENT_HEADERS, "성별", ["남", "여"], LIMIT_STUDENT)
-    add_dropdown(ws, STUDENT_HEADERS, "유학 상태", ["재학중", "종료", "배정예정", "미배정"], LIMIT_STUDENT)
+    add_dropdown(ws, STUDENT_HEADERS, "거주 유형",
+                 ["가족체류형", "홈스테이형", "유학센터형"], LIMIT_STUDENT)
 
-    c = col_of(STUDENT_HEADERS, "유학 상태")
+    stage = C["현재 단계"]
+    for value, fill, color in (
+        ("유학중", "D8F0DC", "17652A"),
+        ("최종배정", "DCE9F7", "1F4E79"),
+        ("참가신청서 제출", "FFF2CC", "7F6000"),
+        ("가배정", "FFF2CC", "7F6000"),
+        ("유학종료", "F2F2F2", "595959"),
+        ("중도복귀", "FCE4E4", "A61C1C"),
+        ("미선정·미전학", "FFFFFF", "A6A6A6"),
+    ):
+        ws.conditional_formatting.add(
+            f"{stage}2:{stage}{LIMIT_STUDENT}",
+            CellIsRule(operator="equal", formula=[f'"{value}"'],
+                       fill=PatternFill("solid", fgColor=fill),
+                       font=Font(name=FONT, size=10, bold=True, color=color)),
+        )
+    left = C["잔여 지원 학기"]
     ws.conditional_formatting.add(
-        f"{c}2:{c}{LIMIT_STUDENT}",
-        CellIsRule(operator="equal", formula=['"재학중"'],
-                   fill=PatternFill("solid", fgColor="D8F0DC"), font=Font(name=FONT, size=10, color="17652A")),
-    )
-    ws.conditional_formatting.add(
-        f"{c}2:{c}{LIMIT_STUDENT}",
-        CellIsRule(operator="equal", formula=['"미배정"'],
-                   font=Font(name=FONT, size=10, color="A6A6A6")),
+        f"{left}2:{left}{LIMIT_STUDENT}",
+        CellIsRule(operator="lessThanOrEqual", formula=["2"],
+                   fill=PatternFill("solid", fgColor="FFF2CC"),
+                   font=Font(name=FONT, size=10, bold=True, color="7F6000")),
     )
     return last_row
 
@@ -503,7 +558,7 @@ def sheet_applications(ws, data):
             T.sem_label(a.intake_year, a.intake_term) if a.intake_year else None,
             a.intake_year, f"{a.intake_term}학기" if a.intake_term else None,
             f"{a.intake_round}차" if a.intake_round else None,
-            a.decision, a.decision_basis, a.reject_stage, a.reject_reason, a.reject_class,
+            a.stage, a.decision, a.decision_basis, a.reject_stage, a.reject_reason, a.reject_class,
             T.s(raw["접수일"]),
             raw["순"], T.s(raw["예비유학생"]), T.s(raw["중학교진학"]), T.s(raw["관내전학"]),
             T.s(raw["기타"]), T.s(raw["유학학년도_원본"]), T.s(raw["배정희망서"]),
@@ -519,7 +574,7 @@ def sheet_applications(ws, data):
     widths = {h: 12 for h in APP_HEADERS}
     widths.update({
         "신청ID": 9, "학생ID": 9, "성명": 11, "접수 학기": 11, "접수 학년도": 9,
-        "학기구분": 8, "모집 차수": 8, "배정 판정": 10, "판정 근거": 34,
+        "학기구분": 8, "모집 차수": 8, "도달 단계": 16, "배정 판정": 10, "판정 근거": 34,
         "미선정 단계": 10, "미선정 사유(원문)": 30, "미선정 사유(분류)": 16, "접수 표기(원본)": 14,
         "중학교 진학": 26, "관내 전학": 22, "기타": 24, "유학 학년도(원본)": 16,
         "배정 희망서": 20, "중간 종료 사유": 20, "종료일(원본)": 16, "거주 유형": 16,
@@ -693,6 +748,99 @@ def sheet_summary(ws, data):
     ws.column_dimensions["A"].width = 14
 
 
+FUNNEL = [
+    ("접수", None),
+    ("가배정", "선정"),
+    ("참가신청서 제출", "제출"),
+    ("최종배정", None),
+    ("실제 유학 시작", None),
+]
+
+
+def sheet_funnel(ws, data):
+    """모집이 단계마다 얼마나 줄어드는지."""
+    ws.sheet_view.showGridLines = False
+    sems = data["semesters"]
+    A = lambda name: rng("신청이력", APP_HEADERS, name, LIMIT_APP)   # noqa: E731
+    E = lambda name: rng("유학이력", ENROLL_HEADERS, name, LIMIT_ENROLL)  # noqa: E731
+
+    t = ws.cell(1, 1, "모집 단계별 현황")
+    t.font = Font(name=FONT, size=15, bold=True, color=INK)
+    n = ws.cell(2, 1,
+                "접수한 학생이 단계마다 얼마나 남는지 봅니다. "
+                f"학교 배정희망서와 학부모 참가신청서 칸은 "
+                f"{T.sem_label(*T.STAGE_RECORDED_FROM)} 모집부터 기록되기 시작했습니다. "
+                "그 전 학기는 결과만 남아 있어 가운데 두 단계가 비어 있습니다.")
+    n.font = Font(name=FONT, size=9, color="595959")
+
+    cols = ["학기", "접수", "가배정", "참가신청서 제출", "최종배정", "실제 유학 시작",
+            "미선정·미전학", "확인 필요", "최종배정률", "단계 기록"]
+    r0 = 4
+    for i, h in enumerate(cols, start=1):
+        style_head(ws, r0, i, h, width=16 if i == 1 else 14)
+    ws.row_dimensions[r0].height = 32
+
+    recorded = T.sem_index(*T.STAGE_RECORDED_FROM)
+    wish = col_of(APP_HEADERS, "배정 희망서")
+    submit = col_of(APP_HEADERS, "참가 신청서")
+    for j, (y, term) in enumerate(sems):
+        r = r0 + 1 + j
+        lab = T.sem_label(y, term)
+        q = f'"{lab}"'
+        on = T.sem_index(y, term) >= recorded
+        put(ws, r, 1, lab, bold=True, fill=SUB_FILL)
+        put(ws, r, 2, f"=COUNTIF({A('접수 학기')},{q})", bold=True, fmt="#,##0")
+        put(ws, r, 3,
+            f'=COUNTIFS({A("접수 학기")},{q},'
+            f"'신청이력'!${wish}$2:${wish}${LIMIT_APP},\"선정\")", fmt="#,##0")
+        put(ws, r, 4,
+            f'=COUNTIFS({A("접수 학기")},{q},'
+            f"'신청이력'!${submit}$2:${submit}${LIMIT_APP},\"제출\")", fmt="#,##0")
+        put(ws, r, 5, f'=COUNTIFS({A("접수 학기")},{q},{A("배정 판정")},"배정")',
+            bold=True, fmt="#,##0")
+        put(ws, r, 6, f'=COUNTIFS({E("학기")},{q},{E("구분")},"<>계속")', fmt="#,##0")
+        put(ws, r, 7, f'=COUNTIFS({A("접수 학기")},{q},{A("배정 판정")},"미배정")', fmt="#,##0")
+        put(ws, r, 8, f'=COUNTIFS({A("접수 학기")},{q},{A("배정 판정")},"확인필요")', fmt="#,##0")
+        put(ws, r, 9, f"=IF($B{r}=0,\"\",$E{r}/$B{r})", fmt="0.0%")
+        put(ws, r, 10, "기록" if on else "미기록", size=9,
+            color="17652A" if on else "A6A6A6")
+
+    r = r0 + 1 + len(sems)
+    put(ws, r, 1, "합계", bold=True, fill=SUB_FILL)
+    for c in range(2, 9):
+        L = get_column_letter(c)
+        put(ws, r, c, f"=SUM({L}{r0 + 1}:{L}{r - 1})", bold=True, fill=SUB_FILL, fmt="#,##0")
+    put(ws, r, 9, f"=IF($B{r}=0,\"\",$E{r}/$B{r})", bold=True, fill=SUB_FILL, fmt="0.0%")
+    put(ws, r, 10, "", fill=SUB_FILL)
+
+    # 현재 학생들이 어느 단계에 있는지
+    r2 = r + 2
+    t2 = ws.cell(r2, 1, "학생 현재 단계 (1명 = 1행, 학생현황 시트 기준)")
+    t2.font = Font(name=FONT, size=12, bold=True, color=INK)
+    for i, h in enumerate(["단계", "인원", "설명"], start=1):
+        style_head(ws, r2 + 1, i, h, fill=ACCENT, width=(16 if i == 1 else 14) if i < 3 else 62)
+    notes = {
+        "접수": "신청만 접수된 상태",
+        "가배정": "학교가 배정 희망서에 '선정' 으로 올린 상태",
+        "참가신청서 제출": "학부모가 최종 참가신청서까지 낸 상태",
+        "최종배정": "도교육청 최종배정. 아직 전학 전이거나 시작일이 오지 않음",
+        "유학중": "전학을 마치고 재학 중",
+        "유학종료": "학기를 마치고 정상 종료",
+        "중도복귀": "학기 도중에 그만두고 원적교로 복귀",
+        "미선정·미전학": "어느 단계에서 빠졌거나 최종배정 후 전학하지 않음",
+    }
+    stage_col = col_of(STUDENT_HEADERS, "현재 단계")
+    for j, name in enumerate(T.STAGES):
+        rr = r2 + 2 + j
+        put(ws, rr, 1, name, bold=True, fill=SUB_FILL, align="left")
+        put(ws, rr, 2,
+            f"=COUNTIF('학생현황'!${stage_col}$2:${stage_col}${LIMIT_STUDENT},\"{name}\")",
+            bold=True, fmt="#,##0")
+        put(ws, rr, 3, notes[name], align="left", size=9, color="595959")
+
+    ws.freeze_panes = "B5"
+
+
 def sheet_region(ws, data):
     ws.sheet_view.showGridLines = False
     sems = data["semesters"]
@@ -832,8 +980,8 @@ def sheet_cost(ws, data):
             f'IF(${rep}{r}<>"대표",0,'
             f"INDEX({FAMILY_RANGE},MIN(3,MAX(1,"
             f"COUNTIFS({rng('유학이력', ENROLL_HEADERS, '가구ID', LIMIT_ENROLL)},${hid}{r},"
-            f"{e_sem},${base}{r})))),"
-            f'IF(${res}{r}="홈스테이형",{rate("홈스테이")},{rate("센터")}))))',
+            f"{e_sem},${base}{r}))))),"
+            f'IF(${res}{r}="홈스테이형",{rate("홈스테이")},{rate("센터")})))',
             fill="F2F2F2", fmt="#,##0")
         put(ws, r, COST_HEADERS.index("월 체제비(도청)") + 1,
             f'=IF(OR(${stat}{r}="종료",${left}{r}=0),0,{rate("도청")})',
@@ -848,7 +996,7 @@ def sheet_cost(ws, data):
         put(ws, r, COST_HEADERS.index(name) + 1, f"=SUM({L}2:{L}{last_row})",
             bold=True, fill=SUB_FILL, fmt="#,##0")
     note = ws.cell(r + 2, 1,
-                   "※ 월 체제비는 설정_지원단가 시트의 단가로 계산한 참고값입니다. "
+                   "※ 월 체제비는 설정 시트의 단가로 계산한 참고값입니다. "
                    "가족체류형은 가구당 지급이라 '가구 대표' 행에만 금액이 잡힙니다. "
                    "가구 내 유학생 수는 그 학생의 '기준 학기'(가장 최근 유학 학기) 기준으로 셉니다.")
     note.font = Font(name=FONT, size=9, color="595959")
@@ -957,19 +1105,20 @@ def main(src, out):
     wb.remove(wb.active)
 
     sheet_guide(wb.create_sheet("안내"), data, src.split("/")[-1])
-    sheet_students(wb.create_sheet("학생마스터"), data)
+    sheet_students(wb.create_sheet("학생현황"), data)
     sheet_enrollments(wb.create_sheet("유학이력"), data)
     sheet_applications(wb.create_sheet("신청이력"), data)
+    sheet_funnel(wb.create_sheet("모집단계현황"), data)
     sheet_summary(wb.create_sheet("학기별집계"), data)
     sheet_region(wb.create_sheet("지역별현황"), data)
     sheet_school(wb.create_sheet("학교별현황"), data)
     sheet_cost(wb.create_sheet("체제비관리"), data)
-    sheet_rates(wb.create_sheet("설정_지원단가"))
+    sheet_settings(wb.create_sheet("설정"))
     sheet_issues(wb.create_sheet("데이터검증"), data)
     sheet_source(wb.create_sheet("원본_전체"), src)
 
     for ws in wb.worksheets:
-        ws.sheet_properties.tabColor = ACCENT if ws.title in {"학생마스터", "유학이력", "신청이력"} else None
+        ws.sheet_properties.tabColor = ACCENT if ws.title in {"학생현황", "유학이력", "신청이력"} else None
     wb.save(out)
     print(f"저장: {out}")
     print(f"  학생 {len(data['students'])} / 신청 {len(data['applications'])} / "

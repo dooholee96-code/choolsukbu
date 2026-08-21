@@ -225,7 +225,13 @@ def sheet_guide(ws, data, src_name):
         f"'참고'({sum(1 for i in data['issues'] if i['심각도'] == '참고')}건)로 나뉩니다. "
         "'참고'는 집계 숫자에 영향이 없습니다.",
     )
-    line("원본_전체", "원본 1번 시트를 값 그대로 옮겨 둔 사본. 대조용이며 고치지 않습니다.")
+    line(
+        "원본_전체",
+        "원본 1번 시트를 값 그대로 옮겨 둔 사본입니다. 대조용이며 고치지 않습니다. "
+        "현황판(HTML)은 이 시트를 알아보므로, 원본 명단 대신 이 워크북을 열어도 그대로 돌아갑니다. "
+        "다만 이 시트는 워크북을 만들 때 떠 둔 사본이라 그 뒤에 학생현황·유학이력에서 고친 내용은 "
+        "들어 있지 않습니다. 최신 상태로 보려면 원본 명단 파일을 여세요.",
+    )
     gap()
 
     head("고칠 때")
@@ -1760,7 +1766,7 @@ def sheet_issues(ws, data):
 
 def sheet_source(ws, src_path):
     wb = openpyxl.load_workbook(src_path, data_only=True)
-    src = wb[T.SOURCE_SHEET]
+    src = T.find_sheet(wb)
     for r in range(1, src.max_row + 1):
         for c in range(1, 31):
             v = src.cell(r, c).value

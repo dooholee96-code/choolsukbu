@@ -21,6 +21,9 @@ from dataclasses import dataclass, field
 import openpyxl
 
 SOURCE_SHEET = "★☆★전북 농어촌 유학생 명단★☆★"
+# 이 도구가 만든 워크북에는 같은 시트가 '원본_전체' 라는 이름으로 그대로 들어 있다.
+# 그래서 원본 명단이든 만든 워크북이든 똑같이 읽힌다.
+BACKUP_SHEET = "원본_전체"
 HEADER_ROW = 8
 FIRST_DATA_ROW = 9
 
@@ -287,9 +290,30 @@ class Enrollment:
     term_end: dt.date | None = None
 
 
+def is_roster(ws) -> bool:
+    """머리글 줄이 명단 서식인지 본다. 이름만 보고 고르면 엉뚱한 시트를 잡는다."""
+    def head(key):
+        return s(ws.cell(HEADER_ROW, COL[key]).value) or ""
+
+    return "성명" in head("성명") and "접수일" in head("접수일")
+
+
+def find_sheet(wb):
+    order = [n for n in (SOURCE_SHEET, BACKUP_SHEET) if n in wb.sheetnames]
+    order += [n for n in wb.sheetnames if "명단" in n and n not in order]
+    order += [n for n in wb.sheetnames if n not in order]
+    for name in order:
+        if is_roster(wb[name]):
+            return wb[name]
+    raise KeyError(
+        f"명단 시트를 찾지 못했습니다. '{SOURCE_SHEET}' 이 있는 원본 명단 파일이거나, "
+        f"이 도구가 만든 워크북('{BACKUP_SHEET}' 시트)이어야 합니다."
+    )
+
+
 def load_rows(path: str) -> list[dict]:
     wb = openpyxl.load_workbook(path, data_only=True)
-    ws = wb[SOURCE_SHEET]
+    ws = find_sheet(wb)
     out = []
     for r in range(FIRST_DATA_ROW, ws.max_row + 1):
         raw = {name: ws.cell(r, c).value for name, c in COL.items()}

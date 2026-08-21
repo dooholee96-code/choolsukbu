@@ -25,9 +25,10 @@ BODY = """
 
   <div id="landing">
     <div class="drop" id="drop">
-      <h2>원본 명단 파일을 여기에 끌어다 놓으세요</h2>
+      <h2>명단 파일을 여기에 끌어다 놓으세요</h2>
       <p class="sub" style="margin:6px 0 18px">
-        1번 시트 '★☆★전북 농어촌 유학생 명단★☆★' 을 읽습니다. .xlsx / .xlsm</p>
+        원본 명단(1번 시트 '★☆★전북 농어촌 유학생 명단★☆★')과
+        이 도구가 만든 관리 워크북('원본_전체' 시트) 둘 다 읽습니다. .xlsx / .xlsm</p>
       <button class="primary" id="openbtn">파일 고르기</button>
       <input type="file" id="fileinput" accept=".xlsx,.xlsm" hidden>
       <p class="err" id="loaderr" style="margin-top:14px"></p>

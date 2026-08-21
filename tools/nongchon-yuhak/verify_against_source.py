@@ -75,7 +75,7 @@ def header_map(ws, row=1):
 
 
 def main(src_path, book_path):
-    src = openpyxl.load_workbook(src_path, data_only=True)[T.SOURCE_SHEET]
+    src = T.find_sheet(openpyxl.load_workbook(src_path, data_only=True))
     wb = openpyxl.load_workbook(book_path, data_only=False)
 
     # 원본 데이터 행

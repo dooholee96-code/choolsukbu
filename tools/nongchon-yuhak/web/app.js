@@ -177,7 +177,11 @@ function renderAll() {
        신청 ${n(D.applications.length)}건 · 유학이력 ${n(D.enrollments.length)}행 ·
        기준 학기 ${semLabel(CURRENT_YEAR, CURRENT_TERM)} · 기준일 ${isoDate(BASE)}</span>
      <span style="flex:1"></span>
-     <button class="ghost" id="reloadbtn">${fileHandle ? "다시 읽기" : "다른 파일 열기"}</button>`;
+     <button class="ghost" id="reloadbtn">${fileHandle ? "다시 읽기" : "다른 파일 열기"}</button>
+     ${D.sheetName === BACKUP_SHEET ? `<p class="warn-line">
+       관리 워크북의 '${esc(BACKUP_SHEET)}' 시트를 읽었습니다. 이 시트는 워크북을 만들 때 떠 둔
+       사본이라, 그 뒤에 학생현황·유학이력에서 고친 내용은 여기 들어오지 않습니다.
+       최신 상태로 보려면 원본 명단 파일을 여세요.</p>` : ""}`;
   el("reloadbtn").addEventListener("click", reload);
 
   renderSummary();

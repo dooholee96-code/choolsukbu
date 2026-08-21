@@ -204,6 +204,7 @@ svg { display: block; width: 100%; overflow: visible; }
 .tl .when { color: var(--ink-2); font-weight: 600; }
 .tl .what { color: var(--ink-2); }
 .empty { color: var(--muted); font-size: 13.5px; padding: 14px 0; }
+.warn-line { flex-basis: 100%; margin: 8px 0 0; font-size: 12.5px; color: var(--crit); }
 .warnrow td { color: var(--crit); }
 .toast { position: fixed; left: 50%; bottom: 26px; transform: translateX(-50%);
   background: var(--ink); color: var(--page); padding: 9px 16px; border-radius: 999px;

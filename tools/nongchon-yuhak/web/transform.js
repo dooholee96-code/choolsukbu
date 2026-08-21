@@ -3,6 +3,8 @@
    verify_web.py 가 잡는다. */
 
 const SOURCE_SHEET = "★☆★전북 농어촌 유학생 명단★☆★";
+// 이 도구가 만든 워크북에는 같은 시트가 '원본_전체' 라는 이름으로 그대로 들어 있다.
+const BACKUP_SHEET = "원본_전체";
 const HEADER_ROW = 8;
 const FIRST_DATA_ROW = 9;
 
@@ -184,25 +186,49 @@ function cellDate(cell) {
 /* 날짜로 읽어야 하는 원본 열 */
 const DATE_KEYS = new Set(["접수일", "종료일"]);
 
-function readRows(workbook) {
-  const name = workbook.SheetNames.includes(SOURCE_SHEET)
-    ? SOURCE_SHEET
-    : workbook.SheetNames.find((s) => s.includes("농어촌 유학생 명단")) || workbook.SheetNames[0];
-  const ws = workbook.Sheets[name];
-  if (!ws) throw new Error("명단 시트를 찾지 못했습니다.");
+function at(ws, row, col) {
+  return ws[XLSX.utils.encode_cell({ r: row - 1, c: col - 1 })];
+}
+
+/* 머리글 줄이 명단 서식인지 본다. 이름만 보고 고르면 엉뚱한 시트를 잡는다. */
+function isRoster(ws) {
+  if (!ws || !ws["!ref"]) return false;
+  const head = (key) => txt((at(ws, HEADER_ROW, COL[key]) || {}).v) || "";
+  return head("성명").includes("성명") && head("접수일").includes("접수일");
+}
+
+function scanRows(ws) {
   const range = XLSX.utils.decode_range(ws["!ref"]);
   const rows = [];
   for (let r = FIRST_DATA_ROW; r <= range.e.r + 1; r++) {
     const raw = { _row: r };
     for (const [key, c] of Object.entries(COL)) {
-      const cell = ws[XLSX.utils.encode_cell({ r: r - 1, c: c - 1 })];
+      const cell = at(ws, r, c);
       if (!cell) { raw[key] = null; continue; }
       raw[key] = DATE_KEYS.has(key) ? (cellDate(cell) ?? cell.v) : cell.v;
     }
     if (!txt(raw.성명)) continue;
     rows.push(raw);
   }
-  return { rows, sheetName: name };
+  return rows;
+}
+
+function readRows(workbook) {
+  // 원본 명단이든, 이 도구가 만든 워크북('원본_전체' 시트에 같은 표가 그대로 있다)이든
+  // 똑같이 읽는다. 이름으로 먼저 찾고, 없으면 머리글 서식으로 찾는다.
+  const names = [SOURCE_SHEET, BACKUP_SHEET]
+    .filter((n) => workbook.SheetNames.includes(n))
+    .concat(workbook.SheetNames.filter((n) => n.includes("명단")))
+    .concat(workbook.SheetNames);
+  for (const name of [...new Set(names)]) {
+    const ws = workbook.Sheets[name];
+    if (!isRoster(ws)) continue;
+    const rows = scanRows(ws);
+    if (rows.length) return { rows, sheetName: name };
+  }
+  throw new Error(
+    `명단 시트를 찾지 못했습니다. '${SOURCE_SHEET}' 이 있는 원본 명단 파일이거나, ` +
+    `이 도구가 만든 워크북('${BACKUP_SHEET}' 시트)이어야 합니다.`);
 }
 
 /* ── 만들기 ──────────────────────────────────────────── */

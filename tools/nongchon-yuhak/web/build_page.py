@@ -41,9 +41,10 @@ BODY = """
           <tr><th style="width:120px">요약</th>
             <td>학생이 지금 어느 단계에 몇 명씩 있는지, 학기별 인원 추이, 모집 단계별 이탈,
               발표 자료와의 대조</td></tr>
-          <tr><th>교차표</th>
-            <td>세로·가로·값을 골라 연도별·지역별·학교별 표를 그 자리에서 만듭니다.
-              엑셀에 붙여넣거나 CSV 로 내려받습니다</td></tr>
+          <tr><th>표 만들기</th>
+            <td>시군별·학교별·연도별 같은 참고자료 표를 단추 하나로 뽑습니다.
+              시군 안에 학교를 묶는 2단 표, 희망학교 접수·배정 현황도 있습니다.
+              엑셀·한글에 붙여넣거나 CSV 로 내려받고, 그대로 인쇄할 수도 있습니다</td></tr>
           <tr><th>학생</th>
             <td>이름으로 찾아 신청부터 지금까지의 이력을 시간순으로 봅니다.
               체제비 지원 만료가 가까운 학생도 함께</td></tr>
@@ -64,7 +65,7 @@ BODY = """
     <div class="filebar" id="filebar"></div>
     <nav class="tabs">
       <button data-tab="summary" aria-selected="true">요약</button>
-      <button data-tab="pivot" aria-selected="false">교차표</button>
+      <button data-tab="pivot" aria-selected="false">표 만들기</button>
       <button data-tab="students" aria-selected="false">학생</button>
       <button data-tab="entry" aria-selected="false">입력</button>
       <button data-tab="issues" aria-selected="false">확인 항목</button>

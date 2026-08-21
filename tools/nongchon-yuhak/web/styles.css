@@ -140,6 +140,44 @@ th.rowhead { position: sticky; left: 0; background: var(--surface); }
 .pivot td.cell { position: relative; }
 .pivot td.cell span { position: relative; }
 
+/* 참고자료 표 */
+.presets { display: flex; flex-wrap: wrap; gap: 7px; }
+button.preset {
+  font: inherit; font-size: 12.5px; padding: 6px 12px; cursor: pointer;
+  border: 1px solid var(--axis); border-radius: 999px;
+  background: var(--surface); color: var(--ink-2);
+}
+button.preset:hover { border-color: var(--series-1); color: var(--ink); }
+button.preset.on {
+  background: var(--series-1); border-color: var(--series-1);
+  color: #fff; font-weight: 600;
+}
+.tabletitle { margin: 4px 0 10px; font-size: 15px; }
+.pivot th.grouphead {
+  vertical-align: top; font-weight: 700; color: var(--ink);
+  border-right: 1px solid var(--grid);
+}
+.pivot th.subhead { font-weight: 400; padding-left: 10px; }
+.pivot tr.subtotal th, .pivot tr.subtotal td {
+  background: var(--wash); font-weight: 700; color: var(--ink);
+  border-bottom: 1px solid var(--axis);
+}
+
+/* 인쇄하면 표만 나가게 한다 */
+@media print {
+  body { background: #fff; }
+  .wrap { max-width: none; padding: 0; }
+  header, nav.tabs, .filebar, .presets, .filters, .toast, .tip { display: none !important; }
+  .card { border: 0; box-shadow: none; padding: 0; }
+  .card > h2, .card > .note { display: none; }
+  .scroll { overflow: visible; }
+  table { font-size: 10.5pt; }
+  th, td { padding: 4px 7px; }
+  .pivot td.cell { background: none !important; }
+  thead { display: table-header-group; }
+  tr { break-inside: avoid; }
+}
+
 /* 조각 */
 .chip { display: inline-flex; align-items: center; gap: 6px; font-size: 12px;
   padding: 2px 9px; border-radius: 999px; border: 1px solid var(--ring); white-space: nowrap; }

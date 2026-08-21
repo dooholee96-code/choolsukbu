@@ -343,85 +343,206 @@ function drawOfficial() {
     }).join("")}</tbody></table>`;
 }
 
-/* ── 교차표 ─────────────────────────────────────────── */
+/* ── 표 만들기 ──────────────────────────────────────── */
 
-/* 유학이력에서 뽑을 수 있는 행 기준 */
-const ROW_DIMS = {
-  "유학 지역": (e) => e.region,
-  "유학 학교": (e) => e.school,
-  "거주 유형": (e) => e.residence,
-  "학년": (e) => e.grade,
-  "성별": (e) => e.gender,
-  "원 지역": (e) => e.homeRegion,
-  "원 소속교": (e) => e.homeSchool,
-  "신규·계속": (e) => e.kind,
-  "(구분 없음)": () => "전체",
+/* 바탕이 둘이다. 유학이력은 배정되어 실제로 유학한 학생, 신청이력은 접수된
+   신청 건이라 미배정까지 들어 있다. '희망 학교' 는 신청 쪽에서만 나온다. */
+const SOURCES = {
+  "유학이력 — 실제 유학한 학생": {
+    unit: "학생",
+    what: "한 칸은 그 조건에 해당하는 <b>학생 수</b>이며, 같은 학생을 한 칸 안에서 두 번 세지 않습니다.",
+    list: () => D.enrollments,
+    id: (e) => e.studentId,
+    idx: (e) => semIndex(e.year, e.term),
+    rows: {
+      "유학 지역": (e) => e.region,
+      "유학 학교": (e) => e.school,
+      "거주 유형": (e) => e.residence,
+      "학년": (e) => e.grade,
+      "성별": (e) => e.gender,
+      "원 지역": (e) => e.homeRegion,
+      "원 소속교": (e) => e.homeSchool,
+      "신규·계속": (e) => e.kind,
+      "(구분 없음)": () => "전체",
+    },
+    cols: {
+      "학년도": (e) => String(e.year),
+      "학기": (e) => semLabel(e.year, e.term),
+      "거주 유형": (e) => e.residence,
+      "성별": (e) => e.gender,
+      "신규·계속": (e) => e.kind,
+      "(구분 없음)": () => "전체",
+    },
+    measures: {
+      "유학생 수": () => true,
+      "학기말 재적": (e) => !e.endDate || cmp(e.endDate, e.termEnd) >= 0,
+      "신규 유학생": (e) => e.kind === "신규",
+      "계속·재유학": (e) => e.kind !== "신규",
+      "남": (e) => e.gender === "남",
+      "여": (e) => e.gender === "여",
+      "가족체류형": (e) => e.residence === "가족체류형",
+      "홈스테이형": (e) => e.residence === "홈스테이형",
+      "유학센터형": (e) => e.residence === "유학센터형",
+    },
+  },
+  "신청이력 — 접수된 신청(희망 기준)": {
+    unit: "신청 건",
+    what: "한 칸은 <b>접수된 신청 건수</b>입니다. 미배정 건까지 들어 있어서, " +
+          "학교가 실제로 받은 인원이 아니라 <b>가고 싶어 한 인원</b>을 봅니다.",
+    list: () => D.applications.filter((a) => a.intakeYear),
+    id: (a) => a.appId,
+    idx: (a) => semIndex(a.intakeYear, a.intakeTerm),
+    rows: {
+      "희망 학교": (a) => txt(a.raw.유학학교),
+      "희망 지역": (a) => (txt(a.raw.유학지역) || "").trim() || null,
+      "원 지역": (a) => txt(a.raw.원지역),
+      "원 소속교": (a) => txt(a.raw.원소속교),
+      "성별": (a) => txt(a.raw.성별),
+      "배정 판정": (a) => a.decision,
+      "미선정 사유": (a) => a.rejectClass,
+      "(구분 없음)": () => "전체",
+    },
+    cols: {
+      "접수 학년도": (a) => String(a.intakeYear),
+      "접수 학기": (a) => semLabel(a.intakeYear, a.intakeTerm),
+      "배정 판정": (a) => a.decision,
+      "(구분 없음)": () => "전체",
+    },
+    measures: {
+      "접수 건수": () => true,
+      "배정": (a) => a.decision === "배정",
+      "미배정": (a) => a.decision === "미배정",
+      "확인 필요": (a) => a.decision === "확인필요",
+      "남": (a) => txt(a.raw.성별) === "남",
+      "여": (a) => txt(a.raw.성별) === "여",
+    },
+  },
 };
-const COL_DIMS = {
-  "학년도": (e) => String(e.year),
-  "학기": (e) => semLabel(e.year, e.term),
-  "(구분 없음)": () => "전체",
-};
-/* 무엇을 셀지. 유학이력 한 줄이 조건에 맞으면 그 학생을 센다. */
-const MEASURES = {
-  "유학생 수": () => true,
-  "학기말 재적": (e) => !e.endDate || cmp(e.endDate, e.termEnd) >= 0,
-  "신규 유학생": (e) => e.kind === "신규",
-  "남": (e) => e.gender === "남",
-  "여": (e) => e.gender === "여",
-  "가족체류형": (e) => e.residence === "가족체류형",
-  "홈스테이형": (e) => e.residence === "홈스테이형",
-  "유학센터형": (e) => e.residence === "유학센터형",
-};
+const SRC_KEYS = Object.keys(SOURCES);
+
+/* 자주 쓰는 표. 누르면 아래 고르개가 그대로 맞춰진다. */
+const PRESETS = [
+  { name: "시군별 연도별", src: 0, row: "유학 지역", sub: "(없음)", col: "학년도",
+    val: "유학생 수", sort: "발표 자료 순서",
+    note: "도교육청 발표 자료 '연도별 시·군 유학생 수' 와 같은 기준입니다." },
+  { name: "시군별 학교별 연도별", src: 0, row: "유학 지역", sub: "유학 학교", col: "학년도",
+    val: "유학생 수", sort: "발표 자료 순서",
+    note: "시군 안에 학교를 묶어 늘어놓고 시군마다 소계를 답니다." },
+  { name: "학교별 연도별", src: 0, row: "유학 학교", sub: "(없음)", col: "학년도",
+    val: "유학생 수", sort: "인원순" },
+  { name: "시군별 학기별", src: 0, row: "유학 지역", sub: "(없음)", col: "학기",
+    val: "유학생 수", sort: "발표 자료 순서" },
+  { name: "학교별 학기별", src: 0, row: "유학 학교", sub: "(없음)", col: "학기",
+    val: "유학생 수", sort: "인원순" },
+  { name: "신규 유학생 시군별 연도별", src: 0, row: "유학 지역", sub: "(없음)", col: "학년도",
+    val: "신규 유학생", sort: "발표 자료 순서" },
+  { name: "거주 유형별 연도별", src: 0, row: "거주 유형", sub: "(없음)", col: "학년도",
+    val: "유학생 수", sort: "인원순" },
+  { name: "원적지별 연도별", src: 0, row: "원 지역", sub: "(없음)", col: "학년도",
+    val: "유학생 수", sort: "인원순",
+    note: "학생이 원래 살던 시도입니다. 서울시교육청 지원금 보고에 씁니다." },
+  { name: "학년별 연도별", src: 0, row: "학년", sub: "(없음)", col: "학년도",
+    val: "유학생 수", sort: "이름순" },
+  { name: "성별 연도별", src: 0, row: "성별", sub: "(없음)", col: "학년도",
+    val: "유학생 수", sort: "이름순" },
+  { name: "희망학교별 접수·배정", src: 1, row: "희망 학교", sub: "(없음)", col: "배정 판정",
+    val: "접수 건수", sort: "인원순",
+    note: "학교마다 몇 건이 들어왔고 그중 몇 건이 배정되었는지. 미배정이 많은 학교가 경쟁이 센 곳입니다." },
+  { name: "시군별 희망학교별 접수·배정", src: 1, row: "희망 지역", sub: "희망 학교",
+    col: "배정 판정", val: "접수 건수", sort: "발표 자료 순서" },
+  { name: "희망학교별 연도별 접수", src: 1, row: "희망 학교", sub: "(없음)", col: "접수 학년도",
+    val: "접수 건수", sort: "인원순" },
+  { name: "미선정 사유별 학기별", src: 1, row: "미선정 사유", sub: "(없음)", col: "접수 학기",
+    val: "접수 건수", sort: "인원순" },
+];
 
 /* 발표 자료 '연도별 시·군 유학생 수' 의 시군 차례 */
 const REGION_ORDER = ["군산", "익산", "정읍", "남원", "김제", "완주", "진안",
                       "무주", "장수", "임실", "순창", "고창", "부안"];
 
+const SEP = " ";       // 키를 이어 붙일 때 쓰는 글자. 자료에는 나오지 않는다.
 let pivotResult = null;
 
-function computePivot(rowDim, colDim, measure, opts) {
-  const keep = MEASURES[measure];
-  const rowFn = ROW_DIMS[rowDim], colFn = COL_DIMS[colDim];
+function computePivot(o) {
+  const S = SOURCES[o.source];
+  const keep = S.measures[o.measure];
+  const rowFn = S.rows[o.rowDim];
+  const subFn = o.subDim === "(없음)" ? null : S.rows[o.subDim];
+  const colFn = S.cols[o.colDim];
   const cut = semIndex(CURRENT_YEAR, CURRENT_TERM);
-  const cells = new Map();       // "row|col" → Set(studentId)
-  const rowTotals = new Map();   // row → Set
-  const colTotals = new Map();   // col → Set
+
+  const cells = new Map();      // 행키+열 → Set
+  const rowSets = new Map();    // 행키 → Set
+  const grpCells = new Map();   // 묶음+열 → Set
+  const grpSets = new Map();    // 묶음 → Set
+  const colSets = new Map();
+  const subsOf = new Map();     // 묶음 → Set(세부)
+  const colKeys = new Set();
   const all = new Set();
-  const rowKeys = new Set(), colKeys = new Set();
 
-  for (const e of D.enrollments) {
-    if (!keep(e)) continue;
-    if (opts.hideOpen && semIndex(e.year, e.term) > cut) continue;
-    const rk = rowFn(e) ?? "(빈칸)";
-    const ck = colFn(e) ?? "(빈칸)";
-    rowKeys.add(rk); colKeys.add(ck);
-    const k = rk + " " + ck;
-    if (!cells.has(k)) cells.set(k, new Set());
-    cells.get(k).add(e.studentId);
-    if (!rowTotals.has(rk)) rowTotals.set(rk, new Set());
-    rowTotals.get(rk).add(e.studentId);
-    if (!colTotals.has(ck)) colTotals.set(ck, new Set());
-    colTotals.get(ck).add(e.studentId);
-    all.add(e.studentId);
+  const add = (map, k, id) => {
+    if (!map.has(k)) map.set(k, new Set());
+    map.get(k).add(id);
+  };
+
+  for (const rec of S.list()) {
+    if (!keep(rec)) continue;
+    if (o.hideOpen && S.idx(rec) > cut) continue;
+    const id = S.id(rec);
+    const g = rowFn(rec) ?? "(빈칸)";
+    const sub = subFn ? (subFn(rec) ?? "(빈칸)") : null;
+    const rk = sub === null ? g : g + SEP + sub;
+    const ck = colFn(rec) ?? "(빈칸)";
+    colKeys.add(ck);
+    if (!subsOf.has(g)) subsOf.set(g, new Set());
+    if (sub !== null) subsOf.get(g).add(sub);
+    add(cells, rk + SEP + ck, id);
+    add(rowSets, rk, id);
+    add(grpCells, g + SEP + ck, id);
+    add(grpSets, g, id);
+    add(colSets, ck, id);
+    all.add(id);
   }
 
-  const cols = [...colKeys].sort();
-  let rows = [...rowKeys];
-  if (opts.sort === "이름순") {
-    rows.sort((a, b) => a.localeCompare(b, "ko"));
-  } else if (opts.sort === "발표 자료 순서") {
-    const at = (k) => { const i = REGION_ORDER.indexOf(k); return i < 0 ? 99 : i; };
-    rows.sort((a, b) => at(a) - at(b) || a.localeCompare(b, "ko"));
-  } else {
-    rows.sort((a, b) => (rowTotals.get(b).size - rowTotals.get(a).size) || a.localeCompare(b, "ko"));
+  // 열이 시간이고 세는 단위가 사람이면, 줄 끝은 '합계'가 아니라 그 기간 동안
+  // 거쳐 간 사람 수다. 1,1,1 옆에 1 이 적히는 이유가 여기 있다.
+  const overTime = S.unit === "학생" && /학년도|학기/.test(o.colDim);
+
+  const size = (m, k) => (m.get(k) || { size: 0 }).size;
+  const byName = (a, b) => a.localeCompare(b, "ko");
+  const groups = [...grpSets.keys()].sort((a, b) => {
+    if (o.sort === "이름순") return byName(a, b);
+    if (o.sort === "발표 자료 순서") {
+      const at = (k) => { const i = REGION_ORDER.indexOf(k); return i < 0 ? 99 : i; };
+      return at(a) - at(b) || byName(a, b);
+    }
+    return (grpSets.get(b).size - grpSets.get(a).size) || byName(a, b);
+  });
+
+  // 화면에 그릴 줄 차례. 묶음이 있으면 세부 줄 뒤에 소계 줄을 하나 붙인다.
+  const body = [];
+  for (const g of groups) {
+    if (!subFn) { body.push({ kind: "row", group: g }); continue; }
+    const subs = [...subsOf.get(g)].sort((a, b) =>
+      o.sort === "인원순"
+        ? (size(rowSets, g + SEP + b) - size(rowSets, g + SEP + a)) || byName(a, b)
+        : byName(a, b));
+    for (const s of subs) body.push({ kind: "sub", group: g, sub: s });
+    body.push({ kind: "subtotal", group: g });
   }
 
+  const keyOf = (b) => (b.kind === "sub" ? b.group + SEP + b.sub : b.group);
   return {
-    rowDim, colDim, measure, cols, rows, hideOpen: opts.hideOpen,
-    get: (r, c) => (cells.get(r + " " + c) || { size: 0 }).size,
-    rowTotal: (r) => rowTotals.get(r).size,
-    colTotal: (c) => colTotals.get(c).size,
+    ...o, grouped: !!subFn, unit: S.unit, what: S.what,
+    totalHead: overTime ? "거쳐 간 학생" : "합계",
+    cols: [...colKeys].sort(), groups, body,
+    get: (b, c) => (b.kind === "subtotal"
+      ? size(grpCells, b.group + SEP + c)
+      : size(cells, keyOf(b) + SEP + c)),
+    lineTotal: (b) => (b.kind === "subtotal"
+      ? size(grpSets, b.group)
+      : size(rowSets, keyOf(b))),
+    colTotal: (c) => size(colSets, c),
     grand: all.size,
   };
 }
@@ -430,92 +551,180 @@ function renderPivot() {
   const host = el("tab-pivot");
   host.innerHTML = `
     <section class="card">
-      <h2>교차표 만들기</h2>
-      <p class="note">유학이력(학생 × 학기)을 세로·가로로 갈라 셉니다. 한 칸은 <b>그 조건에 해당하는 학생 수</b>이며,
-        같은 학생이 한 칸 안에서 두 번 세어지지 않습니다. 그래서 열을 '학년도'로 두면 1·2학기를 모두 다닌 학생도 한 번만
-        세어져 발표 자료와 같은 값이 나옵니다.</p>
-      <div class="filters">
-        <label class="f">세로(행)
-          <select id="pvrow">${Object.keys(ROW_DIMS).map((k) =>
-            `<option${k === "유학 지역" ? " selected" : ""}>${esc(k)}</option>`).join("")}</select></label>
-        <label class="f">가로(열)
-          <select id="pvcol">${Object.keys(COL_DIMS).map((k) =>
-            `<option${k === "학년도" ? " selected" : ""}>${esc(k)}</option>`).join("")}</select></label>
-        <label class="f">무엇을 셀까
-          <select id="pvval">${Object.keys(MEASURES).map((k) => `<option>${esc(k)}</option>`).join("")}</select></label>
+      <h2>참고자료 표 만들기</h2>
+      <p class="note">자주 쓰는 표는 아래 단추로 바로 나옵니다. 그 아래 고르개로 직접 짤 수도 있습니다.
+        어느 쪽이든 '표 복사' 를 누르면 엑셀·한글에 그대로 붙습니다.</p>
+      <div class="presets" id="pvpresets">
+        ${PRESETS.map((p, i) => `<button class="preset" data-i="${i}">${esc(p.name)}</button>`).join("")}
+      </div>
+      <div class="filters" style="margin-top:18px">
+        <label class="f">바탕
+          <select id="pvsrc">${SRC_KEYS.map((k) => `<option>${esc(k)}</option>`).join("")}</select></label>
+        <label class="f">세로(행) <select id="pvrow"></select></label>
+        <label class="f">세로 세부 <select id="pvsub"></select></label>
+        <label class="f">가로(열) <select id="pvcol"></select></label>
+        <label class="f">무엇을 셀까 <select id="pvval"></select></label>
         <label class="f">차례
           <select id="pvsort"><option>인원순</option><option>이름순</option>
             <option>발표 자료 순서</option></select></label>
         <label class="f" style="flex-direction:row;align-items:center;gap:6px;padding-bottom:8px">
-          <input type="checkbox" id="pvopen" checked>
-          모집 중인 학기 빼기</label>
+          <input type="checkbox" id="pvopen" checked> 모집 중인 학기 빼기</label>
         <button class="ghost" id="pvcopy">표 복사</button>
         <button class="ghost" id="pvcsv">CSV 내려받기</button>
+        <button class="ghost" id="pvprint">인쇄</button>
       </div>
+      <h3 id="pvtitle" class="tabletitle"></h3>
       <div class="scroll" id="pvtable"></div>
       <p class="k" id="pvnote" style="margin-top:12px"></p>
     </section>`;
 
-  const redraw = () => {
-    pivotResult = computePivot(el("pvrow").value, el("pvcol").value, el("pvval").value,
-      { sort: el("pvsort").value, hideOpen: el("pvopen").checked });
-    drawPivotTable(pivotResult);
+  let pendingNote = null;
+
+  const opts = (id, keys, pick) => {
+    el(id).innerHTML = keys.map((k) =>
+      `<option${k === pick ? " selected" : ""}>${esc(k)}</option>`).join("");
   };
-  ["pvrow", "pvcol", "pvval", "pvsort", "pvopen"].forEach((id) =>
+
+  /* 바탕을 바꾸면 고를 수 있는 항목이 통째로 바뀐다 */
+  const fillDims = (srcKey, want) => {
+    const S = SOURCES[srcKey];
+    const rk = Object.keys(S.rows);
+    opts("pvrow", rk, want && want.row);
+    opts("pvsub", ["(없음)", ...rk], want && want.sub);
+    opts("pvcol", Object.keys(S.cols), want && want.col);
+    opts("pvval", Object.keys(S.measures), want && want.val);
+  };
+
+  const redraw = () => {
+    let sub = el("pvsub").value;
+    if (sub === el("pvrow").value) sub = "(없음)";   // 같은 항목을 두 번 겹치지 않는다
+    pivotResult = computePivot({
+      source: el("pvsrc").value, rowDim: el("pvrow").value, subDim: sub,
+      colDim: el("pvcol").value, measure: el("pvval").value,
+      sort: el("pvsort").value, hideOpen: el("pvopen").checked,
+      title: pendingTitle, note: pendingNote,
+    });
+    drawPivotTable(pivotResult);
+    pendingTitle = pendingNote = null;
+  };
+
+  let pendingTitle = null;
+  el("pvsrc").addEventListener("change", () => { fillDims(el("pvsrc").value); redraw(); });
+  ["pvrow", "pvsub", "pvcol", "pvval", "pvsort", "pvopen"].forEach((id) =>
     el(id).addEventListener("change", redraw));
+
+  el("pvpresets").addEventListener("click", (ev) => {
+    const b = ev.target.closest("button.preset");
+    if (!b) return;
+    const p = PRESETS[+b.dataset.i];
+    [...el("pvpresets").children].forEach((x) => x.classList.toggle("on", x === b));
+    el("pvsrc").value = SRC_KEYS[p.src];
+    fillDims(SRC_KEYS[p.src], p);
+    el("pvsort").value = p.sort;
+    pendingTitle = p.name;
+    pendingNote = p.note || null;
+    redraw();
+  });
+
   el("pvcopy").addEventListener("click", () => {
     navigator.clipboard.writeText(pivotText(pivotResult, "\t"))
-      .then(() => toast("표를 복사했습니다. 엑셀에 붙여넣으세요"))
+      .then(() => toast("표를 복사했습니다. 엑셀이나 한글에 붙여넣으세요"))
       .catch(() => toast("복사하지 못했습니다"));
   });
   el("pvcsv").addEventListener("click", () => {
-    const name = `${pivotResult.rowDim}_${pivotResult.colDim}_${pivotResult.measure}.csv`;
+    const p = pivotResult;
+    const name = `${p.rowDim}${p.grouped ? "_" + p.subDim : ""}_${p.colDim}_${p.measure}.csv`;
     // 엑셀이 UTF-8 로 열도록 BOM 을 붙인다
-    const blob = new Blob(["﻿" + pivotText(pivotResult, ",")], { type: "text/csv;charset=utf-8" });
+    const blob = new Blob(["﻿" + pivotText(p, ",")], { type: "text/csv;charset=utf-8" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
     a.download = name;
     a.click();
     URL.revokeObjectURL(a.href);
   });
+  el("pvprint").addEventListener("click", () => window.print());
+
+  fillDims(SRC_KEYS[0], PRESETS[0]);
+  el("pvsort").value = PRESETS[0].sort;
+  pendingTitle = PRESETS[0].name;
+  pendingNote = PRESETS[0].note;
+  el("pvpresets").firstElementChild.classList.add("on");
   redraw();
 }
 
 function pivotText(p, sep) {
   const q = (v) => (sep === "," && /[",\n]/.test(String(v)) ? `"${String(v).replace(/"/g, '""')}"` : String(v));
-  const lines = [[p.rowDim, ...p.cols, "합계"].map(q).join(sep)];
-  for (const r of p.rows) {
-    lines.push([r, ...p.cols.map((c) => p.get(r, c)), p.rowTotal(r)].map(q).join(sep));
+  const head = p.grouped ? [p.rowDim, p.subDim] : [p.rowDim];
+  const lines = [[...head, ...p.cols, p.totalHead].map(q).join(sep)];
+  for (const b of p.body) {
+    const left = !p.grouped ? [b.group]
+      : b.kind === "subtotal" ? [b.group, "소계"] : [b.group, b.sub];
+    lines.push([...left, ...p.cols.map((c) => p.get(b, c)), p.lineTotal(b)].map(q).join(sep));
   }
-  lines.push(["합계", ...p.cols.map((c) => p.colTotal(c)), p.grand].map(q).join(sep));
+  lines.push([...(p.grouped ? ["합계", ""] : ["합계"]),
+              ...p.cols.map((c) => p.colTotal(c)), p.grand].map(q).join(sep));
   return lines.join("\n");
 }
 
 function drawPivotTable(p) {
-  const max = Math.max(1, ...p.rows.flatMap((r) => p.cols.map((c) => p.get(r, c))));
-  const body = p.rows.map((r) => `<tr>
-    <th class="rowhead">${esc(r)}</th>
-    ${p.cols.map((c) => {
-      const v = p.get(r, c);
-      const a = v ? (0.10 + 0.55 * (v / max)).toFixed(3) : 0;
-      return `<td class="num cell" style="background:rgba(var(--heat),${a})">${v ? n(v) : ""}</td>`;
-    }).join("")}
-    <td class="num"><b>${n(p.rowTotal(r))}</b></td></tr>`).join("");
+  const plain = p.body.filter((b) => b.kind !== "subtotal");
+  const max = Math.max(1, ...plain.flatMap((b) => p.cols.map((c) => p.get(b, c))));
+  const cell = (b, c) => {
+    const v = p.get(b, c);
+    if (b.kind === "subtotal") return `<td class="num">${v ? n(v) : ""}</td>`;
+    const a = v ? (0.10 + 0.55 * (v / max)).toFixed(3) : 0;
+    return `<td class="num cell" style="background:rgba(var(--heat),${a})">${v ? n(v) : ""}</td>`;
+  };
+
+  let body;
+  if (!p.grouped) {
+    body = p.body.map((b) => `<tr><th class="rowhead">${esc(b.group)}</th>${
+      p.cols.map((c) => cell(b, c)).join("")
+    }<td class="num"><b>${n(p.lineTotal(b))}</b></td></tr>`).join("");
+  } else {
+    let opened = null;
+    body = p.body.map((b) => {
+      let lead = "";
+      if (b.group !== opened) {
+        opened = b.group;
+        // 묶음 이름은 세부 줄 수 + 소계 줄 만큼 세로로 합친다
+        const span = p.body.filter((x) => x.group === b.group).length;
+        lead = `<th class="rowhead grouphead" rowspan="${span}">${esc(b.group)}</th>`;
+      }
+      const label = b.kind === "subtotal"
+        ? `<th class="subtot">소계</th>` : `<th class="subhead">${esc(b.sub)}</th>`;
+      return `<tr${b.kind === "subtotal" ? ' class="subtotal"' : ""}>${lead}${label}` +
+             p.cols.map((c) => cell(b, c)).join("") +
+             `<td class="num"><b>${n(p.lineTotal(b))}</b></td></tr>`;
+    }).join("");
+  }
+
   el("pvtable").innerHTML = `<table class="pivot"><thead><tr>
     <th class="rowhead">${esc(p.rowDim)}</th>
+    ${p.grouped ? `<th>${esc(p.subDim)}</th>` : ""}
     ${p.cols.map((c) => `<th class="num">${esc(c)}</th>`).join("")}
-    <th class="num">합계</th></tr></thead>
+    <th class="num">${esc(p.totalHead)}</th></tr></thead>
     <tbody>${body}</tbody>
     <tfoot><tr class="total"><th class="rowhead">합계</th>
+      ${p.grouped ? "<th></th>" : ""}
       ${p.cols.map((c) => `<td class="num">${n(p.colTotal(c))}</td>`).join("")}
       <td class="num">${n(p.grand)}</td></tr></tfoot></table>`;
-  el("pvnote").textContent =
-    `${p.rows.length}행 × ${p.cols.length}열 · 값은 '${p.measure}'. ` +
+
+  el("pvtitle").textContent = p.title
+    || `${p.rowDim}${p.grouped ? " · " + p.subDim : ""} × ${p.colDim} — ${p.measure}`;
+  el("pvnote").innerHTML =
+    `${plain.length}행 × ${p.cols.length}열 · 값은 '${esc(p.measure)}' · 바탕은 ${esc(p.source)}. ` +
+    p.what + " " +
     (p.hideOpen
       ? `모집이 진행 중인 ${semLabel(CURRENT_YEAR, CURRENT_TERM)} 이후 학기는 빼고 셌습니다. `
-      : "모집이 진행 중인 학기까지 포함해 셌습니다. ") +
-    "합계는 그 줄·칸에 해당하는 학생을 중복 없이 센 값이라, 한 학생이 학년도 중에 지역이나 학교를 옮긴 경우 " +
-    "칸의 단순 합과 다를 수 있습니다.";
+      : "모집이 진행 중인 학기까지 넣어 셌습니다. ") +
+    (p.totalHead === "거쳐 간 학생"
+      ? "맨 오른쪽 '거쳐 간 학생'은 그 줄에 한 번이라도 든 사람 수입니다. 여러 해를 다닌 학생을 " +
+        "한 번만 세므로 칸을 그냥 더한 값보다 작습니다 — 3년을 다닌 학생 한 명이면 1, 1, 1 옆에 1 이 적힙니다."
+      : p.unit === "학생"
+      ? "합계는 중복 없이 센 값이라, 한 학생이 여러 칸에 걸치면 칸의 단순 합보다 작을 수 있습니다."
+      : "") +
+    (p.note ? "<br>" + esc(p.note) : "");
 }
 
 /* ── 학생 ───────────────────────────────────────────── */

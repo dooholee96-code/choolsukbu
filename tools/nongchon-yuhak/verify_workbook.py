@@ -50,6 +50,9 @@ def check_syntax(wb):
         for m in re.finditer(r"'([^']+)'!", text):
             if m.group(1) not in wb.sheetnames:
                 problems.append(f"{sheet}!{coord}: 없는 시트 '{m.group(1)}'")
+        # 머리글을 '=' 로 시작하게 적으면 엑셀이 수식으로 읽는다
+        if not FUNC_RE.search(text.upper()) and not re.search(r"[A-Z]\$?\d", text):
+            problems.append(f"{sheet}!{coord}: 수식이 아닌 글인데 '=' 로 시작함 — {text[:40]}")
     return problems
 
 
@@ -138,9 +141,10 @@ def check_values(wb, book, data):
                     f"학기별집계 {lab} {what} 합계 {got} ≠ 유학생 수 {total.get(lab, 0)}"
                 )
 
-    # 학기별집계의 학년도 블록 — 중복을 뺀 사람 수와 맞는지
+    # 학기별집계의 학년도 블록 — 한 칸씩 더하고 빼면 그대로 이어져야 하고,
+    # 학년도 인원은 중복을 뺀 사람 수와 같아야 한다
     ws = wb["학기별집계"]
-    hrow = next(r for r in range(1, ws.max_row + 1) if ws.cell(r, 7).value == "셈법")
+    hrow = next(r for r in range(1, ws.max_row + 1) if ws.cell(r, 12).value == "셈법")
     year_students, sem_students = {}, {}
     for e in data["enrollments"]:
         year_students.setdefault(e.year, set()).add(e.student_id)
@@ -150,13 +154,29 @@ def check_values(wb, book, data):
         y = int(str(ws.cell(r, 1).value)[:4])
         a = sem_students.get((y, 1), set())
         b = sem_students.get((y, 2), set())
-        for col, want, what in ((2, len(a), "1학기"), (3, len(b), "2학기"),
-                                (4, len(a & b), "양쪽 다 다님"), (5, len(b - a), "2학기 새 인원"),
-                                (6, len(year_students.get(y, ())), "유학생 수")):
+        nxt = sem_students.get((y + 1, 1), set())
+        for col, want, what in (
+            (2, len(a), "1학기 인원"),
+            (5, len(a & b), "2학기로 이어짐"),
+            (6, len(b - a), "2학기 신규"),
+            (7, len(b), "2학기 인원"),
+            (10, len(b & nxt), "다음 학년도로"),
+            (11, len(year_students.get(y, ())), "학년도 인원"),
+        ):
             checked += 1
             got = book.value("학기별집계", f"{get_column_letter(col)}{r}")
             if int(got or 0) != want:
                 problems.append(f"학기별집계 {y}학년도 {what}: 수식 {got} ≠ 원데이터 {want}")
+        # 종료 + 미정 + 이어짐 이 그 학기 인원과 맞아야 흐름이 끊기지 않는다
+        for parts, whole, what in (((3, 4, 5), 2, "1학기"), ((8, 9, 10), 7, "2학기")):
+            checked += 1
+            got = sum(int(book.value("학기별집계", f"{get_column_letter(c)}{r}") or 0)
+                      for c in parts)
+            want = int(book.value("학기별집계", f"{get_column_letter(whole)}{r}") or 0)
+            if got != want:
+                problems.append(
+                    f"학기별집계 {y}학년도 {what} 종료+미정+이어짐 {got} ≠ 인원 {want}"
+                )
         r += 1
 
     # 지역별현황 / 학교별현황 격자

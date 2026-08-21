@@ -296,6 +296,10 @@ def apply_function(name, args, book):
                 except Err:
                     pass
         return total
+    if name == "COUNTA":
+        return float(sum(1 for a in args for v in values(a) if v not in (None, "")))
+    if name == "COUNTBLANK":
+        return float(sum(1 for a in args for v in values(a) if v in (None, "")))
     if name == "COUNTIF":
         return float(sum(1 for v in values(args[0]) if match_criterion(v, args[1])))
     if name == "COUNTIFS":

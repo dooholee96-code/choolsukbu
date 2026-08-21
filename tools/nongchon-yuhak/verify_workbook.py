@@ -20,8 +20,8 @@ import transform as T
 
 # 엑셀 2007 이전 함수만 쓴다. 이후 함수는 접두사 문제로 다른 프로그램에서 깨진다.
 ALLOWED = {
-    "COUNTIF", "COUNTIFS", "SUM", "IF", "OR", "AND", "MIN", "MAX",
-    "INDEX", "MATCH", "IFERROR", "SUMPRODUCT", "SUMIF", "SUMIFS",
+    "COUNTIF", "COUNTIFS", "COUNTA", "COUNTBLANK", "SUM", "IF", "OR", "AND",
+    "MIN", "MAX", "INDEX", "MATCH", "IFERROR", "SUMPRODUCT", "SUMIF", "SUMIFS",
 }
 BANNED = {"XLOOKUP", "XMATCH", "SORT", "FILTER", "UNIQUE", "SEQUENCE",
           "TEXTJOIN", "CONCAT", "IFS", "SWITCH", "MAXIFS", "MINIFS"}
@@ -119,6 +119,68 @@ def check_values(wb, book, data):
             got = book.value(sheet, f"{letter}{r}")
             if int(got or 0) != total.get(lab, 0):
                 problems.append(f"{sheet} 합계 {lab}: 수식 {got} ≠ 원데이터 {total.get(lab, 0)}")
+
+    # 연도별현황 — 학년도로 묶은 값이 중복 없이 센 값과 같아야 한다
+    year_region, year_school, year_total = {}, {}, {}
+    for e in data["enrollments"]:
+        year_region.setdefault((e.year, e.region), set()).add(e.student_id)
+        year_school.setdefault((e.year, e.school), set()).add(e.student_id)
+        year_total.setdefault(e.year, set()).add(e.student_id)
+    ws = wb["연도별현황"]
+    years = []
+    c = 2
+    while isinstance(ws.cell(4, c).value, str) and "학년도" in ws.cell(4, c).value:
+        years.append((get_column_letter(c), int(ws.cell(4, c).value[:4])))
+        c += 1
+    r = 5
+    while ws.cell(r, 1).value and ws.cell(r, 1).value != "합계":
+        key = ws.cell(r, 1).value
+        for letter, y in years:
+            checked += 1
+            got = book.value("연도별현황", f"{letter}{r}")
+            want = len(year_region.get((y, key), ()))
+            if int(got or 0) != want:
+                problems.append(f"연도별현황 {key} {y}학년도: 수식 {got} ≠ 원데이터 {want}")
+        r += 1
+    for letter, y in years:
+        checked += 1
+        got = book.value("연도별현황", f"{letter}{r}")
+        if int(got or 0) != len(year_total.get(y, ())):
+            problems.append(f"연도별현황 합계 {y}학년도: 수식 {got} ≠ 원데이터 {len(year_total.get(y, ()))}")
+
+    # 학교 블록
+    head = r + 3
+    school_years = []
+    c = 3
+    while isinstance(ws.cell(head, c).value, str) and "학년도" in ws.cell(head, c).value:
+        school_years.append((get_column_letter(c), int(ws.cell(head, c).value[:4])))
+        c += 1
+    r = head + 1
+    while ws.cell(r, 2).value and ws.cell(r, 1).value != "합계":
+        key = ws.cell(r, 2).value
+        for letter, y in school_years:
+            checked += 1
+            got = book.value("연도별현황", f"{letter}{r}")
+            want = len(year_school.get((y, key), ()))
+            if int(got or 0) != want:
+                problems.append(f"연도별현황 학교 {key} {y}학년도: 수식 {got} ≠ 원데이터 {want}")
+        r += 1
+
+    # 서울원적 — 학기별 요약이 원데이터의 서울 재적과 같아야 한다
+    seoul = {}
+    for e in data["enrollments"]:
+        if e.home_region == "서울":
+            lab = T.sem_label(e.year, e.term)
+            seoul[lab] = seoul.get(lab, 0) + 1
+    ws = wb["서울원적"]
+    c = 2
+    while isinstance(ws.cell(4, c).value, str) and "학기" in ws.cell(4, c).value:
+        lab = ws.cell(4, c).value
+        checked += 1
+        got = book.value("서울원적", f"{get_column_letter(c)}5")
+        if int(got or 0) != seoul.get(lab, 0):
+            problems.append(f"서울원적 {lab}: 수식 {got} ≠ 원데이터 {seoul.get(lab, 0)}")
+        c += 1
 
     # 학생현황의 유학 학기수 합이 유학이력 행 수와 같아야 한다
     ws = wb["학생현황"]

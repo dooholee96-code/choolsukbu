@@ -182,7 +182,13 @@ def sheet_guide(ws, data, src_name):
         f"1행 = 원본 1행 = 모집 차수별 신청 건 ({len(apps)}행). 원본 열을 모두 그대로 두고 앞쪽에 정리 열만 붙였습니다.",
     )
     line("학기별집계", "학년도·학기별 인원, 신규/계속, 성별, 거주 유형, 운영 지역·학교 수. 전부 수식입니다.")
-    line("지역별현황 / 학교별현황", "시군별·학교별 인원을 학기별로 늘어놓은 표.")
+    line("연도별현황", "시군별·학교별 인원을 학년도로 묶은 표. 발표 자료와 같은 기준입니다.")
+    line(
+        "서울원적",
+        "원 지역이 서울인 학생만 모은 표. 서울시교육청 유학경비 지원 보고용입니다. "
+        "학기 칸의 'O' 로 필요한 학기를 걸러 씁니다. 서울시교육청 양식을 받으면 열 차례를 맞춥니다.",
+    )
+    line("지역별현황 / 학교별현황", "같은 내용을 학기별로 늘어놓은 표.")
     line("체제비관리", "학생별 지원 시작 학기와 도청 3년 지원 만료 시점, 잔여 학기.")
     line("설정", "기준일과 체제비 단가. 지침이 바뀌면 노란 칸만 고치면 됩니다.")
     line(
@@ -726,8 +732,49 @@ def sheet_summary(ws, data):
         put(ws, r, 8, notes.get(y, ""), align="left", size=9, color="595959")
     ws.column_dimensions["H"].width = 52
 
+    # 원본에 적혀 있던 학기별 공식 수치가 어느 기준인지
+    rb = r1 + 2 + len(years) + 1
+    tb = ws.cell(rb, 1, "원본에 적혀 있던 공식 수치는 어느 기준인가")
+    tb.font = Font(name=FONT, size=12, bold=True, color=INK)
+    nb = ws.cell(rb + 1, 1,
+                 "숨김 시트 '각종 현황'과 2025 시행 지침에 적힌 학기별 수치를 이 워크북과 맞춰 본 결과입니다. "
+                 "학기마다 세는 기준이 달라서 그대로 이어 쓰면 어긋납니다.")
+    nb.font = Font(name=FONT, size=9, color="595959")
+    for i, h in enumerate(["구간", "원본 수치", "출처", "이 워크북", "읽는 법"], start=1):
+        style_head(ws, rb + 2, i, h, fill=ACCENT, width=(14, 10, 20, 22, 64)[i - 1])
+    checks = [
+        ("2024학년도 1학기", 127, "각종 현황 시트",
+         "연인원 132 · 학기말 재적 127",
+         "학기말 재적과 같습니다. 연인원과는 5명 다릅니다."),
+        ("2024학년도 2학기", 165, "각종 현황 시트",
+         "연인원 160 · 학기말 재적 154",
+         "어느 쪽과도 다릅니다. 165는 2024학년도 누계(1학기+2학기 신규)와 정확히 같고 "
+         "발표 자료의 2024학년도 시군 숫자와도 맞아, 학년도 값이 2학기 칸에 적힌 것으로 보입니다."),
+        ("2024. 9. 1. 기준", 163, "2025 시행 지침",
+         "2024학년도 2학기 연인원 160",
+         "시군마다 ±1~2씩 흩어져 어긋납니다. 원본 메모도 '중간집계일 기준'이라고 적고 있습니다."),
+        ("2025학년도 1학기", 204, "각종 현황 시트",
+         "연인원 204 · 학기말 재적 193",
+         "연인원과 같습니다."),
+        ("2025학년도 2학기", 257, "각종 현황 시트",
+         "연인원 257 · 학기말 재적 241",
+         "연인원과 같습니다."),
+        ("서울 신규 2025. 2학기", 34, "각종 현황 시트",
+         "배정 15 · 접수 33",
+         "접수 기준에 가깝습니다. 2022~2025학년도 1학기까지는 서울 지원자가 모두 배정되어 "
+         "두 기준이 같았는데, 2025학년도 2학기부터 미배정이 생기며 갈라졌습니다."),
+    ]
+    for j, (label, official, src, mine, how) in enumerate(checks):
+        r = rb + 3 + j
+        put(ws, r, 1, label, bold=True, fill=SUB_FILL, align="left")
+        put(ws, r, 2, official, bold=True, fmt="#,##0")
+        put(ws, r, 3, src, align="left", size=9, color="595959")
+        put(ws, r, 4, mine, align="left", size=9)
+        put(ws, r, 5, how, align="left", size=9, color="595959")
+        ws.row_dimensions[r].height = 15 + 13 * (len(how) // 60)
+
     # 미선정 사유
-    r2 = r1 + 2 + len(years) + 1
+    r2 = rb + 3 + len(checks) + 1
     t3 = ws.cell(r2, 1, "미선정 사유 (신청 건 기준)")
     t3.font = Font(name=FONT, size=12, bold=True, color=INK)
     reasons = sorted({a.reject_class for a in data["applications"] if a.reject_class})
@@ -840,6 +887,163 @@ def sheet_funnel(ws, data):
         put(ws, rr, 3, notes[name], align="left", size=9, color="595959")
 
     ws.freeze_panes = "B5"
+
+
+def sheet_year(ws, data):
+    """학년도 기준. 1학기와 2학기를 모두 다닌 학생도 한 번만 센다."""
+    ws.sheet_view.showGridLines = False
+    years = sorted({y for y, _ in data["semesters"]})
+    E = lambda name: rng("유학이력", ENROLL_HEADERS, name, LIMIT_ENROLL)  # noqa: E731
+
+    t = ws.cell(1, 1, "학년도별 현황")
+    t.font = Font(name=FONT, size=15, bold=True, color=INK)
+    n = ws.cell(2, 1,
+                "학년도 인원은 '1학기 인원 + 2학기에 새로 온 인원'으로 셉니다. "
+                "2학기의 '계속'은 이미 1학기에 세어졌기 때문입니다. 그래서 한 학생이 두 번 세어지지 않고, "
+                "도교육청 발표 자료 '연도별 시·군 유학생 수'와 시군 숫자까지 같습니다.")
+    n.font = Font(name=FONT, size=9, color="595959")
+
+    def year_formula(year, extra_range=None, extra_key=None):
+        q1, q2 = f'"{T.sem_label(year, 1)}"', f'"{T.sem_label(year, 2)}"'
+        more = f",{extra_range},{extra_key}" if extra_range else ""
+        return (f'=COUNTIFS({E("학기")},{q1}{more})'
+                f'+COUNTIFS({E("학기")},{q2},{E("구분")},"<>계속"{more})')
+
+    # ── 시군 × 학년도
+    regions = sorted({e.region for e in data["enrollments"] if e.region})
+    r0 = 4
+    style_head(ws, r0, 1, "유학 지역", width=12)
+    for k, y in enumerate(years):
+        style_head(ws, r0, 2 + k, f"{y}학년도", width=12)
+    style_head(ws, r0, 2 + len(years), "누적(연인원)", width=13)
+    ws.row_dimensions[r0].height = 30
+    for j, region in enumerate(regions):
+        r = r0 + 1 + j
+        put(ws, r, 1, region, bold=True, fill=SUB_FILL, align="left")
+        for k, y in enumerate(years):
+            put(ws, r, 2 + k, year_formula(y, E("유학 지역"), f"$A{r}"), fmt="#,##0")
+        put(ws, r, 2 + len(years),
+            f"=SUM(B{r}:{get_column_letter(1 + len(years))}{r})",
+            bold=True, fmt="#,##0", fill=DERIVED_FILL)
+    r = r0 + 1 + len(regions)
+    put(ws, r, 1, "합계", bold=True, fill=SUB_FILL, align="left")
+    for k in range(len(years) + 1):
+        L = get_column_letter(2 + k)
+        put(ws, r, 2 + k, f"=SUM({L}{r0 + 1}:{L}{r - 1})", bold=True, fmt="#,##0", fill=SUB_FILL)
+
+    # ── 학교 × 학년도
+    r2 = r + 3
+    t2 = ws.cell(r2, 1, "학교별")
+    t2.font = Font(name=FONT, size=12, bold=True, color=INK)
+    schools = sorted({(e.region, e.school) for e in data["enrollments"] if e.school})
+    r3 = r2 + 1
+    style_head(ws, r3, 1, "유학 지역", fill=ACCENT)
+    style_head(ws, r3, 2, "유학 학교", fill=ACCENT, width=14)
+    for k, y in enumerate(years):
+        style_head(ws, r3, 3 + k, f"{y}학년도", fill=ACCENT, width=12)
+    style_head(ws, r3, 3 + len(years), "누적(연인원)", fill=ACCENT, width=13)
+    for j, (region, school) in enumerate(schools):
+        r = r3 + 1 + j
+        put(ws, r, 1, region, fill=SUB_FILL, align="left")
+        put(ws, r, 2, school, bold=True, align="left")
+        for k, y in enumerate(years):
+            put(ws, r, 3 + k, year_formula(y, E("유학 학교"), f"$B{r}"), fmt="#,##0")
+        put(ws, r, 3 + len(years),
+            f"=SUM(C{r}:{get_column_letter(2 + len(years))}{r})",
+            bold=True, fmt="#,##0", fill=DERIVED_FILL)
+    r = r3 + 1 + len(schools)
+    put(ws, r, 1, "합계", bold=True, fill=SUB_FILL, align="left")
+    put(ws, r, 2, "", fill=SUB_FILL)
+    for k in range(len(years) + 1):
+        L = get_column_letter(3 + k)
+        put(ws, r, 3 + k, f"=SUM({L}{r3 + 1}:{L}{r - 1})", bold=True, fmt="#,##0", fill=SUB_FILL)
+
+    ws.freeze_panes = "B5"
+
+
+def sheet_seoul(ws, data):
+    """서울 원적 학생만 따로. 서울시교육청 유학경비 지원 보고용.
+
+    서울시교육청 양식을 아직 받지 못해 열 차례는 임시다. 양식이 오면 맞춘다.
+    """
+    prof = data["profiles"]
+    by_student = data["by_student"]
+    sems = [T.sem_label(y, t) for y, t in data["semesters"]]
+
+    seoul = [st for st in data["students"]
+             if any(e.home_region == "서울" for e in by_student.get(st.student_id, []))]
+
+    headers = ["연번", "학생ID", "성명", "성별", "현재 학년", "원 소속청", "원 소속교",
+               "유학 지역", "유학 학교", "거주 유형", "거주지",
+               "유학 시작일", "유학 종료일", "누적 학기",
+               "보호자 성명", "보호자 연락처", "학생 전화"] + sems + ["비고"]
+
+    rows = []
+    for i, st in enumerate(seoul, start=1):
+        p = prof[st.student_id]
+        rows.append([
+            i, st.student_id, st.name, st.gender, p["현재 학년"],
+            st.home_office, st.home_school,
+            p["최근 유학지역"], p["최근 유학학교"], p["최근 거주유형"], p["최근 거주지"],
+            p["유학 시작"], p["유학 종료"], None,
+            st.guardian, st.guardian_phone, st.phone,
+        ] + [None] * len(sems) + [st.note])
+
+    widths = {h: 11 for h in headers}
+    widths.update({
+        "연번": 6, "학생ID": 9, "성명": 11, "성별": 6, "현재 학년": 8,
+        "원 소속청": 12, "원 소속교": 14, "유학 지역": 10, "유학 학교": 11,
+        "거주 유형": 11, "거주지": 20, "유학 시작일": 12, "유학 종료일": 12,
+        "누적 학기": 8, "보호자 성명": 11, "보호자 연락처": 15, "학생 전화": 13, "비고": 24,
+    })
+    START = 8
+    last_row = write_table(
+        ws, headers, rows, widths,
+        date_cols={"유학 시작일", "유학 종료일"},
+        wrap_cols={"거주지", "비고"},
+        start_row=START, freeze="D",
+    )
+
+    sid = col_of(headers, "학생ID")
+    e_student = rng("유학이력", ENROLL_HEADERS, "학생ID", LIMIT_ENROLL)
+    e_sem = rng("유학이력", ENROLL_HEADERS, "학기", LIMIT_ENROLL)
+    for r in range(START + 1, last_row + 1):
+        put(ws, r, headers.index("누적 학기") + 1,
+            f"=COUNTIF({e_student},${sid}{r})", fill=DERIVED_FILL, fmt="#,##0")
+        for k, lab in enumerate(sems):
+            put(ws, r, headers.index(sems[0]) + 1 + k,
+                f'=IF(COUNTIFS({e_student},${sid}{r},{e_sem},"{lab}")>0,"O","")',
+                fill=DERIVED_FILL)
+
+    # 머리말과 학기별 요약
+    t = ws.cell(1, 1, "서울 원적 유학생")
+    t.font = Font(name=FONT, size=15, bold=True, color=INK)
+    n = ws.cell(2, 1,
+                "서울시교육청 유학경비 지원 보고용입니다. 원 지역이 서울인 학생만 모았습니다. "
+                "학기 칸의 'O' 는 그 학기에 재적했다는 뜻이라, 필요한 학기로 걸러 쓰면 됩니다. "
+                "※ 서울시교육청 양식을 아직 받지 못해 열 차례는 임시입니다.")
+    n.font = Font(name=FONT, size=9, color="595959")
+
+    E = lambda name: rng("유학이력", ENROLL_HEADERS, name, LIMIT_ENROLL)  # noqa: E731
+    style_head(ws, 4, 1, "학기", width=12)
+    for k, lab in enumerate(sems):
+        style_head(ws, 4, 2 + k, lab, width=12)
+    put(ws, 5, 1, "서울 원적", bold=True, fill=SUB_FILL, align="left")
+    put(ws, 6, 1, "전체", bold=True, fill=SUB_FILL, align="left")
+    for k, lab in enumerate(sems):
+        put(ws, 5, 2 + k, f'=COUNTIFS({E("학기")},"{lab}",{E("원 지역")},"서울")',
+            bold=True, fmt="#,##0")
+        put(ws, 6, 2 + k, f'=COUNTIF({E("학기")},"{lab}")', fmt="#,##0", color="595959")
+
+    office = col_of(headers, "원 소속청")
+    w = ws.cell(last_row + 2, 1,
+                "※ 서울 지역교육지원청(원 소속청)이 비어 있는 학생이 있습니다. "
+                "서울시교육청 보고에는 필요한 값이니 원본에서 채워 넣으십시오.")
+    w.font = Font(name=FONT, size=9, color="A61C1C")
+    put(ws, last_row + 3, 1, "원 소속청 미기재", bold=True, fill=SUB_FILL, align="left")
+    put(ws, last_row + 3, 2,
+        f'=COUNTBLANK(${office}${START + 1}:${office}${last_row})', bold=True, fmt="#,##0")
+    return last_row
 
 
 def sheet_region(ws, data):
@@ -1178,6 +1382,8 @@ def main(src, out):
     sheet_applications(wb.create_sheet("신청이력"), data)
     sheet_funnel(wb.create_sheet("모집단계현황"), data)
     sheet_summary(wb.create_sheet("학기별집계"), data)
+    sheet_year(wb.create_sheet("연도별현황"), data)
+    sheet_seoul(wb.create_sheet("서울원적"), data)
     sheet_region(wb.create_sheet("지역별현황"), data)
     sheet_school(wb.create_sheet("학교별현황"), data)
     sheet_cost(wb.create_sheet("체제비관리"), data)

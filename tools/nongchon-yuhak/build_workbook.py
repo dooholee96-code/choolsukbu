@@ -184,6 +184,12 @@ def sheet_guide(ws, data, src_name):
     line("학기별집계", "학년도·학기별 인원, 신규/계속, 성별, 거주 유형, 운영 지역·학교 수. 전부 수식입니다.")
     line("연도별현황", "시군별·학교별 인원을 학년도로 묶은 표. 발표 자료와 같은 기준입니다.")
     line(
+        "서울원적_제출용",
+        "서울시교육청이 준 서식 그대로 만든 제출용 명단. 왼쪽 15개 열이 서식이고, "
+        "노란 열은 검토용이라 제출할 때 지웁니다. 지원금 대상 여부(○/×)는 최초 참여 학기부터 "
+        "6학기 이내인지로 계산합니다.",
+    )
+    line(
         "서울원적",
         "원 지역이 서울인 학생만 모은 표. 서울시교육청 유학경비 지원 보고용입니다. "
         "학기 칸의 'O' 로 필요한 학기를 걸러 씁니다. 서울시교육청 양식을 받으면 열 차례를 맞춥니다.",
@@ -284,6 +290,9 @@ RATE_CELLS = {
     "센터": "C13",
     "도청": "C16",
     "지원학기": "C17",
+    "서울기준학년도": "C20",
+    "서울기준학기구분": "C21",
+    "서울지원학기": "C22",
 }
 
 
@@ -345,7 +354,15 @@ def sheet_settings(ws):
     item(17, "도청 지원 기간 (학기)", 6,
          "최대 3년 = 6학기. 원본 메모: 2023년 3월 시작 → 2026년 2월까지 지원", fmt="0")
 
-    w = ws.cell(19, 2, "※ 유치원생은 다자녀 수에는 포함되나 유학경비 지원 대상에는 포함되지 않습니다(지침).")
+    band(19, "서울시교육청 (서울 원적 학생)", "값")
+    item(20, "제출 기준 학년도", 2026, "서울원적_제출용 시트가 이 학기 명단으로 만들어집니다.", fmt="0")
+    item(21, "제출 기준 학기 (1 또는 2)", 2, "1학기면 1, 2학기면 2", fmt="0")
+    item(22, "지원 기간 (학기)", 6,
+         "최초 참여 학기부터 세어 이 학기 수 이내면 '○'. "
+         "서식 예시 3행(2022.1학기 ×, 2023.2학기 ×, 2024.2학기 ○)이 모두 6학기 경계로 갈립니다.",
+         fmt="0")
+
+    w = ws.cell(24, 2, "※ 유치원생은 다자녀 수에는 포함되나 유학경비 지원 대상에는 포함되지 않습니다(지침).")
     w.font = Font(name=FONT, size=9, color="A61C1C")
 
 
@@ -1046,6 +1063,131 @@ def sheet_seoul(ws, data):
     return last_row
 
 
+# 서울시교육청이 준 서식의 열 차례. 그대로 지킨다.
+SEOUL_FORM = [
+    "순", "유학지역\n(광역)", "유학지역\n(기초)", "유학학교", "학생 성명", "학년(2026)",
+    "성별", "거주유형", "보호자 성명", "보호자 연락처", "원 교육지원청", "원 소속교",
+    "최초 참여 기수", "비고", "서울시교육청 지원금 대상 여부",
+]
+# 서식에 없지만 검토에 필요한 칸. 제출할 때는 지운다.
+SEOUL_EXTRA = ["학생ID", "최초 참여 학기순번", "기준 학기 기준 몇 번째", "명단에 오른 근거"]
+
+
+def sheet_seoul_form(ws, data):
+    """서울시교육청 제출 서식 그대로. 기준 학기에 참가하는 서울 원적 학생만."""
+    prof = data["profiles"]
+    by_student = data["by_student"]
+    apps = {a.app_id: a for a in data["applications"]}
+    base_y, base_t = 2026, 2                      # 설정 시트의 '제출 기준 학기'
+    base_i = T.sem_index(base_y, base_t)
+    prev_y, prev_t = T.sem_from_index(base_i - 1)
+
+    rows = []
+    for st in data["students"]:
+        lst = by_student.get(st.student_id, [])
+        if not lst or not any(e.home_region == "서울" for e in lst):
+            continue
+        here = next((e for e in lst if e.year == base_y and e.term == base_t), None)
+        why = None
+        if here:
+            why = "기준 학기 배정"
+        else:
+            # 앞 학기에 재적하면서 종료일이 아직 '현재' 인 학생은 연장 후보다
+            before = next((e for e in lst if e.year == prev_y and e.term == prev_t), None)
+            if before:
+                end = T.s(apps[before.app_id].raw["종료일"]) or ""
+                if end.startswith("현재"):
+                    here, why = before, "앞 학기 재적 · 연장 예정(원본 종료일 '현재')"
+        if not here:
+            continue
+        first = lst[0]
+        rows.append({
+            "e": here, "st": st, "p": prof[st.student_id], "first": first, "why": why,
+        })
+
+    rows.sort(key=lambda r: ((r["e"].region or ""), (r["e"].school or ""), r["st"].name))
+
+    # 서식 그대로: 2행 제목, 4행 머리글, 5행부터 데이터
+    t = ws.cell(2, 2, f"(서식) {base_y}학년도 {base_t}학기 서울시교육청 농촌유학생 명단")
+    t.font = Font(name=FONT, size=13, bold=True, color=INK)
+    ws.merge_cells(start_row=2, start_column=2, end_row=2, end_column=13)
+
+    headers = SEOUL_FORM + SEOUL_EXTRA
+    for i, h in enumerate(headers, start=1):
+        c = ws.cell(4, i, h)
+        c.font = Font(name=FONT, size=10, bold=True,
+                      color="FFFFFF" if i <= len(SEOUL_FORM) else "7F6000")
+        c.fill = HEAD_FILL if i <= len(SEOUL_FORM) else INPUT_FILL
+        c.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+        c.border = BOX
+    ws.row_dimensions[4].height = 40
+
+    for j, r in enumerate(rows):
+        e, st, p, first = r["e"], r["st"], r["p"], r["first"]
+        vals = [
+            j + 1, "전북", e.region, e.school, st.name, e.grade, e.gender, e.residence,
+            st.guardian, st.guardian_phone, st.home_office, st.home_school,
+            f"{first.year}. {first.term}학기", ("형제자매" if T.s(apps[e.app_id].raw["형제자매"]) else None),
+            None,                                   # 지원금 대상 여부 (수식)
+            st.student_id, T.sem_index(first.year, first.term), None, r["why"],
+        ]
+        for i, v in enumerate(vals, start=1):
+            c = ws.cell(5 + j, i, v)
+            c.font = Font(name=FONT, size=10,
+                          color="000000" if i <= len(SEOUL_FORM) else "7F6000")
+            c.border = BOX
+            c.alignment = Alignment(vertical="center",
+                                    horizontal="center" if i in (1, 6, 7, 15) else None,
+                                    wrap_text=(i == len(headers)))
+            if i > len(SEOUL_FORM):
+                c.fill = PatternFill("solid", fgColor="FFF9E6")
+
+    last = 4 + len(rows)
+    P = {h: get_column_letter(i + 1) for i, h in enumerate(headers)}
+    for j in range(len(rows)):
+        r = 5 + j
+        put(ws, r, headers.index("기준 학기 기준 몇 번째") + 1,
+            f'=({rate("서울기준학년도")}*2+{rate("서울기준학기구분")}-1)'
+            f'-${P["최초 참여 학기순번"]}{r}+1',
+            fill="FFF9E6", fmt="0", color="7F6000")
+        put(ws, r, headers.index("서울시교육청 지원금 대상 여부") + 1,
+            f'=IF(${P["기준 학기 기준 몇 번째"]}{r}<={rate("서울지원학기")},"○","×")',
+            bold=True)
+
+    widths = {"순": 6, "유학지역\n(광역)": 10, "유학지역\n(기초)": 10, "유학학교": 12,
+              "학생 성명": 11, "학년(2026)": 10, "성별": 6, "거주유형": 11,
+              "보호자 성명": 11, "보호자 연락처": 15, "원 교육지원청": 13, "원 소속교": 14,
+              "최초 참여 기수": 13, "비고": 12, "서울시교육청 지원금 대상 여부": 14,
+              "학생ID": 9, "최초 참여 학기순번": 10, "기준 학기 기준 몇 번째": 10,
+              "명단에 오른 근거": 30}
+    for h, w in widths.items():
+        ws.column_dimensions[P[h]].width = w
+    ws.freeze_panes = "F5"
+    ws.auto_filter.ref = f"A4:{get_column_letter(len(headers))}{max(last, 5)}"
+
+    n = ws.cell(last + 2, 2,
+                f"※ 왼쪽 {len(SEOUL_FORM)}개 열이 서울시교육청 서식 그대로입니다. "
+                f"노란 {len(SEOUL_EXTRA)}개 열은 검토용이니 제출할 때 지우십시오.")
+    n.font = Font(name=FONT, size=9, color="595959")
+    n2 = ws.cell(last + 3, 2,
+                 "※ 지원금 대상 여부는 '최초 참여 학기부터 세어 6학기 이내면 ○' 로 계산했습니다. "
+                 "서식 예시 3행이 모두 이 경계로 갈려 그렇게 읽었습니다. 기준이 다르면 설정 시트에서 고치십시오.")
+    n2.font = Font(name=FONT, size=9, color="A61C1C")
+    n3 = ws.cell(last + 4, 2,
+                 f"※ 원본에 {base_y}학년도 {base_t}학기 연장이 아직 입력되지 않아, "
+                 "앞 학기 재적자 중 종료일이 '현재' 인 학생을 연장 예정으로 함께 올렸습니다. "
+                 "'명단에 오른 근거' 열에서 갈라 보고, 연장하지 않는 학생은 지우십시오.")
+    n3.font = Font(name=FONT, size=9, color="A61C1C")
+
+    office = P["원 교육지원청"]
+    put(ws, last + 6, 2, "원 교육지원청이 비어 있는 학생", bold=True, fill=SUB_FILL, align="left")
+    put(ws, last + 6, 3, f"=COUNTBLANK(${office}$5:${office}${max(last, 5)})",
+        bold=True, fmt="#,##0")
+    n4 = ws.cell(last + 7, 2, "서울시교육청 보고에 필요한 값입니다. 원본 '원 소속청' 칸을 채우십시오.")
+    n4.font = Font(name=FONT, size=9, color="A61C1C")
+    return len(rows)
+
+
 def sheet_region(ws, data):
     ws.sheet_view.showGridLines = False
     sems = data["semesters"]
@@ -1384,6 +1526,7 @@ def main(src, out):
     sheet_summary(wb.create_sheet("학기별집계"), data)
     sheet_year(wb.create_sheet("연도별현황"), data)
     sheet_seoul(wb.create_sheet("서울원적"), data)
+    n_form = sheet_seoul_form(wb.create_sheet("서울원적_제출용"), data)
     sheet_region(wb.create_sheet("지역별현황"), data)
     sheet_school(wb.create_sheet("학교별현황"), data)
     sheet_cost(wb.create_sheet("체제비관리"), data)

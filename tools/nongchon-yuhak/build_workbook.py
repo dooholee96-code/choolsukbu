@@ -16,6 +16,8 @@ import openpyxl
 from openpyxl.formatting.rule import CellIsRule, FormulaRule
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
+from openpyxl.chart import LineChart, Reference
+from openpyxl.chart.marker import Marker
 from openpyxl.worksheet.datavalidation import DataValidation
 
 import transform as T
@@ -188,6 +190,12 @@ def sheet_guide(ws, data, src_name):
          "신규·계속·재유학이 몇 명이고, 그중 몇 명이 다음 학기로 이어지고 몇 명이 끝났는지 "
          "바로 읽힙니다. 아래쪽 학년도 표는 1학기 인원에서 출발해 종료·신규를 한 칸씩 "
          "빼고 더하며 2학기까지 따라가, 학년도 인원이 왜 두 학기의 합이 아닌지 보여 줍니다.")
+    line(
+        "학기흐름",
+        "첫 학기부터 지금까지 사람이 드나든 흐름을 한 줄에 한 학기씩 이어 놓은 표입니다. "
+        "윗줄의 '다음 학기로'가 아랫줄의 '전 학기에서 이어받음'이 되어 사슬처럼 이어집니다. "
+        "누적 참여 학생 수와 그래프 두 개(유학생 수 추이, 신규·종료)도 여기에 있습니다.",
+    )
     line("연도별현황", "시군별·학교별 인원을 학년도로 묶은 표. 발표 자료와 같은 기준입니다.")
     line(
         "서울원적_제출용",
@@ -1020,6 +1028,111 @@ def sheet_funnel(ws, data):
     ws.freeze_panes = "B5"
 
 
+def sheet_flow(ws, data):
+    """첫 학기부터 지금까지 사람이 드나든 흐름을 한 줄에 한 학기씩 이어 놓는다."""
+    ws.sheet_view.showGridLines = False
+    sems = data["semesters"]
+    E = lambda name: rng("유학이력", ENROLL_HEADERS, name, LIMIT_ENROLL)  # noqa: E731
+
+    first = T.sem_label(*sems[0])
+    t = ws.cell(1, 1, f"유학생 흐름 — {first}부터 지금까지")
+    t.font = Font(name=FONT, size=15, bold=True, color=INK)
+    n = ws.cell(2, 1,
+                "한 줄이 한 학기입니다. 왼쪽 '전 학기에서 이어받음'은 바로 윗줄의 "
+                "'다음 학기로'와 같은 숫자여서, 첫 학기부터 끊기지 않고 이어집니다. "
+                "이어받은 인원에 신규·재유학을 더하면 그 학기 유학생 수가 되고, "
+                "거기서 종료와 미정을 빼면 다음 학기로 넘어가는 인원이 됩니다. "
+                "'누적 참여 학생'은 첫 학기부터 지금까지 한 번이라도 유학한 사람 수입니다 "
+                "— 신규만 쌓은 값이며, 돌아온 학생(재유학)을 두 번 세지 않습니다.")
+    n.font = Font(name=FONT, size=9, color="595959")
+    ws.row_dimensions[2].height = 30
+
+    cols = ["학기", "전 학기에서 이어받음", "＋ 신규", "＋ 재유학", "→ 유학생 수",
+            "− 학기 중 종료", "− 학기말 종료", "− 종료 계", "− 미정·예정",
+            "→ 다음 학기로", "전 학기 대비", "누적 참여 학생"]
+    widths = (12, 15, 10, 10, 12, 12, 12, 11, 12, 13, 11, 13)
+    HDR = 4
+    for i, (h, w) in enumerate(zip(cols, widths), start=1):
+        style_head(ws, HDR, i, h, width=w)
+    ws.row_dimensions[HDR].height = 34
+
+    OUT_C, IN_C, HOLD_C = "A61C1C", "1F4E79", "7F6000"
+    for j, (y, term) in enumerate(sems):
+        r = HDR + 1 + j
+        q = f'"{T.sem_label(y, term)}"'
+        put(ws, r, 1, T.sem_label(y, term), bold=True, fill=SUB_FILL, align="center")
+        put(ws, r, 2, f'=COUNTIFS({E("학기")},{q},{E("구분")},"계속")', fmt="#,##0")
+        put(ws, r, 3, f'=COUNTIFS({E("학기")},{q},{E("구분")},"신규")',
+            fmt="#,##0", color=IN_C, bold=True)
+        put(ws, r, 4, f'=COUNTIFS({E("학기")},{q},{E("구분")},"재유학")', fmt="#,##0", color=IN_C)
+        put(ws, r, 5, f"=COUNTIF({E('학기')},{q})", bold=True, fmt="#,##0", fill=SUB_FILL)
+        put(ws, r, 6, f'=COUNTIFS({E("학기")},{q},{E("다음 학기")},"학기 중 종료")',
+            fmt="#,##0", color=OUT_C)
+        put(ws, r, 7, f'=COUNTIFS({E("학기")},{q},{E("다음 학기")},"학기말 종료")',
+            fmt="#,##0", color=OUT_C)
+        put(ws, r, 8, f"=$F{r}+$G{r}", bold=True, fmt="#,##0", color=OUT_C)
+        put(ws, r, 9,
+            f'=COUNTIFS({E("학기")},{q},{E("다음 학기")},"미정")'
+            f'+COUNTIFS({E("학기")},{q},{E("다음 학기")},"예정")', fmt="#,##0", color=HOLD_C)
+        put(ws, r, 10, f'=COUNTIFS({E("학기")},{q},{E("다음 학기")},"이어짐")',
+            bold=True, fmt="#,##0")
+        # 앞 학기에 '미정'이 남아 있으면 아직 다 입력되지 않은 것이라 비교가 뜻이 없다
+        put(ws, r, 11, "" if j == 0 else f'=IF($I{r - 1}>0,"",$E{r}-$E{r - 1})',
+            fmt='+#,##0;−#,##0;0')
+        put(ws, r, 12, f"=SUM($C${HDR + 1}:$C{r})", fmt="#,##0")
+
+    last = HDR + len(sems)
+    ws.freeze_panes = "B5"
+
+    warn = ws.cell(last + 1, 1,
+                   "※ 마지막 두 줄은 아직 확정 전입니다. 계속 유학하는 학생은 연장이 확정된 뒤 "
+                   "유학이력에 줄을 더해야 잡히므로, 그 전까지는 '미정·예정'에 머물고 "
+                   "'다음 학기로'가 0으로 보입니다. 종료 인원이 아닙니다.")
+    warn.font = Font(name=FONT, size=9, bold=True, color="A61C1C")
+
+    # 그래프 두 개. 하나는 규모(유학생 수), 하나는 드나든 인원(신규·종료).
+    # 성격이 다른 두 값을 한 축에 겹치지 않도록 나눠 그린다.
+    cats = Reference(ws, min_col=1, min_row=HDR + 1, max_row=last)
+
+    c1 = LineChart()
+    c1.title = "학기별 유학생 수"
+    c1.height, c1.width = 7.5, 18
+    c1.add_data(Reference(ws, min_col=5, min_row=HDR, max_row=last), titles_from_data=True)
+    c1.set_categories(cats)
+    c1.legend = None                      # 한 줄짜리 그래프는 제목이 곧 이름이다
+    c1.y_axis.title = "명"
+    c1.y_axis.delete = False
+    c1.x_axis.delete = False
+    style_series(c1.series[0], "2A78D6")
+    ws.add_chart(c1, f"A{last + 3}")
+
+    c2 = LineChart()
+    c2.title = "학기별 신규 · 종료"
+    c2.height, c2.width = 7.5, 18
+    for col in (3, 8):
+        c2.add_data(Reference(ws, min_col=col, min_row=HDR, max_row=last),
+                    titles_from_data=True)
+    c2.set_categories(cats)
+    c2.legend.position = "b"
+    c2.y_axis.title = "명"
+    c2.y_axis.delete = False
+    c2.x_axis.delete = False
+    style_series(c2.series[0], "2A78D6")   # 신규
+    style_series(c2.series[1], "EB6834")   # 종료
+    ws.add_chart(c2, f"A{last + 20}")
+
+    return last
+
+
+def style_series(s, hex_color):
+    """선은 얇게, 점은 알아볼 만큼 크게."""
+    s.graphicalProperties.line.solidFill = hex_color
+    s.graphicalProperties.line.width = 22000      # EMU, 약 1.75pt
+    s.marker = Marker(symbol="circle", size=7)
+    s.marker.graphicalProperties.solidFill = hex_color
+    s.marker.graphicalProperties.line.solidFill = hex_color
+    s.smooth = False
+
 def sheet_year(ws, data):
     """학년도 기준. 1학기와 2학기를 모두 다닌 학생도 한 번만 센다."""
     ws.sheet_view.showGridLines = False
@@ -1638,6 +1751,7 @@ def main(src, out):
     sheet_applications(wb.create_sheet("신청이력"), data)
     sheet_funnel(wb.create_sheet("모집단계현황"), data)
     sheet_summary(wb.create_sheet("학기별집계"), data)
+    sheet_flow(wb.create_sheet("학기흐름"), data)
     sheet_year(wb.create_sheet("연도별현황"), data)
     sheet_seoul(wb.create_sheet("서울원적"), data)
     n_form = sheet_seoul_form(wb.create_sheet("서울원적_제출용"), data)

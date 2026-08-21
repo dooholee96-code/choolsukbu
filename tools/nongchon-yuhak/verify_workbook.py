@@ -141,6 +141,46 @@ def check_values(wb, book, data):
                     f"학기별집계 {lab} {what} 합계 {got} ≠ 유학생 수 {total.get(lab, 0)}"
                 )
 
+    # 학기흐름 — 한 줄씩 이어지는지, 그리고 앞줄과 실제로 맞물리는지
+    ws = wb["학기흐름"]
+    HDR = 4
+    sem_students = {}
+    for e in data["enrollments"]:
+        sem_students.setdefault((e.year, e.term), set()).add(e.student_id)
+    prev_pass = None
+    for j, (y, term) in enumerate(data["semesters"]):
+        r = HDR + 1 + j
+        lab = T.sem_label(y, term)
+        cur = sem_students.get((y, term), set())
+        prev = sem_students.get(T.sem_from_index(T.sem_index(y, term) - 1), set())
+        nxt = sem_students.get(T.sem_from_index(T.sem_index(y, term) + 1), set())
+        val = lambda c: int(book.value("학기흐름", f"{get_column_letter(c)}{r}") or 0)  # noqa: E731
+        for col, want, what in (
+            (2, len(cur & prev), "전 학기에서 이어받음"),
+            (5, len(cur), "유학생 수"),
+            (10, len(cur & nxt), "다음 학기로"),
+            (12, sum(1 for e in data["enrollments"]
+                     if e.kind == "신규" and T.sem_index(e.year, e.term) <= T.sem_index(y, term)),
+             "누적 참여 학생"),
+        ):
+            checked += 1
+            if val(col) != want:
+                problems.append(f"학기흐름 {lab} {what}: 수식 {val(col)} ≠ 원데이터 {want}")
+        # 들어온 쪽·나간 쪽이 모두 그 학기 인원과 맞아야 한다
+        for parts, what in (((2, 3, 4), "이어받음+신규+재유학"), ((8, 9, 10), "종료+미정+이어짐")):
+            checked += 1
+            if sum(val(c) for c in parts) != val(5):
+                problems.append(
+                    f"학기흐름 {lab} {what} {sum(val(c) for c in parts)} ≠ 유학생 수 {val(5)}"
+                )
+        # 앞줄의 '다음 학기로' 가 이 줄의 '전 학기에서 이어받음' 이어야 사슬이 끊기지 않는다
+        checked += 1
+        if prev_pass is not None and prev_pass != val(2):
+            problems.append(
+                f"학기흐름 {lab}: 앞줄 '다음 학기로' {prev_pass} ≠ '전 학기에서 이어받음' {val(2)}"
+            )
+        prev_pass = val(10)
+
     # 학기별집계의 학년도 블록 — 한 칸씩 더하고 빼면 그대로 이어져야 하고,
     # 학년도 인원은 중복을 뺀 사람 수와 같아야 한다
     ws = wb["학기별집계"]

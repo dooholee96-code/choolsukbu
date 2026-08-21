@@ -247,9 +247,13 @@ def check_values(wb, book, data):
             if int(got or 0) != total.get(lab, 0):
                 problems.append(f"{sheet} 합계 {lab}: 수식 {got} ≠ 원데이터 {total.get(lab, 0)}")
 
-    # 연도별현황 — 학년도로 묶은 값이 중복 없이 센 값과 같아야 한다
+    # 연도별현황 — 학년도로 묶은 값이 중복 없이 센 값과 같아야 한다.
+    # 공문용 시트라 기준 학기를 넘어선 학기(아직 전학 전)는 빼고 센다.
+    cut = T.sem_index(T.CURRENT_YEAR, T.CURRENT_TERM)
     year_region, year_school, year_total = {}, {}, {}
     for e in data["enrollments"]:
+        if T.sem_index(e.year, e.term) > cut:
+            continue
         year_region.setdefault((e.year, e.region), set()).add(e.student_id)
         year_school.setdefault((e.year, e.school), set()).add(e.student_id)
         year_total.setdefault(e.year, set()).add(e.student_id)

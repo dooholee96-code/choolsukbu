@@ -196,7 +196,13 @@ def sheet_guide(ws, data, src_name):
         "윗줄의 '다음 학기로'가 아랫줄의 '전 학기에서 이어받음'이 되어 사슬처럼 이어집니다. "
         "누적 참여 학생 수와 그래프 두 개(유학생 수 추이, 신규·종료)도 여기에 있습니다.",
     )
-    line("연도별현황", "시군별·학교별 인원을 학년도로 묶은 표. 발표 자료와 같은 기준입니다.")
+    line(
+        "연도별현황",
+        "공문·보고서에 그대로 붙이는 표입니다. 시군별·학교별 인원을 학년도로 묶었고 "
+        "발표 자료와 같은 기준입니다. 세는 것은 학기 단위지만 자료로 낼 때는 학년도로 적습니다. "
+        "확정된 학기만 세므로 아직 전학 전인 학기는 들어가지 않으며, 한 학기만 든 학년도는 "
+        "머리글에 '(1학기만)' 처럼 적어 둡니다. 학기 단위로 보려면 지역별현황·학교별현황을 보세요.",
+    )
     line(
         "서울원적_제출용",
         "서울시교육청이 준 서식 그대로 만든 제출용 명단. 왼쪽 15개 열이 서식이고, "
@@ -208,7 +214,8 @@ def sheet_guide(ws, data, src_name):
         "원 지역이 서울인 학생만 모은 표. 서울시교육청 유학경비 지원 보고용입니다. "
         "학기 칸의 'O' 로 필요한 학기를 걸러 씁니다. 서울시교육청 양식을 받으면 열 차례를 맞춥니다.",
     )
-    line("지역별현황 / 학교별현황", "같은 내용을 학기별로 늘어놓은 표.")
+    line("지역별현황 / 학교별현황",
+         "같은 내용을 학기별로 늘어놓은 표입니다. 들여다볼 때 쓰고, 자료로 낼 때는 연도별현황을 씁니다.")
     line("체제비관리", "학생별 지원 시작 학기와 도청 3년 지원 만료 시점, 잔여 학기.")
     line("설정", "기준일과 체제비 단가. 지침이 바뀌면 노란 칸만 고치면 됩니다.")
     line(
@@ -1139,26 +1146,45 @@ def sheet_year(ws, data):
     years = sorted({y for y, _ in data["semesters"]})
     E = lambda name: rng("유학이력", ENROLL_HEADERS, name, LIMIT_ENROLL)  # noqa: E731
 
+    # 이 시트는 공문에 그대로 붙는 표라 확정된 학기만 센다. 기준 학기(설정 시트)를
+    # 넘어선 학기는 아직 전학 전이라 인원이 바뀔 수 있어서 넣지 않는다.
+    cut = T.sem_index(T.CURRENT_YEAR, T.CURRENT_TERM)
+    terms_in = {}
+    for e in data["enrollments"]:
+        if T.sem_index(e.year, e.term) <= cut:
+            terms_in.setdefault(e.year, set()).add(e.term)
+    half = {y: sorted(t)[0] for y, t in terms_in.items() if len(t) == 1}
+
+    def head_label(y):
+        return f"{y}학년도({half[y]}학기만)" if y in half else f"{y}학년도"
+
     t = ws.cell(1, 1, "학년도별 현황")
     t.font = Font(name=FONT, size=15, bold=True, color=INK)
     n = ws.cell(2, 1,
+                "공문·보고서에 붙이는 표입니다. 세는 것은 학기 단위지만 여기서는 학년도로 묶어 냅니다. "
                 "학년도 인원은 '1학기 인원 + 2학기에 새로 온 인원'으로 셉니다. "
                 "2학기의 '계속'은 이미 1학기에 세어졌기 때문입니다. 그래서 한 학생이 두 번 세어지지 않고, "
-                "도교육청 발표 자료 '연도별 시·군 유학생 수'와 시군 숫자까지 같습니다.")
+                "도교육청 발표 자료 '연도별 시·군 유학생 수'와 시군 숫자까지 같습니다. "
+                "학기 단위로 들여다보려면 지역별현황·학교별현황 시트를 보세요.")
     n.font = Font(name=FONT, size=9, color="595959")
 
     def year_formula(year, extra_range=None, extra_key=None):
-        q1, q2 = f'"{T.sem_label(year, 1)}"', f'"{T.sem_label(year, 2)}"'
+        """1학기 인원 + 2학기에 새로 온 인원. 기준 학기를 넘어선 학기는 빼고 센다."""
         more = f",{extra_range},{extra_key}" if extra_range else ""
-        return (f'=COUNTIFS({E("학기")},{q1}{more})'
-                f'+COUNTIFS({E("학기")},{q2},{E("구분")},"<>계속"{more})')
+        parts = []
+        if T.sem_index(year, 1) <= cut:
+            parts.append(f'COUNTIFS({E("학기")},"{T.sem_label(year, 1)}"{more})')
+        if T.sem_index(year, 2) <= cut:
+            parts.append(f'COUNTIFS({E("학기")},"{T.sem_label(year, 2)}",'
+                         f'{E("구분")},"<>계속"{more})')
+        return "=" + "+".join(parts)
 
     # ── 시군 × 학년도
     regions = sorted({e.region for e in data["enrollments"] if e.region})
     r0 = 4
     style_head(ws, r0, 1, "유학 지역", width=12)
     for k, y in enumerate(years):
-        style_head(ws, r0, 2 + k, f"{y}학년도", width=12)
+        style_head(ws, r0, 2 + k, head_label(y), width=12)
     style_head(ws, r0, 2 + len(years), "누적(연인원)", width=13)
     ws.row_dimensions[r0].height = 30
     for j, region in enumerate(regions):
@@ -1184,7 +1210,7 @@ def sheet_year(ws, data):
     style_head(ws, r3, 1, "유학 지역", fill=ACCENT)
     style_head(ws, r3, 2, "유학 학교", fill=ACCENT, width=14)
     for k, y in enumerate(years):
-        style_head(ws, r3, 3 + k, f"{y}학년도", fill=ACCENT, width=12)
+        style_head(ws, r3, 3 + k, head_label(y), fill=ACCENT, width=12)
     style_head(ws, r3, 3 + len(years), "누적(연인원)", fill=ACCENT, width=13)
     for j, (region, school) in enumerate(schools):
         r = r3 + 1 + j
@@ -1201,6 +1227,19 @@ def sheet_year(ws, data):
     for k in range(len(years) + 1):
         L = get_column_letter(3 + k)
         put(ws, r, 3 + k, f"=SUM({L}{r3 + 1}:{L}{r - 1})", bold=True, fmt="#,##0", fill=SUB_FILL)
+
+    if half:
+        which = ", ".join(f"{y}학년도는 {t}학기" for y, t in sorted(half.items()))
+        w = ws.cell(r + 2, 1,
+                    f"※ 한 학기만 든 학년도가 있습니다 — {which}만 들어 있습니다. "
+                    "두 학기가 다 든 해와 나란히 놓고 비교하면 안 됩니다. "
+                    f"{T.CURRENT_YEAR}학년도는 발표 자료도 1학기 모집 기준으로 나갑니다.")
+        w.font = Font(name=FONT, size=9, bold=True, color="A61C1C")
+    w2 = ws.cell(r + 3, 1,
+                 f"※ 이 시트의 {T.CURRENT_YEAR}학년도는 확정된 1학기만 센 값입니다. "
+                 "학기별집계의 학년도 표는 아직 전학 전인 2학기 최종배정 인원까지 더해 내므로 "
+                 "숫자가 더 큽니다. 공문에는 이 시트 값을 쓰세요.")
+    w2.font = Font(name=FONT, size=9, color="595959")
 
     ws.freeze_panes = "B5"
 

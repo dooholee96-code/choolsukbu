@@ -354,6 +354,7 @@ const SOURCES = {
     list: () => D.enrollments,
     id: (e) => e.studentId,
     idx: (e) => semIndex(e.year, e.term),
+    term: (e) => e.term,
     rows: {
       "유학 지역": (e) => e.region,
       "유학 학교": (e) => e.school,
@@ -392,6 +393,7 @@ const SOURCES = {
     list: () => D.applications.filter((a) => a.intakeYear),
     id: (a) => a.appId,
     idx: (a) => semIndex(a.intakeYear, a.intakeTerm),
+    term: (a) => a.intakeTerm,
     rows: {
       "희망 학교": (a) => txt(a.raw.유학학교),
       "희망 지역": (a) => (txt(a.raw.유학지역) || "").trim() || null,
@@ -430,10 +432,6 @@ const PRESETS = [
     note: "시군 안에 학교를 묶어 늘어놓고 시군마다 소계를 답니다." },
   { name: "학교별 연도별", src: 0, row: "유학 학교", sub: "(없음)", col: "학년도",
     val: "유학생 수", sort: "인원순" },
-  { name: "시군별 학기별", src: 0, row: "유학 지역", sub: "(없음)", col: "학기",
-    val: "유학생 수", sort: "발표 자료 순서" },
-  { name: "학교별 학기별", src: 0, row: "유학 학교", sub: "(없음)", col: "학기",
-    val: "유학생 수", sort: "인원순" },
   { name: "신규 유학생 시군별 연도별", src: 0, row: "유학 지역", sub: "(없음)", col: "학년도",
     val: "신규 유학생", sort: "발표 자료 순서" },
   { name: "거주 유형별 연도별", src: 0, row: "거주 유형", sub: "(없음)", col: "학년도",
@@ -452,8 +450,15 @@ const PRESETS = [
     col: "배정 판정", val: "접수 건수", sort: "발표 자료 순서" },
   { name: "희망학교별 연도별 접수", src: 1, row: "희망 학교", sub: "(없음)", col: "접수 학년도",
     val: "접수 건수", sort: "인원순" },
-  { name: "미선정 사유별 학기별", src: 1, row: "미선정 사유", sub: "(없음)", col: "접수 학기",
+  { name: "미선정 사유별 연도별", src: 1, row: "미선정 사유", sub: "(없음)", col: "접수 학년도",
     val: "접수 건수", sort: "인원순" },
+  // 아래는 학기 단위로 들여다볼 때. 공문·보고서에는 위쪽 연도별 표를 쓴다.
+  { name: "시군별 학기별", src: 0, row: "유학 지역", sub: "(없음)", col: "학기",
+    val: "유학생 수", sort: "발표 자료 순서", detail: true,
+    note: "학기 단위로 들여다보는 표입니다. 공문·보고서에는 위쪽 연도별 표를 쓰세요." },
+  { name: "학교별 학기별", src: 0, row: "유학 학교", sub: "(없음)", col: "학기",
+    val: "유학생 수", sort: "인원순", detail: true,
+    note: "학기 단위로 들여다보는 표입니다. 공문·보고서에는 위쪽 연도별 표를 쓰세요." },
 ];
 
 /* 발표 자료 '연도별 시·군 유학생 수' 의 시군 차례 */
@@ -469,6 +474,7 @@ function computePivot(o) {
   const rowFn = S.rows[o.rowDim];
   const subFn = o.subDim === "(없음)" ? null : S.rows[o.subDim];
   const colFn = S.cols[o.colDim];
+  const yearCol = /학년도/.test(o.colDim);
   const cut = semIndex(CURRENT_YEAR, CURRENT_TERM);
 
   const cells = new Map();      // 행키+열 → Set
@@ -477,6 +483,7 @@ function computePivot(o) {
   const grpSets = new Map();    // 묶음 → Set
   const colSets = new Map();
   const subsOf = new Map();     // 묶음 → Set(세부)
+  const termsIn = new Map();    // 학년도 열 → Set(1|2)
   const colKeys = new Set();
   const all = new Set();
 
@@ -508,6 +515,18 @@ function computePivot(o) {
   // 거쳐 간 사람 수다. 1,1,1 옆에 1 이 적히는 이유가 여기 있다.
   const overTime = S.unit === "학생" && /학년도|학기/.test(o.colDim);
 
+  // 그 학년도에 실제로 든 학기. 한 학기뿐이면 반쪽짜리 해라고 열 이름에 적는다.
+  // '무엇을 셀까' 로 걸러진 것과는 상관없이 자료 자체를 보고 정한다 — 2023학년도
+  // 2학기에 신규가 0명인 것과, 2026학년도에 2학기가 아직 없는 것은 다른 얘기다.
+  if (yearCol) {
+    for (const rec of S.list()) {
+      if (o.hideOpen && S.idx(rec) > cut) continue;
+      const ck = colFn(rec) ?? "(빈칸)";
+      if (!termsIn.has(ck)) termsIn.set(ck, new Set());
+      termsIn.get(ck).add(S.term(rec));
+    }
+  }
+
   const size = (m, k) => (m.get(k) || { size: 0 }).size;
   const byName = (a, b) => a.localeCompare(b, "ko");
   const groups = [...grpSets.keys()].sort((a, b) => {
@@ -535,6 +554,14 @@ function computePivot(o) {
   return {
     ...o, grouped: !!subFn, unit: S.unit, what: S.what,
     totalHead: overTime ? "거쳐 간 학생" : "합계",
+    colLabel: (c) => {
+      if (!yearCol) return c;
+      const t = termsIn.get(c);
+      return `${c}학년도` + (t && t.size === 1 ? `(${[...t][0]}학기만)` : "");
+    },
+    halfYears: yearCol
+      ? [...termsIn].filter(([, t]) => t.size === 1).map(([y, t]) => `${y}학년도는 ${[...t][0]}학기`)
+      : [],
     cols: [...colKeys].sort(), groups, body,
     get: (b, c) => (b.kind === "subtotal"
       ? size(grpCells, b.group + SEP + c)
@@ -553,9 +580,13 @@ function renderPivot() {
     <section class="card">
       <h2>참고자료 표 만들기</h2>
       <p class="note">자주 쓰는 표는 아래 단추로 바로 나옵니다. 그 아래 고르개로 직접 짤 수도 있습니다.
-        어느 쪽이든 '표 복사' 를 누르면 엑셀·한글에 그대로 붙습니다.</p>
+        어느 쪽이든 '표 복사' 를 누르면 엑셀·한글에 그대로 붙습니다.
+        <b>세는 것은 학기 단위지만 자료로 낼 때는 학년도로 묶어 적습니다</b> —
+        도교육청 발표 자료와 같은 기준입니다. 마지막 두 단추만 학기 단위로 들여다보는 표입니다.</p>
       <div class="presets" id="pvpresets">
-        ${PRESETS.map((p, i) => `<button class="preset" data-i="${i}">${esc(p.name)}</button>`).join("")}
+        ${PRESETS.map((p, i) =>
+          `<button class="preset${p.detail ? " detail" : ""}" data-i="${i}">${esc(p.name)}</button>`
+        ).join("")}
       </div>
       <div class="filters" style="margin-top:18px">
         <label class="f">바탕
@@ -655,7 +686,7 @@ function renderPivot() {
 function pivotText(p, sep) {
   const q = (v) => (sep === "," && /[",\n]/.test(String(v)) ? `"${String(v).replace(/"/g, '""')}"` : String(v));
   const head = p.grouped ? [p.rowDim, p.subDim] : [p.rowDim];
-  const lines = [[...head, ...p.cols, p.totalHead].map(q).join(sep)];
+  const lines = [[...head, ...p.cols.map((c) => p.colLabel(c)), p.totalHead].map(q).join(sep)];
   for (const b of p.body) {
     const left = !p.grouped ? [b.group]
       : b.kind === "subtotal" ? [b.group, "소계"] : [b.group, b.sub];
@@ -702,7 +733,7 @@ function drawPivotTable(p) {
   el("pvtable").innerHTML = `<table class="pivot"><thead><tr>
     <th class="rowhead">${esc(p.rowDim)}</th>
     ${p.grouped ? `<th>${esc(p.subDim)}</th>` : ""}
-    ${p.cols.map((c) => `<th class="num">${esc(c)}</th>`).join("")}
+    ${p.cols.map((c) => `<th class="num">${esc(p.colLabel(c))}</th>`).join("")}
     <th class="num">${esc(p.totalHead)}</th></tr></thead>
     <tbody>${body}</tbody>
     <tfoot><tr class="total"><th class="rowhead">합계</th>
@@ -723,6 +754,10 @@ function drawPivotTable(p) {
         "한 번만 세므로 칸을 그냥 더한 값보다 작습니다 — 3년을 다닌 학생 한 명이면 1, 1, 1 옆에 1 이 적힙니다."
       : p.unit === "학생"
       ? "합계는 중복 없이 센 값이라, 한 학생이 여러 칸에 걸치면 칸의 단순 합보다 작을 수 있습니다."
+      : "") +
+    (p.halfYears && p.halfYears.length
+      ? `<br>한 학기만 든 학년도가 있습니다 — ${esc(p.halfYears.join(", "))}만 들어 있어, ` +
+        "두 학기가 다 든 해와 나란히 놓고 비교하면 안 됩니다."
       : "") +
     (p.note ? "<br>" + esc(p.note) : "");
 }

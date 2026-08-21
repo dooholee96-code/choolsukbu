@@ -152,6 +152,9 @@ button.preset.on {
   background: var(--series-1); border-color: var(--series-1);
   color: #fff; font-weight: 600;
 }
+/* 학기 단위 표. 자료용은 연도별이라 한 걸음 물러나 보이게 둔다. */
+button.preset.detail { border-style: dashed; color: var(--muted); }
+button.preset.detail.on { color: #fff; border-style: solid; }
 .tabletitle { margin: 4px 0 10px; font-size: 15px; }
 .pivot th.grouphead {
   vertical-align: top; font-weight: 700; color: var(--ink);

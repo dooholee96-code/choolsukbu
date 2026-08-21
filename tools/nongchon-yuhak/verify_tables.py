@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import asyncio
+import re
 import sys
 from collections import defaultdict
 from pathlib import Path
@@ -41,6 +42,12 @@ def num(s):
     return int(s) if s else 0
 
 
+def col_key(text):
+    """화면 열 이름 → 대조용 열쇠. '2026학년도(1학기만)' → '2026'."""
+    m = re.match(r"(\d{4})학년도", text)
+    return m.group(1) if m else text
+
+
 def python_tables(src):
     """파이썬 쪽에서 프리셋과 같은 규칙으로 센 값."""
     d = T.build(src)
@@ -70,12 +77,18 @@ def python_tables(src):
     asem = lambda a: T.sem_label(a.intake_year, a.intake_term)       # noqa: E731
     rgn = lambda a: (T.s(a.raw["유학지역"]) or "").strip() or None   # noqa: E731
 
-    return {
+    terms_enr, terms_app = defaultdict(set), defaultdict(set)
+    for e in d["enrollments"]:
+        if T.sem_index(e.year, e.term) <= cut:
+            terms_enr[str(e.year)].add(e.term)
+    for a in d["applications"]:
+        if a.intake_year and T.sem_index(a.intake_year, a.intake_term) <= cut:
+            terms_app[str(a.intake_year)].add(a.intake_term)
+
+    tables = {
         "시군별 연도별": enr(lambda e: e.region, year),
         "시군별 학교별 연도별": enr(lambda e: f"{e.region}|{e.school}", year),
         "학교별 연도별": enr(lambda e: e.school, year),
-        "시군별 학기별": enr(lambda e: e.region, sem),
-        "학교별 학기별": enr(lambda e: e.school, sem),
         "신규 유학생 시군별 연도별": enr(lambda e: e.region, year, lambda e: e.kind == "신규"),
         "거주 유형별 연도별": enr(lambda e: e.residence, year),
         "원적지별 연도별": enr(lambda e: e.home_region, year),
@@ -85,16 +98,32 @@ def python_tables(src):
         "시군별 희망학교별 접수·배정":
             app(lambda a: f"{rgn(a)}|{T.s(a.raw['유학학교'])}", lambda a: a.decision),
         "희망학교별 연도별 접수": app(lambda a: T.s(a.raw["유학학교"]), ayear),
-        "미선정 사유별 학기별": app(lambda a: a.reject_class, asem),
+        "미선정 사유별 연도별": app(lambda a: a.reject_class, ayear),
+        # 학기 단위로 들여다보는 표 — 자료용은 위쪽 연도별을 쓴다
+        "시군별 학기별": enr(lambda e: e.region, sem),
+        "학교별 학기별": enr(lambda e: e.school, sem),
     }
+    src_of = {k: (terms_app if "희망" in k or "미선정" in k else terms_enr) for k in tables}
+    return tables, src_of
 
 
-def check(name, table, want, grouped):
+def check(name, table, want, grouped, terms):
     """화면 표를 한 칸씩 맞춘다."""
     problems = []
     head = table["head"]
     lead = 2 if grouped else 1
-    cols = head[lead:-1]
+    cols = [col_key(h) for h in head[lead:-1]]
+
+    # 학년도 열은 '2025학년도' 로 적고, 한 학기만 든 해는 그 사실을 붙여야 한다
+    for h in head[lead:-1]:
+        if not re.fullmatch(r"\d{4}(학년도.*)?", h):
+            continue
+        y = col_key(h)
+        want_head = f"{y}학년도"
+        if len(terms.get(y, ())) == 1:
+            want_head += f"({next(iter(terms[y]))}학기만)"
+        if h != want_head:
+            problems.append(f"{name} 열 이름 '{h}' ≠ '{want_head}'")
 
     group = None
     seen = {}
@@ -170,7 +199,7 @@ async def run(page_path, src, want):
 
 
 def main(page_path, src):
-    want = python_tables(src)
+    want, terms_of = python_tables(src)
     tables, errors = asyncio.run(run(page_path, src, want))
 
     problems, checked = [], 0
@@ -183,7 +212,7 @@ def main(page_path, src):
             continue
         grouped = "소계" in "".join(
             c["text"] for r in table["rows"] for c in r["cells"])
-        ps, k = check(name, table, want[name], grouped)
+        ps, k = check(name, table, want[name], grouped, terms_of[name])
         problems += ps
         checked += k
         print(f"  {name:<24} {len(table['rows']):>3}행 "

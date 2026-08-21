@@ -138,6 +138,27 @@ def check_values(wb, book, data):
                     f"학기별집계 {lab} {what} 합계 {got} ≠ 유학생 수 {total.get(lab, 0)}"
                 )
 
+    # 학기별집계의 학년도 블록 — 중복을 뺀 사람 수와 맞는지
+    ws = wb["학기별집계"]
+    hrow = next(r for r in range(1, ws.max_row + 1) if ws.cell(r, 7).value == "셈법")
+    year_students, sem_students = {}, {}
+    for e in data["enrollments"]:
+        year_students.setdefault(e.year, set()).add(e.student_id)
+        sem_students.setdefault((e.year, e.term), set()).add(e.student_id)
+    r = hrow + 1
+    while ws.cell(r, 1).value:
+        y = int(str(ws.cell(r, 1).value)[:4])
+        a = sem_students.get((y, 1), set())
+        b = sem_students.get((y, 2), set())
+        for col, want, what in ((2, len(a), "1학기"), (3, len(b), "2학기"),
+                                (4, len(a & b), "양쪽 다 다님"), (5, len(b - a), "2학기 새 인원"),
+                                (6, len(year_students.get(y, ())), "유학생 수")):
+            checked += 1
+            got = book.value("학기별집계", f"{get_column_letter(col)}{r}")
+            if int(got or 0) != want:
+                problems.append(f"학기별집계 {y}학년도 {what}: 수식 {got} ≠ 원데이터 {want}")
+        r += 1
+
     # 지역별현황 / 학교별현황 격자
     for sheet, key_col, want in (("지역별현황", 1, region), ("학교별현황", 2, school)):
         ws = wb[sheet]

@@ -789,41 +789,58 @@ def sheet_summary(ws, data):
                    "— 2026-1학기 '미정·예정' 325명이 그 대상이며, 종료 인원이 아닙니다.")
     warn.font = Font(name=FONT, size=9, bold=True, color="A61C1C")
 
+    warn2 = ws.cell(last + 2, 1,
+                    "※ 학기 인원을 더하면 학년도 인원이 되지 않습니다. "
+                    "두 학기를 다 다닌 학생이 양쪽에 다 들어 있어서, 더하면 그만큼 두 번 셉니다. "
+                    "학년도 인원은 아래 표에서 중복을 뺀 값입니다 "
+                    "(2025학년도: 1학기 204 + 2학기 257 = 461 이 아니라, 겹치는 192명을 뺀 269명).")
+    warn2.font = Font(name=FONT, size=9, bold=True, color="A61C1C")
+
     # 학년도 요약: 1학기 인원 + 2학기에 새로 들어온 인원
-    r1 = last + 3
-    t2 = ws.cell(r1, 1, "학년도별 유학생 수 (연인원 아님 — 그 학년도에 한 번이라도 유학한 학생 수)")
+    r1 = last + 4
+    t2 = ws.cell(r1, 1, "학년도별 유학생 수 — 같은 학생을 두 번 세지 않은 사람 수")
     t2.font = Font(name=FONT, size=12, bold=True, color=INK)
+    n2 = ws.cell(r1 + 1, 1,
+                 "학기 인원을 더한 값이 아닙니다. 1학기와 2학기를 다 다닌 학생은 한 번만 셉니다. "
+                 "그래서 '유학생 수'는 1학기 인원에 2학기에 새로 들어온 인원만 더한 값이며, "
+                 "'1학기 + 2학기 − 양쪽 다'와 같습니다. "
+                 "도교육청 발표 자료의 학년도 수치도 이 기준입니다.")
+    n2.font = Font(name=FONT, size=9, color="595959")
     years = sorted({y for y, _ in sems})
-    hdr = ["학년도", "유학생 수", "남", "여", "1학기", "2학기", "2학기 신규", "비고"]
+    hdr = ["학년도", "1학기", "2학기", "양쪽 다 다님", "2학기 새 인원",
+           "유학생 수", "셈법", "남", "여", "비고"]
+    widths2 = (10, 10, 10, 12, 11, 12, 34, 8, 8, 52)
     for i, h in enumerate(hdr, start=1):
-        style_head(ws, r1 + 1, i, h, fill=ACCENT)
+        style_head(ws, r1 + 2, i, h, fill=ACCENT, width=widths2[i - 1])
     notes = {
-        2022: "발표 자료 27명과 일치 (시범사업 기간, 도청 체제비 미지원)",
-        2023: "발표 자료 85명과 일치",
+        2022: "발표 자료 27명과 일치 (시범사업 기간, 도청 체제비 미지원). 1학기 모집 없음",
+        2023: "발표 자료 85명과 일치. 2학기에 새로 들어온 학생 없음(2학기 모집 없음)",
         2024: "발표 자료 165명과 일치",
         2025: "발표 자료 269명과 일치",
-        2026: "발표 자료는 1학기 모집 기준 333명 — 고창 1명은 학교 오보고분이며 실제 332명",
+        2026: "발표 자료는 1학기 모집 기준 333명 — 고창 1명은 학교 오보고분이며 실제 332명. "
+              "2학기는 아직 확정 전",
     }
     for j, y in enumerate(years):
-        r = r1 + 2 + j
+        r = r1 + 3 + j
         q1, q2 = f'"{T.sem_label(y, 1)}"', f'"{T.sem_label(y, 2)}"'
         put(ws, r, 1, f"{y}학년도", bold=True, fill=SUB_FILL)
-        put(ws, r, 2,
-            f"=COUNTIF({E('학기')},{q1})+COUNTIFS({E('학기')},{q2},{E('구분')},\"<>계속\")",
-            bold=True, fmt="#,##0")
+        put(ws, r, 2, f"=COUNTIF({E('학기')},{q1})", fmt="#,##0")
+        put(ws, r, 3, f"=COUNTIF({E('학기')},{q2})", fmt="#,##0")
+        put(ws, r, 4, f'=COUNTIFS({E("학기")},{q2},{E("구분")},"계속")', fmt="#,##0")
+        put(ws, r, 5, f'=COUNTIFS({E("학기")},{q2},{E("구분")},"<>계속")', fmt="#,##0")
+        put(ws, r, 6, f"=$B{r}+$E{r}", bold=True, fmt="#,##0")
+        put(ws, r, 7,
+            f'="1학기 "&$B{r}&"명 + 2학기 새 인원 "&$E{r}&"명 = "&$F{r}&"명"',
+            align="left", size=9, color="595959")
         for k, g in enumerate(("남", "여")):
-            put(ws, r, 3 + k,
+            put(ws, r, 8 + k,
                 f'=COUNTIFS({E("학기")},{q1},{E("성별")},"{g}")'
                 f'+COUNTIFS({E("학기")},{q2},{E("구분")},"<>계속",{E("성별")},"{g}")',
                 fmt="#,##0")
-        put(ws, r, 5, f"=COUNTIF({E('학기')},{q1})", fmt="#,##0")
-        put(ws, r, 6, f"=COUNTIF({E('학기')},{q2})", fmt="#,##0")
-        put(ws, r, 7, f'=COUNTIFS({E("학기")},{q2},{E("구분")},"<>계속")', fmt="#,##0")
-        put(ws, r, 8, notes.get(y, ""), align="left", size=9, color="595959")
-    ws.column_dimensions["H"].width = 52
+        put(ws, r, 10, notes.get(y, ""), align="left", size=9, color="595959")
 
     # 원본에 적혀 있던 학기별 공식 수치가 어느 기준인지
-    rb = r1 + 2 + len(years) + 1
+    rb = r1 + 3 + len(years) + 1
     tb = ws.cell(rb, 1, "원본에 적혀 있던 공식 수치는 어느 기준인가")
     tb.font = Font(name=FONT, size=12, bold=True, color=INK)
     nb = ws.cell(rb + 1, 1,

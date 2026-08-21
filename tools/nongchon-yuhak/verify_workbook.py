@@ -53,9 +53,22 @@ def check_syntax(wb):
     return problems
 
 
+def next_term(e, present):
+    """유학이력 '다음 학기' 칸이 내야 하는 값 — 워크북 수식과 같은 순서로 본다."""
+    if e.status == "예정":
+        return "예정"
+    if not (e.end_date is None or e.end_date >= e.term_end):
+        return "학기 중 종료"
+    if (e.student_id, T.sem_index(e.year, e.term) + 1) in present:
+        return "이어짐"
+    return "학기말 종료" if e.status == "종료" else "미정"
+
+
 def expected(data):
     """원데이터에서 따로 센 값."""
     total, stay, region, school = {}, {}, {}, {}
+    flow = {}
+    present = {(e.student_id, T.sem_index(e.year, e.term)) for e in data["enrollments"]}
     for e in data["enrollments"]:
         lab = T.sem_label(e.year, e.term)
         total[lab] = total.get(lab, 0) + 1
@@ -63,7 +76,13 @@ def expected(data):
             stay[lab] = stay.get(lab, 0) + 1
         region[(lab, e.region)] = region.get((lab, e.region), 0) + 1
         school[(lab, e.school)] = school.get((lab, e.school), 0) + 1
-    return total, stay, region, school
+        kind = "신규" if e.kind == "신규" else "계속·재유학"
+        flow[(lab, kind)] = flow.get((lab, kind), 0) + 1
+        nx = next_term(e, present)
+        if nx == "예정":
+            nx = "미정"
+        flow[(lab, nx)] = flow.get((lab, nx), 0) + 1
+    return total, stay, region, school, flow
 
 
 def header_col(ws, header, row=1):
@@ -75,22 +94,49 @@ def header_col(ws, header, row=1):
 
 def check_values(wb, book, data):
     problems, checked = [], 0
-    total, stay, region, school = expected(data)
+    total, stay, region, school, flow = expected(data)
 
-    # 학기별집계
+    # 유학이력 '다음 학기' — 한 줄씩 전부 대조한다
+    present = {(e.student_id, T.sem_index(e.year, e.term)) for e in data["enrollments"]}
+    ws = wb["유학이력"]
+    nxt_col = header_col(ws, "다음 학기")
+    for i, e in enumerate(data["enrollments"]):
+        r = i + 2
+        checked += 1
+        got = book.value("유학이력", f"{nxt_col}{r}")
+        want = next_term(e, present)
+        if got != want:
+            problems.append(
+                f"유학이력 {r}행 ({e.name} {T.sem_label(e.year, e.term)}) 다음 학기: "
+                f"수식 {got} ≠ 원데이터 {want}"
+            )
+
+    # 학기별집계 — 들어온 쪽·인원·나간 쪽이 모두 맞고, 양쪽 합이 인원과 같아야 한다
     ws = wb["학기별집계"]
+    FLOW_COLS = ((2, "신규"), (3, "계속·재유학"), (5, "이어짐"),
+                 (6, "학기말 종료"), (7, "미정"), (8, "학기 중 종료"))
     for r in range(5, 5 + len(data["semesters"])):
         lab = ws.cell(r, 1).value
-        for col, want, what in ((2, total, "유학생 수(공식 기준)"), (3, stay, "학기말 재적")):
+        for col, want, what in ((4, total, "유학생 수(공식 기준)"), (9, stay, "학기말 재적")):
             checked += 1
             got = book.value("학기별집계", f"{get_column_letter(col)}{r}")
             if int(got or 0) != want.get(lab, 0):
                 problems.append(f"학기별집계 {lab} {what}: 수식 {got} ≠ 원데이터 {want.get(lab, 0)}")
-        checked += 1
-        got = book.value("학기별집계", f"D{r}")
-        want_out = total.get(lab, 0) - stay.get(lab, 0)
-        if int(got or 0) != want_out:
-            problems.append(f"학기별집계 {lab} 학기 중 종료: 수식 {got} ≠ 원데이터 {want_out}")
+        for col, what in FLOW_COLS:
+            checked += 1
+            got = book.value("학기별집계", f"{get_column_letter(col)}{r}")
+            if int(got or 0) != flow.get((lab, what), 0):
+                problems.append(
+                    f"학기별집계 {lab} {what}: 수식 {got} ≠ 원데이터 {flow.get((lab, what), 0)}"
+                )
+        # 들어온 쪽 합·나간 쪽 합이 모두 인원과 같아야 한다
+        for cols, what in (((2, 3), "신규+계속"), ((5, 6, 7, 8), "이어짐+종료+미정")):
+            checked += 1
+            got = sum(int(book.value("학기별집계", f"{get_column_letter(c)}{r}") or 0) for c in cols)
+            if got != total.get(lab, 0):
+                problems.append(
+                    f"학기별집계 {lab} {what} 합계 {got} ≠ 유학생 수 {total.get(lab, 0)}"
+                )
 
     # 지역별현황 / 학교별현황 격자
     for sheet, key_col, want in (("지역별현황", 1, region), ("학교별현황", 2, school)):

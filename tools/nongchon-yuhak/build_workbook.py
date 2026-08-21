@@ -175,13 +175,18 @@ def sheet_guide(ws, data, src_name):
     )
     line(
         "유학이력",
-        f"1행 = 학생 × 학기 ({len(e)}행). 실제로 유학한 학기를 한 줄씩 펼친 표로, 모든 집계의 바탕입니다.",
+        f"1행 = 학생 × 학기 ({len(e)}행). 실제로 유학한 학기를 한 줄씩 펼친 표로, 모든 집계의 바탕입니다. "
+        "'구분'(신규/계속/재유학)이 들어온 쪽이고 '다음 학기'(이어짐/학기말 종료/학기 중 종료)가 나간 쪽입니다. "
+        "두 칸을 걸러 보면 신규·기존·종료 유학생이 바로 갈라집니다.",
     )
     line(
         "신청이력",
         f"1행 = 원본 1행 = 모집 차수별 신청 건 ({len(apps)}행). 원본 열을 모두 그대로 두고 앞쪽에 정리 열만 붙였습니다.",
     )
-    line("학기별집계", "학년도·학기별 인원, 신규/계속, 성별, 거주 유형, 운영 지역·학교 수. 전부 수식입니다.")
+    line("학기별집계",
+         "학년도·학기별로 '들어온 쪽 → 인원 → 나간 쪽'을 한 줄에 늘어놓은 표입니다. "
+         "신규·계속·재유학이 몇 명이고, 그중 몇 명이 다음 학기로 이어지고 몇 명이 끝났는지 "
+         "바로 읽힙니다. 성별·거주 유형·운영 지역·학교 수도 같은 줄에 있습니다. 전부 수식입니다.")
     line("연도별현황", "시군별·학교별 인원을 학년도로 묶은 표. 발표 자료와 같은 기준입니다.")
     line(
         "서울원적_제출용",
@@ -216,7 +221,17 @@ def sheet_guide(ws, data, src_name):
         "② 신청이력에 신청 건을 한 줄 "
         "③ 유학이력에 학기당 한 줄씩 추가합니다. 집계 시트는 자동으로 따라옵니다.",
     )
-    line("학기가 바뀌면", "계속 유학하는 학생은 유학이력에 새 학기 줄을 한 줄씩 더합니다.")
+    line(
+        "학기가 바뀌면",
+        "계속 유학하는 학생은 유학이력에 새 학기 줄을 한 줄씩 더합니다. "
+        "줄을 더하면 지난 학기 줄의 '다음 학기'가 '미정'에서 '이어짐'으로 저절로 바뀝니다.",
+    )
+    line(
+        "신규·기존·종료 가려내기",
+        "유학이력에서 '학기'로 거른 뒤 ① 신규 유학생 = 구분이 '신규' ② 기존(계속) 유학생 = "
+        "구분이 '계속' 또는 '재유학' ③ 그 학기로 끝나는 유학생 = 다음 학기가 '학기말 종료' 또는 "
+        "'학기 중 종료' 입니다. 학기별집계의 같은 이름 열이 그 인원을 세어 둔 것입니다.",
+    )
     line("수식 범위", f"학생현황 {LIMIT_STUDENT}행 / 신청이력 {LIMIT_APP}행 / 유학이력 {LIMIT_ENROLL}행까지 미리 잡아 두었습니다.")
     gap()
 
@@ -241,8 +256,16 @@ def sheet_guide(ws, data, src_name):
     line(
         "인원 세는 두 기준",
         "① 유학생 수(공식 기준) — 그 학기에 한 번이라도 유학한 인원. 도교육청 발표 자료와 같은 기준입니다. "
-        "② 학기말 재적 — 그 학기 끝까지 남은 인원. 다음 학기로 넘어가는 인원과 같습니다. "
-        "학기 중에 그만둔 학생만큼 ①이 ②보다 큽니다.",
+        "② 학기말 재적 — 그 학기 끝까지 남은 인원. 학기 중에 그만둔 학생만큼 ①이 ②보다 큽니다. "
+        "학기말 재적이 곧 다음 학기 인원은 아닙니다. 학기말까지 다니고 그대로 유학을 마치는 학생이 "
+        "있어서, 실제로 넘어가는 인원은 '다음 학기로 이어짐' 열입니다.",
+    )
+    line(
+        "다음 학기 칸 읽는 법",
+        "이어짐 = 다음 학기에도 줄이 있는 학생 / 학기말 종료 = 학기를 다 채우고 끝난 학생 / "
+        "학기 중 종료 = 학기 도중에 돌아간 학생 / 미정 = 아직 다음 학기 연장 입력 전이라 "
+        "이어질지 끝날지 알 수 없는 학생 / 예정 = 아직 시작하지 않은 학기의 줄. "
+        "'미정'을 종료로 세면 안 됩니다 — 2026-1학기 325명이 지금 여기에 들어 있습니다.",
     )
     line(
         "대조 결과",
@@ -390,7 +413,7 @@ STUDENT_HEADERS = [
 ENROLL_HEADERS = [
     "이력ID", "학기", "학년도", "학기구분", "학기순번", "학생ID", "성명", "구분",
     "유학 지역", "유학 학교", "학년", "성별", "거주 유형", "거주지",
-    "가구ID", "원 지역", "원 소속교", "학기 상태", "학기말 재적", "종료 사유",
+    "가구ID", "원 지역", "원 소속교", "학기 상태", "학기말 재적", "다음 학기", "종료 사유",
     "시작일", "종료일", "학기 마지막날", "신청ID",
 ]
 
@@ -524,6 +547,7 @@ def sheet_enrollments(ws, data):
             e.region, e.school, e.grade, e.gender, e.residence, e.place,
             e.household_id, e.home_region, e.home_school, e.status,
             None,  # 학기말 재적 (수식)
+            None,  # 다음 학기 (수식)
             e.end_reason, e.start_date, e.end_date, e.term_end, e.app_id,
         ])
 
@@ -532,7 +556,7 @@ def sheet_enrollments(ws, data):
         {"이력ID": 8, "학기": 11, "학년도": 8, "학기구분": 8, "학기순번": 8,
          "학생ID": 9, "성명": 11, "구분": 8, "유학 지역": 10, "유학 학교": 11,
          "학년": 7, "성별": 6, "거주 유형": 11, "거주지": 22, "가구ID": 9,
-         "원 지역": 10, "원 소속교": 13, "학기 상태": 9, "학기말 재적": 9,
+         "원 지역": 10, "원 소속교": 13, "학기 상태": 9, "학기말 재적": 9, "다음 학기": 11,
          "종료 사유": 24, "시작일": 12, "종료일": 12, "학기 마지막날": 12, "신청ID": 9},
         date_cols={"시작일", "종료일", "학기 마지막날"},
         wrap_cols={"거주지", "종료 사유"},
@@ -541,10 +565,28 @@ def sheet_enrollments(ws, data):
     # 학기 말까지 남아 있었는지 — 공식 인원은 이 기준으로 센다
     endc = col_of(ENROLL_HEADERS, "종료일")
     lastc = col_of(ENROLL_HEADERS, "학기 마지막날")
+    statc = col_of(ENROLL_HEADERS, "학기 상태")
+    stayc = col_of(ENROLL_HEADERS, "학기말 재적")
+    sidc = col_of(ENROLL_HEADERS, "학생ID")
+    idxc = col_of(ENROLL_HEADERS, "학기순번")
+    e_sid = rng("유학이력", ENROLL_HEADERS, "학생ID", LIMIT_ENROLL)
+    e_idx = rng("유학이력", ENROLL_HEADERS, "학기순번", LIMIT_ENROLL)
     for r in range(2, last_row + 1):
         c = ws.cell(r, ENROLL_HEADERS.index("학기말 재적") + 1,
                     f'=IF(OR(${endc}{r}="",${endc}{r}>=${lastc}{r}),"O","X")')
         c.font = Font(name=FONT, size=10)
+        c.fill = DERIVED_FILL
+        c.border = BOX
+        c.alignment = Alignment(horizontal="center", vertical="center")
+
+        # 이 학생이 다음 학기에 어떻게 되는지. 다음 학기에 같은 학생 줄이 있으면 '이어짐'.
+        # 아직 연장 입력이 안 된 마지막 학기는 '학기말 종료' 로 단정하지 않고 '미정' 으로 둔다.
+        c = ws.cell(r, ENROLL_HEADERS.index("다음 학기") + 1,
+                    f'=IF(${statc}{r}="예정","예정",'
+                    f'IF(${stayc}{r}="X","학기 중 종료",'
+                    f'IF(COUNTIFS({e_sid},${sidc}{r},{e_idx},${idxc}{r}+1)>0,"이어짐",'
+                    f'IF(${statc}{r}="종료","학기말 종료","미정"))))')
+        c.font = Font(name=FONT, size=10, bold=True)
         c.fill = DERIVED_FILL
         c.border = BOX
         c.alignment = Alignment(horizontal="center", vertical="center")
@@ -566,10 +608,30 @@ def sheet_enrollments(ws, data):
                    fill=PatternFill("solid", fgColor="FFF2CC"), font=Font(name=FONT, size=10, color="7F6000")),
     )
     d = col_of(ENROLL_HEADERS, "구분")
-    ws.conditional_formatting.add(
-        f"{d}2:{d}{LIMIT_ENROLL}",
-        CellIsRule(operator="equal", formula=['"신규"'], font=Font(name=FONT, size=10, bold=True, color=ACCENT)),
-    )
+    for value, fill, color in (
+        ("신규", "DCE9F7", "1F4E79"),
+        ("재유학", "E8E0F3", "5B3F87"),
+    ):
+        ws.conditional_formatting.add(
+            f"{d}2:{d}{LIMIT_ENROLL}",
+            CellIsRule(operator="equal", formula=[f'"{value}"'],
+                       fill=PatternFill("solid", fgColor=fill),
+                       font=Font(name=FONT, size=10, bold=True, color=color)),
+        )
+    n = col_of(ENROLL_HEADERS, "다음 학기")
+    for value, fill, color in (
+        ("이어짐", "D8F0DC", "17652A"),
+        ("학기말 종료", "F2F2F2", "595959"),
+        ("학기 중 종료", "FCE4E4", "A61C1C"),
+        ("미정", "FFF2CC", "7F6000"),
+        ("예정", "FFF2CC", "7F6000"),
+    ):
+        ws.conditional_formatting.add(
+            f"{n}2:{n}{LIMIT_ENROLL}",
+            CellIsRule(operator="equal", formula=[f'"{value}"'],
+                       fill=PatternFill("solid", fgColor=fill),
+                       font=Font(name=FONT, size=10, bold=True, color=color)),
+        )
     return last_row
 
 
@@ -665,14 +727,18 @@ def sheet_summary(ws, data):
     t = ws.cell(1, 1, "학년도·학기별 유학생 현황")
     t.font = Font(name=FONT, size=15, bold=True, color=INK)
     n = ws.cell(2, 1,
-                "'유학생 수(공식 기준)'는 그 학기에 한 번이라도 유학한 인원입니다. "
-                "도교육청 발표 자료의 시군별 유학생 수와 같은 기준이며, "
+                "왼쪽부터 '들어온 쪽 → 인원 → 나간 쪽' 순서로 읽습니다. "
+                "들어온 쪽: 유학생 수 = 신규 + 계속·재유학. "
+                "나간 쪽: 유학생 수 = 이어짐 + 학기말 종료 + 미정·예정 + 학기 중 종료. "
+                "'유학생 수(공식 기준)'는 그 학기에 한 번이라도 유학한 인원으로, "
+                "도교육청 발표 자료의 시군별 유학생 수와 같은 기준이며 "
                 "2022~2025학년도는 13개 시군 숫자까지 모두 일치합니다. "
-                "'학기말 재적'은 그 학기 끝까지 남은 인원으로, 다음 학기로 넘어가는 인원과 같습니다 "
+                "'학기말 재적'은 그 학기 끝까지 남은 인원입니다 "
                 "(2026-1학기: 공식 332명 → 학기말 325명).")
     n.font = Font(name=FONT, size=9, color="595959")
 
-    cols = ["학기", "유학생 수(공식 기준)", "학기말 재적", "학기 중 종료", "신규", "계속·재유학",
+    cols = ["학기", "신규", "계속·재유학", "유학생 수(공식 기준)",
+            "다음 학기로 이어짐", "학기말 종료", "미정·예정", "학기 중 종료", "학기말 재적",
             "남", "여", "가족체류형", "홈스테이형", "유학센터형",
             "유학생 있는 지역 수", "유학생 있는 학교 수",
             "접수 건수", "배정", "미배정·확인필요"]
@@ -686,25 +752,32 @@ def sheet_summary(ws, data):
         lab = T.sem_label(y, term)
         q = f'"{lab}"'
         put(ws, r, 1, lab, bold=True, fill=SUB_FILL, align="center")
-        put(ws, r, 2, f"=COUNTIF({E('학기')},{q})", bold=True, fmt="#,##0")
-        put(ws, r, 3, f'=COUNTIFS({E("학기")},{q},{E("학기말 재적")},"O")', fmt="#,##0")
-        put(ws, r, 4, f'=COUNTIFS({E("학기")},{q},{E("학기말 재적")},"X")', fmt="#,##0")
-        put(ws, r, 5, f'=COUNTIFS({E("학기")},{q},{E("구분")},"신규")', fmt="#,##0")
-        put(ws, r, 6, f'=COUNTIFS({E("학기")},{q},{E("구분")},"<>신규")', fmt="#,##0")
-        put(ws, r, 7, f'=COUNTIFS({E("학기")},{q},{E("성별")},"남")', fmt="#,##0")
-        put(ws, r, 8, f'=COUNTIFS({E("학기")},{q},{E("성별")},"여")', fmt="#,##0")
-        put(ws, r, 9, f'=COUNTIFS({E("학기")},{q},{E("거주 유형")},"가족체류형")', fmt="#,##0")
-        put(ws, r, 10, f'=COUNTIFS({E("학기")},{q},{E("거주 유형")},"홈스테이형")', fmt="#,##0")
-        put(ws, r, 11, f'=COUNTIFS({E("학기")},{q},{E("거주 유형")},"유학센터형")', fmt="#,##0")
-        put(ws, r, 12,
+        put(ws, r, 2, f'=COUNTIFS({E("학기")},{q},{E("구분")},"신규")', bold=True, fmt="#,##0")
+        put(ws, r, 3, f'=COUNTIFS({E("학기")},{q},{E("구분")},"<>신규")', fmt="#,##0")
+        put(ws, r, 4, f"=COUNTIF({E('학기')},{q})", bold=True, fmt="#,##0")
+        put(ws, r, 5, f'=COUNTIFS({E("학기")},{q},{E("다음 학기")},"이어짐")', fmt="#,##0")
+        put(ws, r, 6, f'=COUNTIFS({E("학기")},{q},{E("다음 학기")},"학기말 종료")',
+            bold=True, fmt="#,##0")
+        put(ws, r, 7,
+            f'=COUNTIFS({E("학기")},{q},{E("다음 학기")},"미정")'
+            f'+COUNTIFS({E("학기")},{q},{E("다음 학기")},"예정")', fmt="#,##0")
+        put(ws, r, 8, f'=COUNTIFS({E("학기")},{q},{E("다음 학기")},"학기 중 종료")',
+            bold=True, fmt="#,##0")
+        put(ws, r, 9, f'=COUNTIFS({E("학기")},{q},{E("학기말 재적")},"O")', fmt="#,##0")
+        put(ws, r, 10, f'=COUNTIFS({E("학기")},{q},{E("성별")},"남")', fmt="#,##0")
+        put(ws, r, 11, f'=COUNTIFS({E("학기")},{q},{E("성별")},"여")', fmt="#,##0")
+        put(ws, r, 12, f'=COUNTIFS({E("학기")},{q},{E("거주 유형")},"가족체류형")', fmt="#,##0")
+        put(ws, r, 13, f'=COUNTIFS({E("학기")},{q},{E("거주 유형")},"홈스테이형")', fmt="#,##0")
+        put(ws, r, 14, f'=COUNTIFS({E("학기")},{q},{E("거주 유형")},"유학센터형")', fmt="#,##0")
+        put(ws, r, 15,
             f'=COUNTIF(지역별현황!{get_column_letter(2 + j)}$3:'
             f'{get_column_letter(2 + j)}${region_last},">0")', fmt="#,##0")
-        put(ws, r, 13,
+        put(ws, r, 16,
             f'=COUNTIF(학교별현황!{get_column_letter(3 + j)}$3:'
             f'{get_column_letter(3 + j)}${school_last},">0")', fmt="#,##0")
-        put(ws, r, 14, f"=COUNTIF({A('접수 학기')},{q})", fmt="#,##0")
-        put(ws, r, 15, f'=COUNTIFS({A("접수 학기")},{q},{A("배정 판정")},"배정")', fmt="#,##0")
-        put(ws, r, 16, f'=COUNTIFS({A("접수 학기")},{q},{A("배정 판정")},"<>배정")', fmt="#,##0")
+        put(ws, r, 17, f"=COUNTIF({A('접수 학기')},{q})", fmt="#,##0")
+        put(ws, r, 18, f'=COUNTIFS({A("접수 학기")},{q},{A("배정 판정")},"배정")', fmt="#,##0")
+        put(ws, r, 19, f'=COUNTIFS({A("접수 학기")},{q},{A("배정 판정")},"<>배정")', fmt="#,##0")
 
     last = r0 + len(sems)
 
@@ -713,7 +786,7 @@ def sheet_summary(ws, data):
                    "① 표에 든 인원은 최종배정 단계로, 9월 1일 전학 전까지 참가를 포기할 수 있습니다. "
                    "② 2차 모집이 진행 중이며 그 결과는 아직 원본에 입력되지 않았습니다. "
                    "③ 계속 유학하는 학생은 연장이 확정된 뒤 유학이력에 줄을 더해야 잡힙니다 "
-                   "— 2026-1학기 학기말 재적 325명이 그 대상입니다.")
+                   "— 2026-1학기 '미정·예정' 325명이 그 대상이며, 종료 인원이 아닙니다.")
     warn.font = Font(name=FONT, size=9, bold=True, color="A61C1C")
 
     # 학년도 요약: 1학기 인원 + 2학기에 새로 들어온 인원

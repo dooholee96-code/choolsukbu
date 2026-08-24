@@ -254,10 +254,28 @@ def as_text(v):
     return str(v)
 
 
+def is_number(v):
+    return isinstance(v, (int, float)) and not isinstance(v, bool)
+
+
 def compare(left, op, right):
-    if isinstance(left, (int, float)) and not isinstance(left, bool) or isinstance(
-        right, (int, float)
-    ) and not isinstance(right, bool):
+    # 빈 칸은 상대에 맞춰 읽는다. 엑셀도 빈 칸을 0 으로도 "" 로도 본다.
+    if left is None and right is not None:
+        left = 0.0 if is_number(right) else ""
+    if right is None and left is not None:
+        right = 0.0 if is_number(left) else ""
+    # 한쪽만 숫자면 엑셀은 값을 견주지 않고 숫자를 텍스트보다 작다고 본다.
+    # 이걸 놓쳐서 0 = "" 이 참이 되고 '유치원' 이 빈칸으로 나온 적이 있다.
+    if is_number(left) != is_number(right) and isinstance(
+        left if isinstance(left, str) else right, str
+    ):
+        smaller_is_left = is_number(left)
+        return {
+            "=": False, "<>": True,
+            "<": smaller_is_left, "<=": smaller_is_left,
+            ">": not smaller_is_left, ">=": not smaller_is_left,
+        }[op]
+    if is_number(left) or is_number(right):
         try:
             a, b = num(left), num(right)
         except Err:

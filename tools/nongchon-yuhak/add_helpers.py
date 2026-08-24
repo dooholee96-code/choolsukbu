@@ -52,6 +52,10 @@ DROPDOWNS = {
 # 종료일 칸에 날짜 대신 쓰는 말. transform.py 의 ONGOING_TOKENS 와 같아야 한다.
 ONGOING = list(T.ONGOING_TOKENS)
 
+# 기준 학년도를 적어 두는 칸. '현재 학년' 을 여기에 맞춰 계산한다.
+# 학년도가 바뀌면 이 한 칸만 고치면 명단 전체가 따라온다.
+BASE_YEAR_ROW = 5
+
 CALC = [
     ("접수 학기", 13,
      '=IF(ISNUMBER($G{r}),'
@@ -61,9 +65,12 @@ CALC = [
      '=IF(ISNUMBER($G{r}),IF(DAY($G{r})<=9,DAY($G{r}),1)&"차","")'),
     ("배정 판정", 11, None),          # 아래에서 길게 만든다
     ("재학 표기", 11,
-     '=IF($M{r}="","",IF(ISNUMBER($L{r}),"종료일",'
-     'IF($L{r}="","비어 있음",IF(OR({ongoing}),"재학 중","그 밖")))) '),
+     '=IF($M{r}="","",IF(AND(ISNUMBER($L{r}),$L{r}>0),"종료일",'
+     'IF(ISNUMBER($L{r}),"숫자 오입력",'
+     'IF($L{r}="","비어 있음",IF(OR({ongoing}),"재학 중","그 밖"))))) '),
     ("확인", 30, None),
+    ("학년 순번", 9, None),
+    ("현재 학년(원본 기재)", 15, None),
 ]
 
 
@@ -77,10 +84,39 @@ def judge_formula(r: int) -> str:
         f'IF(OR($J{r}="배정",$J{r}="최종배정"),"배정",'
         f'IF(OR($J{r}="미배정",$J{r}="X",$J{r}="x"),"미배정",'
         f'IF($J{r}<>"","미배정",'
-        f'IF(AND($L{r}<>"",OR(ISNUMBER($L{r}),{ongoing})),"배정",'
+        f'IF(AND($L{r}<>"",OR(AND(ISNUMBER($L{r}),$L{r}>0),{ongoing})),"배정",'
         f'IF($H{r}="선정","확인필요",'
         f'IF($H{r}<>"","미배정","확인필요")))))))))'
     )
+
+
+def grade_index_formula(r: int, base_cell: str) -> str:
+    """전입 학년에서 기준 학년도까지 몇 학년이 되었는지를 숫자로.
+
+    초1=1 … 초6=6, 중1=7 … 중3=9. 유학이 끝났는지는 따지지 않는다 — 나이로
+    따진 학년이라, 기준 학년도 칸을 고치면 명단 전체가 그 시점 기준으로 바뀐다.
+
+    원본에 있던 수식은 연도를 2025 로 박아 두고 3월이 학년도 시작이라는 것도
+    따지지 않아 '초7' 같은 값이 나왔다.
+    """
+    # 전입 학년을 숫자로. '3' 처럼 숫자만 적힌 줄은 유학 학교 이름 끝글자로
+    # 초·중을 가린다 (transform.normalize_grade 와 같은 규칙).
+    num = f'IFERROR($T{r}*1,0)'
+    base = (f'IF($T{r}="유치원",0,'
+            f'IF(LEFT($T{r},1)="초",RIGHT($T{r},1)*1,'
+            f'IF(LEFT($T{r},1)="중",6+RIGHT($T{r},1)*1,'
+            f'IF({num}>0,IF(RIGHT($V{r},1)="중",6+{num},{num}),-99))))')
+    year_g = f'IF(MONTH($G{r})>=3,YEAR($G{r}),YEAR($G{r})-1)'
+    return (f'=IF(OR($T{r}="",ISNUMBER($G{r})=FALSE),"",'
+            f'{base}+{base_cell}-({year_g}))')
+
+
+def grade_text_formula(r: int, idx: str) -> str:
+    """학년 순번을 다시 '초5' · '중2' 로 되돌린다. 범위를 넘으면 '졸업'."""
+    return (f'=IF(ISNUMBER(${idx}{r}),'
+            f'IF(${idx}{r}<0,"",IF(${idx}{r}=0,"유치원",'
+            f'IF(${idx}{r}>9,"졸업",'
+            f'IF(${idx}{r}<=6,"초"&${idx}{r},"중"&(${idx}{r}-6))))),"")')
 
 
 def check_formula(r: int, judge: str, stay: str) -> str:
@@ -90,8 +126,9 @@ def check_formula(r: int, judge: str, stay: str) -> str:
         f'IF(${judge}{r}="확인필요","배정 결과를 채워 주세요",'
         f'IF(AND(${judge}{r}="배정",${stay}{r}="비어 있음"),'
         f'"종료일 칸에 날짜나 \'유학중\' 을 적어 주세요",'
-        f'IF(AND(${judge}{r}="배정",${stay}{r}="그 밖"),'
-        f'"종료일 표기를 확인해 주세요",'
+        f'IF(AND(${judge}{r}="배정",'
+        f'OR(${stay}{r}="그 밖",${stay}{r}="숫자 오입력")),'
+        f'"종료일 칸을 확인해 주세요",'
         f'IF(AND(${judge}{r}="배정",$Y{r}=""),"거주 유형을 채워 주세요",'
         f'IF(AND(${judge}{r}="배정",$V{r}=""),"유학 학교를 채워 주세요",""))))))'
     )
@@ -145,13 +182,39 @@ def main(src: str, out: str) -> int:
         c.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
         ws.column_dimensions[get_column_letter(c0 + i)].width = width
 
+    # 기준 학년도 — 이 한 칸이 '현재 학년' 을 정한다
+    lab = ws.cell(BASE_YEAR_ROW, c0, "기준 학년도 →")
+    lab.font = Font(name=FONT, size=10, bold=True, color=INK)
+    lab.alignment = Alignment(horizontal="right", vertical="center")
+    base_cell = f"${get_column_letter(c0 + 1)}${BASE_YEAR_ROW}"
+    bc = ws.cell(BASE_YEAR_ROW, c0 + 1, T.CURRENT_YEAR)
+    bc.font = Font(name=FONT, size=11, bold=True, color="7F6000")
+    bc.fill = HOLD_FILL
+    bc.alignment = Alignment(horizontal="center", vertical="center")
+    note = ws.cell(BASE_YEAR_ROW, c0 + 2,
+                   "이 칸을 고치면 '현재 학년' 이 그 학년도 기준으로 전부 바뀝니다")
+    note.font = Font(name=FONT, size=9, color="7F6000")
+
     ongoing_expr = ",".join(f'LEFT($L{{r}},{len(k)})="{k}"' for k in ONGOING)
+    idx_col = col_of["학년 순번"]
+    # '현재 학년'(원본 U 열)을 수식으로 바꾸기 전에, 지금 적혀 있는 값을 옆으로 옮겨 둔다.
+    # 수식이던 칸은 값이 없으므로 빈칸으로 둔다.
+    old_u = {}
+    for r in range(first, last_data + 1):
+        v = ws.cell(r, T.COL["현재학년"]).value
+        old_u[r] = None if (isinstance(v, str) and v.startswith("=")) else v
+    kept = sum(1 for v in old_u.values() if v is not None)
+
     for r in range(first, limit + 1):
         for i, (name, _, tmpl) in enumerate(CALC):
             if name == "배정 판정":
                 f = judge_formula(r)
             elif name == "확인":
                 f = check_formula(r, col_of["배정 판정"], col_of["재학 표기"])
+            elif name == "학년 순번":
+                f = grade_index_formula(r, base_cell)
+            elif name == "현재 학년(원본 기재)":
+                f = old_u.get(r)
             else:
                 f = tmpl.format(r=r, ongoing=ongoing_expr.format(r=r)).strip()
             c = ws.cell(r, c0 + i, f)
@@ -159,6 +222,11 @@ def main(src: str, out: str) -> int:
             c.fill = CALC_FILL
             c.alignment = Alignment(
                 horizontal="left" if name == "확인" else "center", vertical="center")
+
+    # 원본 '현재 학년' 열을 수식으로 채운다. 지금 값은 위에서 옮겨 두었다.
+    for r in range(first, limit + 1):
+        cell = ws.cell(r, T.COL["현재학년"], grade_text_formula(r, idx_col))
+        cell.alignment = Alignment(horizontal="center", vertical="center")
 
     # ── ② 조건부 서식
     j = col_of["배정 판정"]
@@ -198,6 +266,9 @@ def main(src: str, out: str) -> int:
     print(f"  자료 {first}~{last_data}행 · 수식 범위 {limit}행까지")
     print(f"  드롭다운 {added}개 열 · 계산 열 {len(CALC)}개 "
           f"({col_of[names[0]]}~{col_of[names[-1]]}) · 조건부 서식 5개")
+    print(f"  '현재 학년'({get_column_letter(T.COL['현재학년'])}열)을 수식으로 바꿈 "
+          f"· 원래 적혀 있던 {kept}칸은 '{col_of['현재 학년(원본 기재)']}' 열에 그대로 옮김")
+    print(f"  기준 학년도 칸 {base_cell.replace('$', '')} = {T.CURRENT_YEAR}")
     return 0
 
 

@@ -1,7 +1,7 @@
 /* 화면. transform.js 가 만든 구조를 그대로 그린다. */
 
 let D = null;                 // buildData 결과
-let BASE = new Date();        // 기준일
+let BASE = BASE_DATE;         // 기준일 — transform.js 에서 정한다
 let fileHandle = null;        // 다시 읽기용 (지원하는 브라우저에서만)
 let fileLabel = "";
 

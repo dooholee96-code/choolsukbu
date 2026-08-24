@@ -10,6 +10,9 @@ const FIRST_DATA_ROW = 9;
 
 /* 기준 학기: 원본 종료일 칸의 '현재' 가 가리키는 학기 */
 const CURRENT_YEAR = 2026, CURRENT_TERM = 1;
+// '유학중' 을 어느 날 기준으로 볼지. 담당자는 다가오는 학기 시작일로 셈한다.
+// transform.py 의 BASE_DATE 와 같아야 한다.
+const BASE_DATE = new Date(2026, 8, 1);
 
 /* 원본 열 번호(1-based) */
 const COL = {
@@ -165,7 +168,15 @@ function decide(raw) {
   if (end && ASSIGNED.has(end))
     return ["확인필요",
       `종료일 칸에 '${end}' 라고만 적혀 있어 실제 전학 여부를 알 수 없음 — 공식 시군별 집계에도 빠져 있는 건`];
-  if (final && ASSIGNED.has(final)) return ["배정", `최종배정 = ${final}`];
+  if (final && ASSIGNED.has(final)) {
+    // 최종배정되면 종료일 칸에 '유학중' 이나 종료 날짜를 적는 것이 이 명단의
+    // 방식이다. 그 칸이 비어 있으면 아직 배정된 것이 아니다.
+    if (!end)
+      return ["확인필요",
+        `최종배정 칸은 '${final}' 이나 종료일 칸이 비어 있음 ` +
+        "— 배정되었으면 '유학중', 아니면 미배정으로 적어 주세요"];
+    return ["배정", `최종배정 = ${final}`];
+  }
   if (final && UNASSIGNED.has(final)) return ["미배정", `최종배정 = ${final}`];
   if (final) return ["미배정", `최종배정 칸에 사유 기재: ${final.slice(0, 40)}`];
   if (end && (isOngoingText(end) || asDate(raw.종료일)))

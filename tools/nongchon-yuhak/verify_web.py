@@ -52,7 +52,7 @@ def python_side(src: str) -> dict:
         p = d["profiles"][st.student_id]
         if p["유학 종료"]:
             s = "유학종료" if p["유학 종료"] >= p["마지막 학기 마지막날"] else "중도복귀"
-        elif p["유학 시작"] and p["유학 시작"] <= T.dt.date.today():
+        elif p["유학 시작"] and p["유학 시작"] <= T.BASE_DATE:
             s = "유학중"
         elif p["최종배정"]:
             s = "최종배정"

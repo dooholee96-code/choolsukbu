@@ -334,6 +334,19 @@ def load_rows(path: str) -> list[dict]:
     return out
 
 
+# 종료일 칸에 날짜 대신 '아직 다니는 중' 이라고 적는 표기들. 담당자마다 말이
+# 달라서 넓게 받는다. '현재' 만 알아듣던 때, 표기가 '유학중' 으로 바뀌자
+# 9건이 배정에서 확인필요로 떨어지고 인원이 11명 줄었다.
+ONGOING_TOKENS = ("현재", "유학중", "재학중", "재학", "계속")
+
+
+def is_ongoing_text(v: str | None) -> bool:
+    """종료일 칸이 '아직 다니는 중' 을 뜻하는지."""
+    if not v:
+        return False
+    return v.replace(" ", "").startswith(ONGOING_TOKENS)
+
+
 def decide(raw: dict) -> tuple[str, str]:
     """배정 판정과 그 근거."""
     final = s(raw["최종배정"])
@@ -353,7 +366,7 @@ def decide(raw: dict) -> tuple[str, str]:
         return "미배정", f"최종배정 = {final}"
     if final:
         return "미배정", f"최종배정 칸에 사유 기재: {final[:40]}"
-    if end and (end.startswith("현재") or as_date(raw["종료일"])):
+    if end and (is_ongoing_text(end) or as_date(raw["종료일"])):
         return "배정", f"최종배정 비어 있으나 종료일({end[:20]}) 기재"
     if wish == "선정":
         return "확인필요", "학교 배정희망서는 '선정'이나 최종배정 결과 미기재"
@@ -479,7 +492,7 @@ def build(path: str):
         ongoing = False
         if end_date:
             end_i = sem_index(*sem_of(end_date))
-        elif end_raw and end_raw.startswith("현재"):
+        elif is_ongoing_text(end_raw):
             end_i, ongoing = max(start_i, CURRENT_INDEX), True
         else:
             end_i, ongoing = max(start_i, CURRENT_INDEX), True

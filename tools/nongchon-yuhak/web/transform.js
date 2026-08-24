@@ -147,6 +147,17 @@ function normalizeResidence(raw, year) {
 
 /* ── 배정 판정 ───────────────────────────────────────── */
 
+/* 종료일 칸에 날짜 대신 '아직 다니는 중' 이라고 적는 표기들. 담당자마다 말이
+   달라서 넓게 받는다. '현재' 만 알아듣던 때, 표기가 '유학중' 으로 바뀌자
+   9건이 배정에서 확인필요로 떨어지고 인원이 11명 줄었다. */
+const ONGOING_TOKENS = ["현재", "유학중", "재학중", "재학", "계속"];
+
+function isOngoingText(v) {
+  if (!v) return false;
+  const t = v.replace(/ /g, "");
+  return ONGOING_TOKENS.some((k) => t.startsWith(k));
+}
+
 function decide(raw) {
   const final = txt(raw.최종배정), end = txt(raw.종료일), wish = txt(raw.배정희망서);
   if (end && end.includes("미전학"))
@@ -157,7 +168,7 @@ function decide(raw) {
   if (final && ASSIGNED.has(final)) return ["배정", `최종배정 = ${final}`];
   if (final && UNASSIGNED.has(final)) return ["미배정", `최종배정 = ${final}`];
   if (final) return ["미배정", `최종배정 칸에 사유 기재: ${final.slice(0, 40)}`];
-  if (end && (end.startsWith("현재") || asDate(raw.종료일)))
+  if (end && (isOngoingText(end) || asDate(raw.종료일)))
     return ["배정", `최종배정 비어 있으나 종료일(${end.slice(0, 20)}) 기재`];
   if (wish === "선정") return ["확인필요", "학교 배정희망서는 '선정'이나 최종배정 결과 미기재"];
   if (wish) return ["미배정", `학교 단계 미선정: ${wish.slice(0, 40)}`];
@@ -346,7 +357,7 @@ function buildData(workbook) {
     let endI, ongoing = false;
     if (endDate) {
       endI = semIndex(...semOf(endDate));
-    } else if (endRaw && endRaw.startsWith("현재")) {
+    } else if (isOngoingText(endRaw)) {
       endI = Math.max(startI, CURRENT_INDEX); ongoing = true;
     } else {
       endI = Math.max(startI, CURRENT_INDEX); ongoing = true;

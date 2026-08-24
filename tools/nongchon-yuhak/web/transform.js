@@ -109,7 +109,18 @@ function classifyReason(...parts) {
   return "기타";
 }
 
-function normalizeGrade(v) { return v ? v.replace(/ /g, "") : null; }
+/* 학년 표기를 맞춘다. '3' 처럼 숫자만 적혀 있으면 유학 학교 이름 끝글자
+   (…초 / …중)를 보고 '초3' 인지 '중3' 인지 정한다. 원본에 두 표기가 섞여
+   있어도 학년별 표가 갈라지지 않게 하기 위해서다. */
+function normalizeGrade(v, school) {
+  if (!v) return null;
+  const g = v.replace(/ /g, "");
+  if (/^\d+$/.test(g) && school) {
+    const tail = school.trim().slice(-1);
+    if (tail === "초" || tail === "중") return tail + g;
+  }
+  return g;
+}
 
 function gradeAfter(base, years) {
   const i = GRADE_ORDER.indexOf(base);
@@ -350,13 +361,18 @@ function buildData(workbook) {
       endI = startI;
     }
 
-    const baseGrade = normalizeGrade(txt(raw.전입학년));
-    if (baseGrade && !GRADE_ORDER.includes(baseGrade)) {
+    const region = (txt(raw.유학지역) || "").trim() || null;
+    const school = txt(raw.유학학교);
+    const rawGrade = txt(raw.전입학년);
+    const baseGrade = normalizeGrade(rawGrade, school);
+    if (rawGrade && baseGrade !== rawGrade.replace(/ /g, "")) {
+      addIssue("학년 표기 숫자만", "확인 권장", app,
+        `전입시 학년이 '${rawGrade}' 로 숫자만 적혀 있어 학교명('${school}')을 보고 ` +
+        `'${baseGrade}' 로 읽음`, "없음");
+    } else if (baseGrade && !GRADE_ORDER.includes(baseGrade)) {
       addIssue("학년 표기 오류", "확인 권장", app,
         `전입시 학년 '${baseGrade}' 은 표준 학년 값이 아님`, "없음");
     }
-    const region = (txt(raw.유학지역) || "").trim() || null;
-    const school = txt(raw.유학학교);
     const endReason = txt(raw.중간종료사유);
 
     for (let i = startI; i <= endI; i++) {
@@ -416,7 +432,7 @@ function buildData(workbook) {
   }
   for (const app of apps) {
     if (app.decision !== "배정") continue;
-    const listed = normalizeGrade(txt(app.raw.현재학년));
+    const listed = normalizeGrade(txt(app.raw.현재학년), txt(app.raw.유학학교));
     const got = curGrade.get(app.studentId);
     if (listed && got && listed !== got) {
       issues.push({

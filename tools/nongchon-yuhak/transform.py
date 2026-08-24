@@ -178,10 +178,20 @@ def classify_reason(*texts) -> str | None:
     return "기타"
 
 
-def normalize_grade(v: str | None) -> str | None:
+def normalize_grade(v: str | None, school: str | None = None) -> str | None:
+    """학년 표기를 맞춘다.
+
+    '3' 처럼 숫자만 적혀 있으면 유학 학교 이름 끝글자(…초 / …중)를 보고
+    '초3' 인지 '중3' 인지 정한다. 원본에 두 표기가 섞여 있어도 학년별 표가
+    갈라지지 않게 하기 위해서다. 학교로 가릴 수 없으면 그대로 둔다.
+    """
     if not v:
         return None
     v = v.replace(" ", "")
+    if v.isdigit() and school:
+        tail = school.strip()[-1:]
+        if tail in ("초", "중"):
+            return f"{tail}{v}"
     return v
 
 
@@ -490,12 +500,17 @@ def build(path: str):
             )
             end_i = start_i
 
-        base_grade = normalize_grade(s(raw["전입학년"]))
-        if base_grade and base_grade not in GRADE_INDEX:
-            add_issue("학년 표기 오류", "확인 권장", app,
-                      f"전입시 학년 '{base_grade}' 은 표준 학년 값이 아님", impact="없음")
         region = (s(raw["유학지역"]) or "").strip() or None
         school = s(raw["유학학교"])
+        raw_grade = s(raw["전입학년"])
+        base_grade = normalize_grade(raw_grade, school)
+        if raw_grade and base_grade != raw_grade.replace(" ", ""):
+            add_issue("학년 표기 숫자만", "확인 권장", app,
+                      f"전입시 학년이 '{raw_grade}' 로 숫자만 적혀 있어 "
+                      f"학교명('{school}')을 보고 '{base_grade}' 로 읽음", impact="없음")
+        elif base_grade and base_grade not in GRADE_INDEX:
+            add_issue("학년 표기 오류", "확인 권장", app,
+                      f"전입시 학년 '{base_grade}' 은 표준 학년 값이 아님", impact="없음")
         end_reason = s(raw["중간종료사유"])
 
         for i in range(start_i, end_i + 1):
@@ -572,7 +587,7 @@ def build(path: str):
     for app in apps:
         if app.decision != "배정":
             continue
-        listed = normalize_grade(s(app.raw["현재학년"]))
+        listed = normalize_grade(s(app.raw["현재학년"]), s(app.raw["유학학교"]))
         got = cur_grade.get(app.student_id)
         if listed and got and listed != got:
             issues.append(

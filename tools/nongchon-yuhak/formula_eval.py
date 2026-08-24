@@ -128,6 +128,11 @@ class Parser:
             self.take(")")
             return v
         if kind == "name":
+            if text.upper() in ("TRUE", "FALSE") and (
+                self.i + 1 >= len(self.t) or self.t[self.i + 1][1] != "("
+            ):
+                self.take()
+                return text.upper() == "TRUE"
             return self.call()
         if kind in ("sheet", "ref"):
             return self.reference()
@@ -180,11 +185,33 @@ class Parser:
         self.take(")")
         return result
 
+    def call_iferror(self):
+        """IFERROR 는 앞 인자를 계산하다 오류가 나면 뒤 인자를 쓴다."""
+        mark = self.i
+        try:
+            value = self.comparison()
+        except Err:
+            self.i = mark
+            self.skip_arg()
+            value = Err
+        if self.peek()[1] == ",":
+            self.take()
+            if value is Err:
+                value = self.comparison()
+            else:
+                self.skip_arg()
+        elif value is Err:
+            value = "#N/A"
+        self.take(")")
+        return value
+
     def call(self):
         name = self.take().upper()
         self.take("(")
         if name == "IF":
             return self.call_if()
+        if name == "IFERROR":
+            return self.call_iferror()
         args = []
         if self.peek()[1] != ")":
             while True:
@@ -331,6 +358,32 @@ def apply_function(name, args, book):
             raise Err(f"INDEX 위치 {i} 가 범위({len(cells)}칸) 밖")
         s, c = cells[i - 1]
         return book.value(s, c)
+    if name == "ISNUMBER":
+        v = args[0]
+        return isinstance(v, (int, float, dt.date, dt.datetime)) and not isinstance(v, bool)
+    if name == "ISBLANK":
+        return args[0] is None or args[0] == ""
+    if name == "LEN":
+        return float(len(as_text(args[0])))
+    if name == "LEFT":
+        n = int(num(args[1])) if len(args) > 1 else 1
+        return as_text(args[0])[:n]
+    if name == "RIGHT":
+        n = int(num(args[1])) if len(args) > 1 else 1
+        return as_text(args[0])[-n:] if n else ""
+    if name in ("SEARCH", "FIND"):
+        hay, needle = as_text(args[1]), as_text(args[0])
+        if name == "SEARCH":
+            hay, needle = hay.lower(), needle.lower()
+        i = hay.find(needle)
+        if i < 0:
+            raise Err(f"{name}: '{args[0]}' 를 찾지 못함")
+        return float(i + 1)
+    if name in ("YEAR", "MONTH", "DAY"):
+        d = to_date(args[0])
+        if d is None:
+            raise Err(f"{name}: 날짜가 아님 — {args[0]!r}")
+        return float({"YEAR": d.year, "MONTH": d.month, "DAY": d.day}[name])
     if name == "IFERROR":
         return args[0]
     raise Err(f"모르는 함수 {name}")

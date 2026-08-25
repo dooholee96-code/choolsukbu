@@ -459,16 +459,20 @@ def build(path: str):
         apps.append(app)
         students[sid].apps.append(app)
 
+    home_clashes: list = []
+
     # ── 원적(원 지역·원 소속청·원 소속교)은 가장 먼저 낸 신청서의 것을 쓴다.
     # 관내 전학으로 다시 낸 줄에는 원 지역이 '전북(진안)' 처럼 직전 유학지로 적혀
     # 있어, 시트에 적힌 차례대로 첫 줄을 집으면 원적이 뒤바뀐다.
     for sid in order:
         st = students[sid]
+        # 실제로 배정된 줄을 먼저 본다. 같은 학기에 여러 줄을 낸 경우 배정되지
+        # 않은 줄에 오타가 들어 있는 일이 잦다.
         best = None
         for a in st.apps:
             if not s(a.raw["원지역"]):
                 continue
-            k = a.intake_date or dt.date.max
+            k = (a.decision != "배정", a.intake_date or dt.date.max)
             if best is None or k < best[0]:
                 best = (k, a)
         if best:
@@ -477,6 +481,16 @@ def build(path: str):
             st.home_office = OFFICE_ALIAS.get(s(raw["원소속청"]) or "",
                                               s(raw["원소속청"]))
             st.home_school = s(raw["원소속교"]) or st.home_school
+            # 같은 학기에 낸 줄끼리 원적이 갈리면 관내 전학이 아니라 오타다.
+            # 어느 쪽이 맞는지는 사람이 정해야 하므로 그대로 두고 알린다.
+            same = [a for a in st.apps
+                    if a.intake_date
+                    and (a.intake_year, a.intake_term)
+                    == (best[1].intake_year, best[1].intake_term)]
+            for f, got in (("원지역", st.home_region), ("원소속교", st.home_school)):
+                vals = {s(a.raw[f]) for a in same if s(a.raw[f])}
+                if len(vals) > 1:
+                    home_clashes.append((best[1], f, got, sorted(vals)))
 
     # ── 가구: 보호자 연락처 기준
     house_of: dict[str, str] = {}
@@ -504,6 +518,11 @@ def build(path: str):
                 "내용": detail,
             }
         )
+
+    for app, field, taken, vals in home_clashes:
+        add_issue("원적 표기 갈림", "확인 권장", app,
+                  f"같은 학기 줄끼리 '{field}' 가 갈립니다 — {' / '.join(vals)}. "
+                  f"'{taken}' 을 썼습니다", impact="있음")
 
     for app in apps:
         raw = app.raw

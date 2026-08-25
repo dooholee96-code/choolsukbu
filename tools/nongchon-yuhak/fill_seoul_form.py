@@ -1,19 +1,22 @@
 """서울시교육청 참가자 명단 서식에 우리 명단을 채운다.
 
-  python fill_seoul_form.py <원본.xlsx> <서식.xlsx> <출력.xlsx> [지난제출본.xlsx]
+  python fill_seoul_form.py <원본.xlsx> <서식.xlsx> <출력.xlsx> [지난제출본.xlsx ...]
 
 서식의 열 차례를 그대로 두고 값만 넣는다. 서식 자체(제목·머리글·예시 줄)는
 건드리지 않는다.
 
-지원금 대상 여부는 서울시교육청 기준('26. 3. 1.)으로 판정한다.
+지원금 대상 여부는 서울시교육청 기준('26. 3. 1.)으로 판정한다. 규칙은
+2026학년도 1학기 실제 제출본(참가자 명단 104명·지원금 명단 44명)에서 되짚었다.
 
   지원대상  초1 ~ 중2 · 가족체류형 또는 유학센터형
   지원기간  최대 1년 — 최초 참여 학년도가 기준 학년도와 같아야 한다
-  가구 단위  가족체류형은 가구당 유학생 수로 차등하므로, 형제자매가 먼저
-             받았으면 뒤에 온 동생은 대상이 아니다
+  가구 단위  가족체류형 지원금은 가구 대표 한 사람에게 몰아 주므로 한도도
+             가구 단위다. 형제자매가 앞 학년도에 먼저 받았으면 뒤에 온
+             동생은 대상이 아니다. 유학센터형은 학생 개인에게 나가므로
+             형제자매의 기지급과 무관하다(민주성 2026-1학기 ○).
 
-지난 학기 제출본을 같이 주면, 명단에 비어 있는 '원 교육지원청' 을 거기서 가져와
-메운다. 우리가 지어내는 값이 아니라 담당자가 이미 서울에 낸 값이라 믿을 수 있다.
+지난 학기 제출본을 같이 주면(여러 개 줘도 된다), 명단에 비어 있는
+'원 교육지원청' 을 거기서 가져와 메운다. 앞에 준 파일이 먼저다. 우리가 지어내는 값이 아니라 담당자가 이미 서울에 낸 값이라 믿을 수 있다.
 
 원 소속교가 사립초·해외 학교·유치원(예비초)이면 서울시교육청이 미지원으로
 처리해 왔다. 그건 이름만으로 확실히 가릴 수 없어 '확인' 으로 남기고 사람이
@@ -56,14 +59,26 @@ def read_prev(path: str):
     """지난 학기 제출본에서 (성명, 연락처) → 원 교육지원청 을 읽는다."""
     wb = openpyxl.load_workbook(path, data_only=True)
     ws = wb[wb.sheetnames[0]]
-    head = next((r for r in range(1, 12)
-                 if T.s(ws.cell(r, 11).value) == "원 교육지원청"), None)
-    if head is None:
+
+    # 학기마다 서식이 조금씩 달라 열 자리가 밀린다. 머리글 이름으로 찾는다.
+    def flat(v):
+        return (T.s(v) or "").replace("\n", " ").replace(" ", "")
+
+    found = None
+    for r in range(1, 12):
+        m = {flat(ws.cell(r, c).value): c for c in range(1, ws.max_column + 1)}
+        if "원교육지원청" in m and "학생성명" in m:
+            found = (r, m)
+            break
+    if found is None:
         return {}
+    head, m = found
+    cn, cp, co = m["학생성명"], m.get("보호자연락처"), m["원교육지원청"]
     out = {}
     for r in range(head + 1, ws.max_row + 1):
-        nm, ph = T.s(ws.cell(r, 5).value), T.s(ws.cell(r, 10).value)
-        off = T.s(ws.cell(r, 11).value)
+        nm = T.s(ws.cell(r, cn).value)
+        ph = T.s(ws.cell(r, cp).value) if cp else None
+        off = T.s(ws.cell(r, co).value)
         # '기타' 도 담당자가 실제로 적어 낸 값이라 그대로 가져온다
         if nm and off:
             out[(nm, ph)] = off
@@ -131,9 +146,9 @@ def collect(src: str, base_year: int, base_term: int):
         if st.student_id in first:
             i = T.sem_index(*[first[st.student_id].year, first[st.student_id].term])
             k = st.household_id
-            if k not in house_first or i < house_first[k][0]:
+            if k not in house_first or i < house_first[k][3]:
                 fe = first[st.student_id]
-                house_first[k] = (i, st.name, T.sem_label(fe.year, fe.term))
+                house_first[k] = (fe.year, st.name, (fe.year, fe.term), i)
 
     size = {}
     for x in rows:
@@ -161,9 +176,11 @@ def judge(x, base_year, base_term):
     # 형제자매가 먼저 왔으면 가구 단위 1년을 이미 썼을 수 있다. 다만 그 형제가
     # 실제로 지원금을 받았는지는 지급 이력을 봐야 알 수 있어 단정하지 않는다 —
     # 민성주(2025-2학기 참여)의 동생 민주성에게 담당자가 ○ 를 준 사례가 있다.
+    # 형제자매가 앞 학년도에 먼저 받았으면 가구 한도를 이미 썼다. 같은 학년도에
+    # 함께 온 형제는 아직 한도 안이라 둘 다 대상이다(금액만 대표에게 몰아 준다).
     hf = x["house_first"]
-    if hf and hf[0] < my:
-        return "확인", f"형제자매 {hf[1]} 가 {hf[2]} 에 먼저 참여 — 기지급이면 ×"
+    if (hf and hf[0] < base_year and x["residence"] == "가족체류형"):
+        return "×", f"형제자매({hf[1]}, {T.sem_label(*hf[2])} 최초 참여, 기지급)"
 
     raw = x["home_school_raw"] or ""
     if "사립" in raw:
@@ -175,12 +192,11 @@ def judge(x, base_year, base_term):
             return "○", ""
         return "확인", "원 소속교가 비어 있거나 유치원 — 혼자면 예비초로 미지원"
     if not raw.endswith(("초", "중")):
-        return "확인", f"원 소속교 '{raw}' 가 서울 공립 초·중으로 보이지 않음"
+        return "×", "서울 소재 초등학교 재학생이 아니므로\n유학경비 지원대상에 해당하지 않음"
     return "○", ""
 
 
-def main(src_path: str, form_path: str, out_path: str,
-         prev_path: str | None = None) -> int:
+def main(src_path: str, form_path: str, out_path: str, *prev_paths: str) -> int:
     src = Path(src_path).read_text().strip() if src_path.endswith(".txt") else src_path
     base_year, base_term = T.CURRENT_YEAR, T.CURRENT_TERM + 1
     if base_term > 2:
@@ -189,7 +205,9 @@ def main(src_path: str, form_path: str, out_path: str,
     rows = collect(src, base_year, base_term)
 
     # 빈 '원 교육지원청' 을 지난 제출본에서 메운다. 값이 다른 칸은 손대지 않고 알린다.
-    prev = read_prev(prev_path) if prev_path else {}
+    prev: dict = {}
+    for q in reversed(prev_paths):        # 앞에 준 파일이 이기도록 뒤에서부터 덮는다
+        prev.update(read_prev(q))
     filled, clash = 0, []
     for x in rows:
         got = prev.get((x["name"], x["phone"]))
@@ -210,14 +228,14 @@ def main(src_path: str, form_path: str, out_path: str,
         mark, why = judge(x, base_year, base_term)
         counts[mark] += 1
         note = []
-        if not x["confirmed"]:
-            note.append("2학기 연장 예정(입력 전)")
-        hf = x["house_first"]
-        if (hf and x["household"] and "형제자매" not in why
-                and sum(1 for y in rows if y["household"] == x["household"]) > 1):
-            note.append("형제자매")
+        # 같은 가구 형제가 이번 명단에 함께 있으면 제출본 표기대로 이름을 적는다
+        kin = [y["name"] for y in rows if y["household"] == x["household"]]
+        if len(kin) > 1 and "형제자매" not in why:
+            note.append(f"형제자매({', '.join(kin)})")
         if why:
             note.append(why)
+        if not x["confirmed"]:
+            note.append("2학기 연장 예정(입력 전)")
 
         vals = [
             i + 1, "전북", x["region"], x["school"], x["name"], x["grade"],
@@ -260,4 +278,4 @@ def main(src_path: str, form_path: str, out_path: str,
 
 
 if __name__ == "__main__":
-    sys.exit(main(*sys.argv[1:5]))
+    sys.exit(main(*sys.argv[1:]))

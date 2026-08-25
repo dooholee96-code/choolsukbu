@@ -459,6 +459,25 @@ def build(path: str):
         apps.append(app)
         students[sid].apps.append(app)
 
+    # ── 원적(원 지역·원 소속청·원 소속교)은 가장 먼저 낸 신청서의 것을 쓴다.
+    # 관내 전학으로 다시 낸 줄에는 원 지역이 '전북(진안)' 처럼 직전 유학지로 적혀
+    # 있어, 시트에 적힌 차례대로 첫 줄을 집으면 원적이 뒤바뀐다.
+    for sid in order:
+        st = students[sid]
+        best = None
+        for a in st.apps:
+            if not s(a.raw["원지역"]):
+                continue
+            k = a.intake_date or dt.date.max
+            if best is None or k < best[0]:
+                best = (k, a)
+        if best:
+            raw = best[1].raw
+            st.home_region = s(raw["원지역"])
+            st.home_office = OFFICE_ALIAS.get(s(raw["원소속청"]) or "",
+                                              s(raw["원소속청"]))
+            st.home_school = s(raw["원소속교"]) or st.home_school
+
     # ── 가구: 보호자 연락처 기준
     house_of: dict[str, str] = {}
     for sid in order:

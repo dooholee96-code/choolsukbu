@@ -194,7 +194,8 @@ def main(src_path: str, out_path: str, *prev_paths: str) -> int:
         prev.update(FS.read_prev(q))
     filled = 0
     for x in rows:
-        got = FS.resolve_office(x, prev)
+        # 지원금 명단은 관할 지원청이 없는 줄을 '기타' 로 적어 왔다
+        got = FS.resolve_office(x, prev, other=True)
         if got and not x["office"]:
             x["office"], filled = got, filled + 1
 

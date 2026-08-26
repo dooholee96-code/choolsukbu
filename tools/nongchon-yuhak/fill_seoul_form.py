@@ -16,7 +16,8 @@
              형제자매의 기지급과 무관하다(민주성 2026-1학기 ○).
 
 지난 학기 제출본을 같이 주면(여러 개 줘도 된다), 명단에 비어 있는
-'원 교육지원청' 을 거기서 가져와 메운다. 앞에 준 파일이 먼저다. 우리가 지어내는 값이 아니라 담당자가 이미 서울에 낸 값이라 믿을 수 있다.
+'원 교육지원청' 을 거기서 가져와 메운다. 앞에 준 파일이 먼저다. 유치원·해외
+학교처럼 관할 지원청이 없는 줄은 1학기 제출본대로 비워 둔다. 우리가 지어내는 값이 아니라 담당자가 이미 서울에 낸 값이라 믿을 수 있다.
 
 원 소속교가 사립초·해외 학교·유치원(예비초)이면 서울시교육청이 미지원으로
 처리해 왔다. 그건 이름만으로 확실히 가릴 수 없어 '확인' 으로 남기고 사람이
@@ -110,16 +111,23 @@ def read_prev(path: str):
     return out
 
 
-def resolve_office(x, prev) -> str | None:
-    """빈 '원 교육지원청' 을 지난 제출본과 학교 표에서 찾아 온다."""
+def resolve_office(x, prev, other=False) -> str | None:
+    """빈 '원 교육지원청' 을 지난 제출본과 학교 표에서 찾아 온다.
+
+    유치원·해외 학교는 관할 지원청이 없다. 2026학년도 1학기 제출본을 보면
+    참가자 명단에서는 그냥 비워 두었고(17줄), 지원금 명단에서는 '기타' 로
+    적었다(14줄). 그 차이를 그대로 따르려고 other 로 가른다.
+    """
     school = (x["home_school"] or "").removeprefix("서울")
     got = (prev.get((x["name"], x["phone"]))
            or prev.get((x["name"], x["home_school"]))
            or prev.get((x["name"], school))
            or OFFICE_BY_SCHOOL.get(school))
-    # 유치원·해외 학교는 관할 지원청이 없어 담당자가 '기타' 로 적어 왔다
-    if not got and ("유치원" in school or not school.endswith(("초", "중"))):
+    if not got and other and ("유치원" in school
+                              or not school.endswith(("초", "중"))):
         got = "기타"
+    if got == "기타" and not other:
+        got = None            # 참가자 명단은 그 자리를 비워 두는 것이 제출본 방식
     return got
 
 
@@ -315,11 +323,18 @@ def main(src_path: str, form_path: str, out_path: str, *prev_paths: str) -> int:
     print(f"  지원 대상 ○ {counts['○']}명 · × {counts['×']}명 · 확인 {counts['확인']}명")
     print(f"  이 중 2학기 줄이 아직 없는(연장 예정) 학생 "
           f"{sum(1 for x in rows if not x['confirmed'])}명 — 회색으로 칠했습니다")
-    blank = sum(1 for x in rows if not x["office"])
     if prev:
         print(f"  원 교육지원청 {filled}칸을 지난 제출본에서 가져왔습니다")
-    if blank:
-        print(f"  원 교육지원청이 아직 빈 줄 {blank}개 — 손으로 채워 주세요")
+    off = [x for x in rows if not x["office"]]
+    none_school = [x for x in off
+                   if "유치원" in (x["home_school"] or "")
+                   or not (x["home_school"] or "").endswith(("초", "중"))]
+    if none_school:
+        print(f"  원 교육지원청이 빈 줄 {len(none_school)}개 — 유치원·해외 학교라 "
+              f"관할 지원청이 없습니다(1학기 제출본과 같은 방식)")
+    rest = len(off) - len(none_school)
+    if rest:
+        print(f"  원 교육지원청을 못 찾은 줄 {rest}개 — 손으로 채워 주세요")
     for c in clash:
         print("  ! 원 교육지원청이 지난 제출본과 다릅니다:", c)
     return 0

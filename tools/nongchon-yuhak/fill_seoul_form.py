@@ -46,6 +46,16 @@ FIRST_DATA = 8
 REGION_ORDER = ["군산", "익산", "정읍", "남원", "김제", "완주", "진안",
                 "무주", "장수", "임실", "순창", "고창", "부안"]
 
+# 원 소속교로 관할 교육지원청을 찾는 표. 서울시교육청 교육지원청은 열한 곳이고
+# 자치구로 관할이 갈린다(동부 동대문·중랑 / 서부 서대문·마포·은평 / 남부 영등포·
+# 구로·금천 / 북부 노원·도봉 / 중부 종로·중구·용산 / 강남서초 / 강동송파 /
+# 강서양천 / 동작관악 / 성동광진 / 성북강북). 지난 제출본에 없던 학교만 적는다.
+OFFICE_BY_SCHOOL = {
+    "묘곡초": "강동송파",      # 서울묘곡초 — 강동구 동남로79길
+    "우이초": "성북강북",      # 서울우이초 — 강북구 수유동
+    "신창중": "북부",          # 서울신창중 — 노원구 월계동
+}
+
 MAX_GRADE = "중2"                                 # 서울 지원 대상 상한
 OK_RESIDENCE = {"가족체류형", "유학센터형"}       # 홈스테이형은 서울 지원 대상이 아니다
 
@@ -74,15 +84,43 @@ def read_prev(path: str):
         return {}
     head, m = found
     cn, cp, co = m["학생성명"], m.get("보호자연락처"), m["원교육지원청"]
+    cs = m.get("원소속교")
+
+    def korean(v):
+        # 제출본에 시각 값 같은 것이 잘못 들어간 칸이 있다(민주성 '00:00:00')
+        t = T.s(v)
+        return t if t and all("가" <= ch <= "힣" for ch in t) else None
+
     out = {}
     for r in range(head + 1, ws.max_row + 1):
         nm = T.s(ws.cell(r, cn).value)
         ph = T.s(ws.cell(r, cp).value) if cp else None
-        off = T.s(ws.cell(r, co).value)
+        off = korean(ws.cell(r, co).value)
         # '기타' 도 담당자가 실제로 적어 낸 값이라 그대로 가져온다
-        if nm and off:
-            out[(nm, ph)] = off
+        if not (nm and off):
+            continue
+        out[(nm, ph)] = off
+        # 연락처 칸이 빈 제출본도 있어 성명＋원 소속교로도 찾을 수 있게 둔다
+        if cs:
+            sch = T.s(ws.cell(r, cs).value)
+            if sch:
+                # 원본과 제출본이 '서울' 접두사에서 갈려 떼고도 찾을 수 있게 둔다
+                out.setdefault((nm, sch), off)
+                out.setdefault((nm, sch.removeprefix("서울")), off)
     return out
+
+
+def resolve_office(x, prev) -> str | None:
+    """빈 '원 교육지원청' 을 지난 제출본과 학교 표에서 찾아 온다."""
+    school = (x["home_school"] or "").removeprefix("서울")
+    got = (prev.get((x["name"], x["phone"]))
+           or prev.get((x["name"], x["home_school"]))
+           or prev.get((x["name"], school))
+           or OFFICE_BY_SCHOOL.get(school))
+    # 유치원·해외 학교는 관할 지원청이 없어 담당자가 '기타' 로 적어 왔다
+    if not got and ("유치원" in school or not school.endswith(("초", "중"))):
+        got = "기타"
+    return got
 
 
 def collect(src: str, base_year: int, base_term: int):
@@ -104,6 +142,15 @@ def collect(src: str, base_year: int, base_term: int):
         o = T.s(ws.cell(r, T.COL["원소속청"]).value)
         if o:
             listed_office[(nm, ph)] = o
+
+    # 원적 줄에 원 소속청이 비어 있어도 그 학생의 다른 줄에 적혀 있을 수 있다
+    any_office = {}
+    for st in d["students"]:
+        for a in st.apps:
+            v = T.s(a.raw["원소속청"])
+            if v:
+                any_office[st.student_id] = T.OFFICE_ALIAS.get(v, v)
+                break
 
     first, last = {}, {}
     for e in sorted(d["enrollments"], key=lambda e: T.sem_index(e.year, e.term)):
@@ -133,7 +180,8 @@ def collect(src: str, base_year: int, base_term: int):
             grade=listed_grade.get(key) or l.grade,
             gender=st.gender, residence=l.residence,
             guardian=st.guardian, phone=T.s(st.guardian_phone),
-            office=listed_office.get(key) or T.s(st.home_office),
+            office=(listed_office.get(key) or T.s(st.home_office)
+                    or any_office.get(st.student_id)),
             home_school=T.s(st.home_school),
             home_school_raw=T.s(st.home_school),
             first_year=f.year, first_term=f.term,
@@ -210,7 +258,7 @@ def main(src_path: str, form_path: str, out_path: str, *prev_paths: str) -> int:
         prev.update(read_prev(q))
     filled, clash = 0, []
     for x in rows:
-        got = prev.get((x["name"], x["phone"]))
+        got = resolve_office(x, prev)
         if not got:
             continue
         if not x["office"]:

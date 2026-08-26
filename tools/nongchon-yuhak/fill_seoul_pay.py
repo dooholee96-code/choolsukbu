@@ -194,7 +194,7 @@ def main(src_path: str, out_path: str, *prev_paths: str) -> int:
         prev.update(FS.read_prev(q))
     filled = 0
     for x in rows:
-        got = prev.get((x["name"], x["phone"]))
+        got = FS.resolve_office(x, prev)
         if got and not x["office"]:
             x["office"], filled = got, filled + 1
 

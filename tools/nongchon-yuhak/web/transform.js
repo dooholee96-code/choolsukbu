@@ -9,7 +9,7 @@ const HEADER_ROW = 8;
 const FIRST_DATA_ROW = 9;
 
 /* 기준 학기: 원본 종료일 칸의 '현재' 가 가리키는 학기 */
-const CURRENT_YEAR = 2026, CURRENT_TERM = 1;
+const CURRENT_YEAR = 2026, CURRENT_TERM = 2;
 // '유학중' 을 어느 날 기준으로 볼지. 담당자는 다가오는 학기 시작일로 셈한다.
 // transform.py 의 BASE_DATE 와 같아야 한다.
 const BASE_DATE = new Date(2026, 8, 1);
@@ -163,8 +163,15 @@ function isOngoingText(v) {
 
 function decide(raw) {
   const final = txt(raw.최종배정), end = txt(raw.종료일), wish = txt(raw.배정희망서);
-  if (end && end.includes("미전학"))
-    return ["미배정", `종료일 칸에 '${end.split("\n")[0]}' — 최종배정 후 전학하지 않음`];
+  // 미전학 사유는 종료일 칸에 적히기도 하고 중간 종료 사유 칸에 적히기도 한다
+  for (const [where, text] of [["종료일", end], ["중간 종료 사유", txt(raw.중간종료사유)]])
+    if (text && text.includes("미전학"))
+      return ["미배정",
+        `${where} 칸에 '${text.split("\n")[0]}' — 최종배정 후 전학하지 않음`];
+  if (end && (end.includes("?") || end.includes("예정")))
+    return ["확인필요",
+      `종료일 칸에 '${end}' — 아직 확정되지 않은 표시입니다. ` +
+      "전학이 확정되면 '유학중' 으로 적어 주세요"];
   if (end && ASSIGNED.has(end))
     return ["확인필요",
       `종료일 칸에 '${end}' 라고만 적혀 있어 실제 전학 여부를 알 수 없음 — 공식 시군별 집계에도 빠져 있는 건`];
@@ -318,7 +325,7 @@ function buildData(workbook) {
     [app.decision, app.decisionBasis] = decide(raw);
 
     if (app.decision !== "배정") {
-      const endText = txt(raw.종료일) || "";
+      const endText = `${txt(raw.종료일) || ""} ${txt(raw.중간종료사유) || ""}`;
       if (endText.includes("미전학")) {
         app.rejectStage = "전학";
         app.rejectReason = "최종배정 후 미전학";
@@ -335,6 +342,38 @@ function buildData(workbook) {
     app.stage = reachedStage(app);
     apps.push(app);
     students.get(sid).apps.push(app);
+  }
+
+  /* 원적(원 지역·원 소속청·원 소속교)은 배정된 줄 가운데 가장 먼저 낸 것에서
+     잡는다. 관내 전학으로 다시 낸 줄에는 원 지역이 '전북(진안)' 처럼 직전
+     유학지로 적혀 있어, 시트 차례대로 첫 줄을 집으면 원적이 뒤바뀐다. */
+  for (const sid of order) {
+    const st = students.get(sid);
+    let best = null;
+    for (const a of st.apps) {
+      if (!txt(a.raw.원지역)) continue;
+      const k = [a.decision !== "배정" ? 1 : 0,
+                 a.intakeDate ? a.intakeDate.getTime() : Infinity];
+      if (!best || k[0] < best[0][0]
+          || (k[0] === best[0][0] && k[1] < best[0][1])) best = [k, a];
+    }
+    if (best) {
+      const raw = best[1].raw;
+      st.homeRegion = txt(raw.원지역);
+      st.homeOffice = OFFICE_ALIAS[txt(raw.원소속청)] ?? txt(raw.원소속청);
+      st.homeSchool = txt(raw.원소속교) || st.homeSchool;
+      // 같은 학기에 낸 줄끼리 원적이 갈리면 관내 전학이 아니라 오타다
+      const same = st.apps.filter(
+        (a) => a.intakeDate && a.intakeYear === best[1].intakeYear
+               && a.intakeTerm === best[1].intakeTerm);
+      for (const [f, took] of [["원지역", st.homeRegion], ["원소속교", st.homeSchool]]) {
+        const vals = [...new Set(same.map((a) => txt(a.raw[f])).filter(Boolean))].sort();
+        if (vals.length > 1)
+          addIssue("원적 표기 갈림", "확인 권장", best[1],
+            `같은 학기 줄끼리 '${f}' 가 갈립니다 — ${vals.join(" / ")}. `
+            + `'${took}' 을 썼습니다`);
+      }
+    }
   }
 
   /* 가구: 보호자 연락처 기준 */

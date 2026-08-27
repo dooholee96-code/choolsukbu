@@ -27,8 +27,9 @@ BACKUP_SHEET = "원본_전체"
 HEADER_ROW = 8
 FIRST_DATA_ROW = 9
 
-# 기준 학기: '현재' 로 적힌 유학생이 재학 중인 학기.
-CURRENT_YEAR, CURRENT_TERM = 2026, 1
+# 기준 학기: '현재' 로 적힌 유학생이 재학 중인 학기. 아래 BASE_DATE 가 든 학기와
+# 같아야 한다 — 학기가 바뀌면 두 값을 함께 고친다.
+CURRENT_YEAR, CURRENT_TERM = 2026, 2
 
 # '유학중' 을 어느 날 기준으로 볼지. 담당자는 다가오는 학기 시작일로 셈한다 —
 # 8월 말에 이미 "9월 1일 기준 354명" 이라고 말한다. 학기가 바뀌면 위 두 값과
@@ -441,7 +442,8 @@ def build(path: str):
             app.term_start = d.replace(day=1)
         app.decision, app.decision_basis = decide(raw)
         if app.decision != "배정":
-            end_text = s(raw["종료일"]) or ""
+            # 미전학 사유는 두 칸 어디에나 적힐 수 있다 — decide() 와 같이 본다
+            end_text = f'{s(raw["종료일"]) or ""} {s(raw["중간종료사유"]) or ""}'
             if "미전학" in end_text:
                 app.reject_stage, app.reject_reason = "전학", "최종배정 후 미전학"
                 app.reject_class = "최종배정 후 미전학"

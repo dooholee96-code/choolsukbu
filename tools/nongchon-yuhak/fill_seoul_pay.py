@@ -183,9 +183,7 @@ def write_basis(ws, rows):
 
 
 def main(src_path: str, out_path: str, *prev_paths: str) -> int:
-    base_year, base_term = T.CURRENT_YEAR, T.CURRENT_TERM + 1
-    if base_term > 2:
-        base_year, base_term = base_year + 1, 1
+    base_year, base_term = T.CURRENT_YEAR, T.CURRENT_TERM
 
     rows = plan(src_path, base_year, base_term)
 

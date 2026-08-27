@@ -55,6 +55,8 @@ OFFICE_BY_SCHOOL = {
     "묘곡초": "강동송파",      # 서울묘곡초 — 강동구 동남로79길
     "우이초": "성북강북",      # 서울우이초 — 강북구 수유동
     "신창중": "북부",          # 서울신창중 — 노원구 월계동
+    "불암중": "북부",          # 서울불암중 — 노원구 하계동
+    "대방중": "동작관악",      # 서울대방중 — 동작구 신대방동
 }
 
 MAX_GRADE = "중2"                                 # 서울 지원 대상 상한
@@ -254,9 +256,7 @@ def judge(x, base_year, base_term):
 
 def main(src_path: str, form_path: str, out_path: str, *prev_paths: str) -> int:
     src = Path(src_path).read_text().strip() if src_path.endswith(".txt") else src_path
-    base_year, base_term = T.CURRENT_YEAR, T.CURRENT_TERM + 1
-    if base_term > 2:
-        base_year, base_term = base_year + 1, 1
+    base_year, base_term = T.CURRENT_YEAR, T.CURRENT_TERM
 
     rows = collect(src, base_year, base_term)
 

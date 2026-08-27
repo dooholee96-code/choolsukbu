@@ -358,8 +358,16 @@ def decide(raw: dict) -> tuple[str, str]:
     end = s(raw["종료일"])
     wish = s(raw["배정희망서"])
 
-    if end and "미전학" in end:
-        return "미배정", f"종료일 칸에 '{end.splitlines()[0]}' — 최종배정 후 전학하지 않음"
+    # 미전학 사유는 종료일 칸에 적히기도 하고 중간 종료 사유 칸에 적히기도 한다
+    for where, text in (("종료일", end), ("중간 종료 사유", s(raw["중간종료사유"]))):
+        if text and "미전학" in text:
+            return "미배정", (f"{where} 칸에 '{text.splitlines()[0]}' "
+                             "— 최종배정 후 전학하지 않음")
+    if end and ("?" in end or "예정" in end):
+        return "확인필요", (
+            f"종료일 칸에 '{end}' — 아직 확정되지 않은 표시입니다. "
+            "전학이 확정되면 '유학중' 으로 적어 주세요"
+        )
     if end in ASSIGNED_TOKENS:
         return "확인필요", (
             f"종료일 칸에 '{end}' 라고만 적혀 있어 실제 전학 여부를 알 수 없음 "

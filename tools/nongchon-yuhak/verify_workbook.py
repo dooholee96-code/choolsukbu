@@ -356,6 +356,55 @@ def check_values(wb, book, data):
     return problems, checked
 
 
+
+def check_pivot(wb, data):
+    """'표 만들기' 가 항목을 바꿔도 원데이터와 같은 수를 내는지 본다."""
+    import collections
+
+    import build_workbook as B
+
+    problems, checked = [], 0
+    combos = [
+        ("표 만들기", "유학이력", "유학 지역", "학기"),
+        ("표 만들기", "유학이력", "유학 학교", "학년도"),
+        ("표 만들기", "유학이력", "학년", "성별"),
+        ("표 만들기", "유학이력", "원 지역", "학기"),
+        ("표 만들기", "유학이력", "거주 유형", "학년도"),
+        ("표 만들기(신청)", "신청이력", "유학 학교", "배정 판정"),
+        ("표 만들기(신청)", "신청이력", "미선정 사유(분류)", "접수 학년도"),
+        ("표 만들기(신청)", "신청이력", "유학 지역", "모집 차수"),
+    ]
+    for sheet, src, rowf, colf in combos:
+        ws = wb[sheet]
+        ws["C5"], ws["C6"] = rowf, colf
+        book = F.Book(wb)
+        r0 = 10
+        cols = [book.value(sheet, f"{get_column_letter(3 + j)}{r0}")
+                for j in range(B.PIVOT_COLS)]
+        want = collections.Counter()
+        for a, b in zip(B.field_values(data, src, rowf),
+                        B.field_values(data, src, colf)):
+            if a not in (None, "") and b not in (None, ""):
+                want[(str(a), str(b))] += 1
+        for i in range(B.PIVOT_ROWS):
+            r = r0 + 1 + i
+            label = book.value(sheet, f"B{r}")
+            if label in (None, ""):
+                continue
+            for j, c in enumerate(cols):
+                if c in (None, ""):
+                    continue
+                got = book.value(sheet, f"{get_column_letter(3 + j)}{r}")
+                got = 0 if got in (None, "") else int(got)
+                checked += 1
+                if got != want.get((str(label), str(c)), 0):
+                    problems.append(
+                        f"{sheet} [{rowf}×{colf}] {label}/{c}: "
+                        f"표 {got} ≠ 원데이터 {want.get((str(label), str(c)), 0)}")
+        problems += [f"{sheet} [{rowf}×{colf}] 계산 오류: {e}" for e in book.errors[:3]]
+    return problems, checked
+
+
 def main(book_path, source_path):
     wb = openpyxl.load_workbook(book_path)
     formulas = list(all_formulas(wb))
@@ -367,6 +416,7 @@ def main(book_path, source_path):
 
     data = T.build(source_path)
     values, checked = check_values(wb, book, data)
+    pivots, pchecked = check_pivot(wb, data)
 
     print(f"수식 {len(formulas)}개")
     print(f"  문법 검사   : {'통과' if not syntax else f'{len(syntax)}건 문제'}")
@@ -378,8 +428,11 @@ def main(book_path, source_path):
     print(f"  값 대조     : {checked}건 중 {len(values)}건 불일치")
     for p in values[:15]:
         print("   !", p)
+    print(f"  표 만들기   : {pchecked}칸 중 {len(pivots)}건 불일치")
+    for p in pivots[:15]:
+        print("   !", p)
 
-    ok = not syntax and not book.errors and not values
+    ok = not syntax and not book.errors and not values and not pivots
     print("모두 통과" if ok else "확인 필요")
     return 0 if ok else 1
 

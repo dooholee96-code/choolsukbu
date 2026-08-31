@@ -1,7 +1,7 @@
 """워크북에 쓴 수식을 실제로 계산하는 작은 계산기.
 
 LibreOffice 를 못 쓰는 환경에서 재계산을 대신한다. 이 워크북이 쓰는 함수
-(COUNTIF, COUNTIFS, SUM, IF, OR, MIN, MAX, INDEX)만 다룬다.
+(COUNTIF, COUNTIFS, SUM, IF, OR, MIN, MAX, INDEX, MATCH)만 다룬다.
 """
 
 from __future__ import annotations
@@ -368,14 +368,49 @@ def apply_function(name, args, book):
     if name == "MAX":
         return max(num(v) for a in args for v in values(a))
     if name == "INDEX":
-        if len(args) != 2:
-            raise Err(f"INDEX 인자가 {len(args)}개 — 범위와 위치 두 개여야 함")
-        cells = list(args[0].cells())
-        i = int(num(args[1]))
-        if not 1 <= i <= len(cells):
-            raise Err(f"INDEX 위치 {i} 가 범위({len(cells)}칸) 밖")
-        s, c = cells[i - 1]
-        return book.value(s, c)
+        rg = args[0]
+        if not isinstance(rg, Range):
+            raise Err("INDEX 첫 인자가 범위가 아님")
+        if len(args) == 2:
+            cells = list(rg.cells())
+            i = int(num(args[1]))
+            if not 1 <= i <= len(cells):
+                raise Err(f"INDEX 위치 {i} 가 범위({len(cells)}칸) 밖")
+            s, c = cells[i - 1]
+            return book.value(s, c)
+        if len(args) != 3:
+            raise Err(f"INDEX 인자가 {len(args)}개")
+        # 세 인자 꼴. 행이 0 이면 그 열 전체, 열이 0 이면 그 행 전체를 돌려준다 —
+        # COUNTIFS 에 '고른 열' 을 통째로 넘기려고 쓴다.
+        r, c = int(num(args[1])), int(num(args[2]))
+        c1 = column_index_from_string(rg.col1)
+        c2 = column_index_from_string(rg.col2)
+        lo_c, hi_c = min(c1, c2), max(c1, c2)
+        lo_r, hi_r = min(rg.row1, rg.row2), max(rg.row1, rg.row2)
+        if not 0 <= r <= hi_r - lo_r + 1 or not 0 <= c <= hi_c - lo_c + 1:
+            raise Err(f"INDEX 위치({r},{c}) 가 범위 밖")
+        if r == 0 and c == 0:
+            return rg
+        if r == 0:
+            L = get_column_letter(lo_c + c - 1)
+            return Range(rg.sheet, L, lo_r, L, hi_r)
+        if c == 0:
+            return Range(rg.sheet, get_column_letter(lo_c), lo_r + r - 1,
+                         get_column_letter(hi_c), lo_r + r - 1)
+        return book.value(rg.sheet,
+                          f"{get_column_letter(lo_c + c - 1)}{lo_r + r - 1}")
+    if name == "MATCH":
+        if len(args) < 2:
+            raise Err("MATCH 인자가 모자람")
+        if len(args) > 2 and int(num(args[2])) != 0:
+            raise Err("MATCH 는 정확히 맞는 것 찾기(0)만 다룬다")
+        want = args[0]
+        for i, v in enumerate(values(args[1]), start=1):
+            if v is None and want is None:
+                return float(i)
+            if v is not None and as_text(v) == as_text(want):
+                return float(i)
+        raise Err(f"MATCH: '{want}' 를 찾지 못함")
     if name == "ISNUMBER":
         v = args[0]
         return isinstance(v, (int, float, dt.date, dt.datetime)) and not isinstance(v, bool)

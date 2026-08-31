@@ -1970,6 +1970,268 @@ def sheet_source(ws, src_path):
     ws.row_dimensions[T.HEADER_ROW].height = 40
 
 
+# ───────────────────────────────────────────────── 표 만들기 · 피벗 안내
+
+# 화면(HTML) 프리셋과 같은 표를 엑셀 안에서 바로 만들기 위한 자리.
+# 고를 수 있는 항목만 추린다 — 이력ID 처럼 값이 다 다른 열은 표가 되지 않는다.
+PIVOT_FIELDS = {
+    "유학이력": ["학기", "학년도", "구분", "유학 지역", "유학 학교", "학년",
+                "성별", "거주 유형", "원 지역", "학기 상태", "다음 학기", "종료 사유"],
+    "신청이력": ["접수 학기", "접수 학년도", "모집 차수", "도달 단계", "배정 판정",
+                "미선정 사유(분류)", "유학 지역", "유학 학교", "원 지역",
+                "거주 유형", "성별"],
+}
+
+# 화면에 담아 둔 표를 엑셀 피벗으로 옮기는 법
+PIVOT_PRESETS = [
+    ("시군별 연도별", "유학이력", "유학 지역", "학년도"),
+    ("시군별 학교별 연도별", "유학이력", "유학 지역 + 유학 학교", "학년도"),
+    ("학교별 연도별", "유학이력", "유학 학교", "학년도"),
+    ("신규 유학생 시군별 연도별", "유학이력", "유학 지역", "학년도"),
+    ("거주 유형별 연도별", "유학이력", "거주 유형", "학년도"),
+    ("원적지별 연도별", "유학이력", "원 지역", "학년도"),
+    ("학년별 연도별", "유학이력", "학년", "학년도"),
+    ("성별 연도별", "유학이력", "성별", "학년도"),
+    ("시군별 학기별", "유학이력", "유학 지역", "학기"),
+    ("학교별 학기별", "유학이력", "유학 학교", "학기"),
+    ("희망학교별 접수·배정", "신청이력", "유학 학교", "배정 판정"),
+    ("시군별 희망학교별 접수·배정", "신청이력", "유학 지역 + 유학 학교", "배정 판정"),
+    ("희망학교별 연도별 접수", "신청이력", "유학 학교", "접수 학년도"),
+    ("미선정 사유별 연도별", "신청이력", "미선정 사유(분류)", "접수 학년도"),
+]
+
+LIST_ROWS = 90          # 한 항목의 값이 몇 가지까지 나올 수 있나(유학 학교가 가장 많다)
+PIVOT_ROWS = 80         # 표에 그릴 행 수
+PIVOT_COLS = 24         # 표에 그릴 열 수
+
+
+def sheet_lists(ws, data):
+    """항목마다 나올 수 있는 값을 미리 뽑아 둔다 — '표 만들기' 가 여기서 읽는다."""
+    ws.sheet_view.showGridLines = False
+    col = 1
+    where = {}
+    for src, fields in PIVOT_FIELDS.items():
+        for f in fields:
+            vals = sorted({str(v) for v in field_values(data, src, f) if v not in (None, "")})
+            where[(src, f)] = get_column_letter(col)
+            put(ws, 1, col, f, bold=True, fill=SUB_FILL)
+            for i, v in enumerate(vals[:LIST_ROWS], start=2):
+                put(ws, i, col, v, align="left")
+            ws.column_dimensions[get_column_letter(col)].width = 16
+            col += 1
+    ws.freeze_panes = "A2"
+    return where
+
+
+def field_values(data, src, field):
+    """항목의 값 목록. 시트에 적히는 값과 같은 방식으로 뽑는다."""
+    if src == "유학이력":
+        pick = {
+            "학기": lambda e: T.sem_label(e.year, e.term), "학년도": lambda e: e.year,
+            "구분": lambda e: e.kind, "유학 지역": lambda e: e.region,
+            "유학 학교": lambda e: e.school, "학년": lambda e: e.grade,
+            "성별": lambda e: e.gender, "거주 유형": lambda e: e.residence,
+            "원 지역": lambda e: e.home_region,
+        }
+        if field in pick:
+            return [pick[field](e) for e in data["enrollments"]]
+        if field == "학기 상태":
+            return ["유학중", "종료", "예정"]
+        if field == "다음 학기":
+            return ["이어짐", "학기말 종료", "학기 중 종료", "미정", "예정"]
+        if field == "종료 사유":
+            return [e.end_reason for e in data["enrollments"]]
+        return []
+    pick = {
+        "접수 학기": lambda a: T.sem_label(a.intake_year, a.intake_term) if a.intake_year else None,
+        "접수 학년도": lambda a: a.intake_year,
+        "모집 차수": lambda a: f"{a.intake_round}차" if a.intake_round else None,
+        "도달 단계": lambda a: a.stage, "배정 판정": lambda a: a.decision,
+        "미선정 사유(분류)": lambda a: a.reject_class,
+        "유학 지역": lambda a: T.s(a.raw["유학지역"]),
+        "유학 학교": lambda a: T.s(a.raw["유학학교"]),
+        "원 지역": lambda a: T.s(a.raw["원지역"]),
+        "거주 유형": lambda a: T.s(a.raw["거주유형"]),
+        "성별": lambda a: T.s(a.raw["성별"]),
+    }
+    return [pick[field](a) for a in data["applications"]] if field in pick else []
+
+
+def sheet_pivot(ws, data, src, where):
+    """행·열 항목을 고르면 바로 세어 주는 표. 피벗 없이 수식만으로 돈다."""
+    ws.sheet_view.showGridLines = False
+    headers = ENROLL_HEADERS if src == "유학이력" else APP_HEADERS
+    limit = LIMIT_ENROLL if src == "유학이력" else LIMIT_APP
+    fields = PIVOT_FIELDS[src]
+    last = get_column_letter(len(headers))
+    block = f"'{src}'!$A$2:${last}${limit}"
+    head = f"'{src}'!$A$1:${last}$1"
+
+    ws.column_dimensions["A"].width = 2
+    ws.column_dimensions["B"].width = 24
+    for c in range(3, 3 + PIVOT_COLS + 1):
+        ws.column_dimensions[get_column_letter(c)].width = 11
+
+    put(ws, 2, 2, f"표 만들기 — {src}", bold=True, size=14, align="left",
+        color=INK).border = None
+    ws.cell(2, 2).fill = PatternFill()
+    put(ws, 3, 2, "노란 칸 두 개만 고르면 아래 표가 바로 다시 셉니다. "
+                  "표를 복사해 보고서에 붙여 쓰세요.",
+        align="left", size=9).fill = PatternFill()
+    ws.cell(3, 2).border = None
+
+    put(ws, 5, 2, "행 기준", bold=True, fill=SUB_FILL)
+    put(ws, 5, 3, fields[3] if len(fields) > 3 else fields[0], fill=INPUT_FILL, bold=True)
+    put(ws, 6, 2, "열 기준", bold=True, fill=SUB_FILL)
+    put(ws, 6, 3, fields[0], fill=INPUT_FILL, bold=True)
+    for r, opts in ((5, fields), (6, fields)):
+        dv = DataValidation(type="list", formula1='"' + ",".join(opts) + '"',
+                            allow_blank=False, showErrorMessage=True)
+        ws.add_data_validation(dv)
+        dv.add(f"C{r}")
+    put(ws, 5, 4, "← 세로로 늘어놓을 항목", align="left", size=9).fill = PatternFill()
+    put(ws, 6, 4, "← 가로로 늘어놓을 항목", align="left", size=9).fill = PatternFill()
+    for r in (5, 6):
+        ws.cell(r, 4).border = None
+
+    note = ("한 줄 = 학생 한 명의 한 학기입니다. 열 기준을 '학기' 로 두면 인원과 같고, "
+            "'학년도' 로 두면 두 학기 다닌 학생이 두 번 세어집니다(연인원). "
+            "학년도 단위로 중복 없이 센 값은 '연도별현황' 시트에 있습니다."
+            if src == "유학이력" else
+            "한 줄 = 신청서 한 장입니다. 같은 학생이 여러 번 신청했으면 그만큼 세어집니다.")
+    put(ws, 7, 2, note, align="left", size=9).fill = PatternFill()
+    ws.cell(7, 2).border = None
+
+    r0, c0 = 10, 3                      # 표 왼쪽 위(머리글 줄 r0, 첫 값 칸 c0)
+    lists = f"'표목록'!$A$2:$ZZ${LIST_ROWS + 1}"
+    lhead = "'표목록'!$A$1:$ZZ$1"
+    # 항목 이름이 두 자료에 같이 있어 목록 열이 갈린다 — 자료마다 자기 블록만 본다
+    first = where[(src, fields[0])]
+    last_list = where[(src, fields[-1])]
+    lists = f"'표목록'!${first}$2:${last_list}${LIST_ROWS + 1}"
+    lhead = f"'표목록'!${first}$1:${last_list}$1"
+
+    # 고른 항목의 값이 표 칸 수보다 많으면 뒤가 잘린다 — 잘렸을 때만 알린다
+    def spill(axis, pick, cap, way):
+        return (f'=IF(COUNTA(INDEX({lists},0,MATCH({pick},{lhead},0)))>{cap},'
+                f'"※ {axis} \'"&{pick}&"\' 은 값이 "'
+                f'&COUNTA(INDEX({lists},0,MATCH({pick},{lhead},0)))'
+                f'&"가지라 앞 {cap}가지만 보입니다 — {way}","")')
+
+    c = put(ws, 8, 2, spill("행 기준", "$C$5", PIVOT_ROWS, "행·열을 바꿔 보세요"),
+            align="left", size=9, color="C00000")
+    c.fill, c.border = PatternFill(), None
+    c = put(ws, 9, 2, spill("열 기준", "$C$6", PIVOT_COLS, "행 기준으로 옮겨 보세요"),
+            align="left", size=9, color="C00000")
+    c.fill, c.border = PatternFill(), None
+
+    put(ws, r0, 2, "", fill=HEAD_FILL)
+    ws.cell(r0, 2).value = f"={'$C$5'}"
+    ws.cell(r0, 2).font = Font(name=FONT, size=10, bold=True, color="FFFFFF")
+    for j in range(PIVOT_COLS):
+        put(ws, r0, c0 + j,
+            f'=IFERROR(INDEX({lists},{j + 1},MATCH($C$6,{lhead},0)),"")',
+            bold=True, fill=HEAD_FILL, color="FFFFFF")
+    put(ws, r0, c0 + PIVOT_COLS, "합계", bold=True, fill=HEAD_FILL, color="FFFFFF")
+
+    rowcol = f'INDEX({block},0,MATCH($C$5,{head},0))'
+    colcol = f'INDEX({block},0,MATCH($C$6,{head},0))'
+    for i in range(PIVOT_ROWS):
+        r = r0 + 1 + i
+        put(ws, r, 2, f'=IFERROR(INDEX({lists},{i + 1},MATCH($C$5,{lhead},0)),"")',
+            align="left", fill=BAND if i % 2 else None)
+        for j in range(PIVOT_COLS):
+            c = c0 + j
+            L = get_column_letter(c)
+            put(ws, r, c,
+                f'=IF(OR($B{r}="",{L}${r0}=""),"",'
+                f'COUNTIFS({rowcol},$B{r},{colcol},{L}${r0}))',
+                fmt="#,##0", fill=BAND if i % 2 else None)
+        L1, L2 = get_column_letter(c0), get_column_letter(c0 + PIVOT_COLS - 1)
+        put(ws, r, c0 + PIVOT_COLS,
+            f'=IF($B{r}="","",SUM({L1}{r}:{L2}{r}))',
+            bold=True, fmt="#,##0", fill=SUB_FILL)
+
+    rend = r0 + PIVOT_ROWS
+    put(ws, rend + 1, 2, "합계", bold=True, fill=SUB_FILL)
+    for j in range(PIVOT_COLS + 1):
+        L = get_column_letter(c0 + j)
+        put(ws, rend + 1, c0 + j, f"=SUM({L}{r0 + 1}:{L}{rend})",
+            bold=True, fmt="#,##0", fill=SUB_FILL)
+    ws.freeze_panes = f"C{r0 + 1}"
+
+
+def sheet_pivot_guide(ws):
+    """엑셀 피벗 테이블로 같은 표를 만드는 법."""
+    ws.sheet_view.showGridLines = False
+    ws.column_dimensions["A"].width = 2
+    for c, w in zip("BCDE", (28, 14, 26, 18)):
+        ws.column_dimensions[c].width = w
+
+    def line(r, text, *, bold=False, size=10, color="000000"):
+        c = ws.cell(r, 2, text)
+        c.font = Font(name=FONT, size=size, bold=bold, color=color)
+        c.alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
+        ws.merge_cells(start_row=r, start_column=2, end_row=r, end_column=5)
+        return c
+
+    line(2, "피벗 테이블로 표 만들기", bold=True, size=15, color=INK)
+    ws.row_dimensions[2].height = 24
+    for i, t in enumerate([
+        "옆의 '표 만들기' 시트는 수식으로 도는 간이 표입니다. 항목을 더 겹쳐 보거나 "
+        "클릭으로 걸러 보려면 엑셀 피벗 테이블이 편합니다. 매크로가 아니라 기본 기능이라 "
+        "업무 PC 에서도 그대로 씁니다.",
+        "",
+        "만드는 법 — 한 번만 해 두면 그 뒤로는 새로 고침만 하면 됩니다.",
+        "  ① '유학이력' 시트를 열고 아무 칸이나 누릅니다",
+        "  ② 삽입 → 피벗 테이블 → 새 워크시트 → 확인",
+        "  ③ 오른쪽 목록에서 아래 표대로 끌어다 놓습니다",
+        "  ④ 값 자리에는 '학생ID' 를 넣고, 마우스 오른쪽 → 값 요약 기준 → 개수",
+        "  ⑤ 삽입 → 슬라이서 에서 시군·학년도·거주 유형을 고르면 클릭으로 걸러집니다",
+        "",
+        "원본 명단이 바뀌면 워크북을 다시 만든 뒤, 피벗에서 데이터 → 모두 새로 고침(Ctrl+Alt+F5).",
+        "'유학이력'·'신청이력'·'학생현황' 은 엑셀 '표' 로 등록해 두어, 줄이 늘어도 "
+        "피벗 범위가 저절로 따라옵니다.",
+    ], start=4):
+        line(i, t, size=9 if t.startswith(" ") else 10)
+
+    r = 17
+    for i, h in enumerate(("화면(HTML)의 표", "자료", "행", "열"), start=2):
+        c = ws.cell(r, i, h)
+        c.font = Font(name=FONT, size=10, bold=True, color="FFFFFF")
+        c.fill, c.border = HEAD_FILL, BOX
+        c.alignment = Alignment(horizontal="center", vertical="center")
+    for i, (name, src, row, col) in enumerate(PIVOT_PRESETS):
+        rr = r + 1 + i
+        fill = BAND if i % 2 else None
+        put(ws, rr, 2, name, align="left", fill=fill)
+        put(ws, rr, 3, src, fill=fill)
+        put(ws, rr, 4, row, align="left", fill=fill)
+        put(ws, rr, 5, col, align="left", fill=fill)
+    put(ws, r + 1 + len(PIVOT_PRESETS) + 1, 2,
+        "※ '신규 유학생 …' 은 행에 넣기 전에 '구분' 을 필터로 옮겨 '신규' 만 남기세요.",
+        align="left", size=9).fill = PatternFill()
+    ws.cell(r + 1 + len(PIVOT_PRESETS) + 1, 2).border = None
+    ws.freeze_panes = f"A{r + 1}"
+
+
+def add_tables(wb):
+    """데이터 시트를 엑셀 '표' 로 등록한다 — 피벗 범위가 저절로 따라온다."""
+    from openpyxl.worksheet.table import Table, TableStyleInfo
+
+    style = TableStyleInfo(name="TableStyleLight9", showRowStripes=True)
+    for i, (title, name) in enumerate(
+            [("학생현황", "학생표"), ("유학이력", "유학이력표"), ("신청이력", "신청이력표")], start=1):
+        ws = wb[title]
+        last = get_column_letter(ws.max_column)
+        # 시트 자동 필터와 표를 겹쳐 두면 엑셀이 파일을 고치려 든다. 표가 자기
+        # 필터를 갖고 있으니 시트 쪽 필터는 걷어 낸다.
+        ws.auto_filter.ref = None
+        t = Table(displayName=name, ref=f"A1:{last}{ws.max_row}")
+        t.tableStyleInfo = style
+        ws.add_table(t)
+
+
 def main(src, out):
     data = T.build(src)
     wb = openpyxl.Workbook()
@@ -1989,12 +2251,18 @@ def main(src, out):
     sheet_region(wb.create_sheet("지역별현황"), data)
     sheet_school(wb.create_sheet("학교별현황"), data)
     sheet_cost(wb.create_sheet("체제비관리"), data)
+    where = sheet_lists(wb.create_sheet("표목록"), data)
+    sheet_pivot(wb.create_sheet("표 만들기"), data, "유학이력", where)
+    sheet_pivot(wb.create_sheet("표 만들기(신청)"), data, "신청이력", where)
+    sheet_pivot_guide(wb.create_sheet("피벗 안내"))
     sheet_settings(wb.create_sheet("설정"))
     sheet_issues(wb.create_sheet("데이터검증"), data)
     sheet_source(wb.create_sheet("원본_전체"), src)
 
+    add_tables(wb)
     for ws in wb.worksheets:
         ws.sheet_properties.tabColor = ACCENT if ws.title in {"학생현황", "유학이력", "신청이력"} else None
+    wb["표목록"].sheet_state = "hidden"
     wb.save(out)
     print(f"저장: {out}")
     print(f"  학생 {len(data['students'])} / 신청 {len(data['applications'])} / "

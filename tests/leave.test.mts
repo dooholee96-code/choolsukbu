@@ -108,20 +108,23 @@ test('하원 시각이 다른 기기로 넘어간다', async () => {
 
 test('퇴원과 구분도 다른 기기로 넘어간다', async () => {
   const db = await open();
+  const local = await readAll(db);
+
+  // 상대 기기가 '나중에' 고쳤다는 것은 이 기기의 기록 시각보다 늦다는 뜻이다.
+  // 날짜를 박아 두면 안 된다 — 처음에는 '2026-09-01'이 미래였는데 그 날이 지나자
+  // 로컬 기록(지금 시각)이 더 새것이 되어 이 테스트가 저절로 깨졌다.
+  const later = new Date(Date.parse(local.students[0].updatedAt as string) + 60_000).toISOString();
 
   const remote: SyncSnapshot = {
     version: SNAPSHOT_VERSION,
     deviceId: 'other',
-    exportedAt: '2026-08-17T12:00:00.000Z',
-    students: [
-      { ...student, withdrawnAt: '2026-08-17', note: '월수반', updatedAt: '2026-09-01T00:00:00.000Z' },
-    ],
+    exportedAt: later,
+    students: [{ ...student, withdrawnAt: '2026-08-17', note: '월수반', updatedAt: later }],
     attendance: [],
     makeups: [],
     exceptions: [],
   };
 
-  const local = await readAll(db);
   await applyMerge(db, local, mergeSnapshots(local, [remote]));
 
   const [row] = (await readAll(db)).students;

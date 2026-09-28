@@ -2,6 +2,7 @@ import React, { useCallback } from 'react';
 import styled, { useTheme } from 'styled-components/native';
 import { Ionicons } from '@expo/vector-icons';
 import Button from './common/Button';
+import PressableScale from './common/PressableScale';
 import { MakeUp, Student } from '../types';
 import { formatDateLabel } from '../utils/date';
 import { studentSubtitle } from '../utils/student';
@@ -43,8 +44,14 @@ const NameText = styled.Text`
   flex: 1;
 `;
 
-const DeleteAction = styled.TouchableOpacity`
-  padding: 4px;
+/* 휴지통은 18pt 아이콘이라 그대로는 손가락으로 노리기 어렵다. 누를 자리를 넓힌다. */
+const DeleteAction = styled(PressableScale).attrs({
+  pressScale: 0.85,
+  pressOpacity: 0.6,
+  hitSlop: 10,
+})`
+  padding: 6px;
+  border-radius: 12px;
 `;
 
 const MetaRow = styled.View`

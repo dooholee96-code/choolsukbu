@@ -8,6 +8,7 @@ import { format } from 'date-fns';
 import { Ionicons } from '@expo/vector-icons';
 import { useData } from '../hooks/useData';
 import Button from '../components/common/Button';
+import PressableScale from '../components/common/PressableScale';
 import { formatDateLabel, formatTimeLabel } from '../utils/date';
 import { buildRoster, closureNote, isClosedOn } from '../utils/roster';
 import { isWithdrawnOn, studentSubtitle } from '../utils/student';
@@ -75,7 +76,12 @@ const DateLabel = styled.Text`
   color: ${({ theme }) => theme.colors.textPrimary};
 `;
 
-const StepButton = styled.TouchableOpacity`
+/* 날짜를 하루씩 넘긴다. 연달아 누르는 버튼이라 한 번 한 번이 손에 잡혀야 한다. */
+const StepButton = styled(PressableScale).attrs({
+  pressScale: 0.85,
+  haptic: 'select' as const,
+  hitSlop: 8,
+})`
   padding: 8px;
 `;
 
@@ -107,7 +113,7 @@ const RowSub = styled.Text`
   margin-top: 2px;
 `;
 
-const RowAction = styled.TouchableOpacity`
+const RowAction = styled(PressableScale).attrs({ pressScale: 0.9 })`
   padding-vertical: 6px;
   padding-horizontal: 10px;
   border-radius: 12px;

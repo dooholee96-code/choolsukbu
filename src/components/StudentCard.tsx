@@ -1,7 +1,10 @@
 import React, { useCallback } from 'react';
+import { Animated, StyleSheet } from 'react-native';
 import styled, { useTheme } from 'styled-components/native';
 import { Student, Attendance } from '../types';
 import Button from './common/Button';
+import PressableScale from './common/PressableScale';
+import { usePop } from '../hooks/useMotion';
 import { arrivalOffsetLabel, departureOffsetLabel, formatTimeLabel } from '../utils/date';
 import { scheduleLines } from '../utils/schedule';
 import { studentSubtitle, withdrawnLabel } from '../utils/student';
@@ -43,6 +46,12 @@ interface StudentCardProps {
    * 카드에서 알린다 — 둘 중 누구에게 찍는지 모르는 채로 두는 것이 제일 위험하다.
    */
   hasNameTwin?: boolean;
+  /**
+   * 바뀔 때마다 카드가 한 번 톡 튄다. 부모가 방금 손댄 카드에만 새 값을 준다.
+   * 등원을 찍으면 카드가 다른 칸으로 옮겨 가는데, 튀지 않으면 어디로 갔는지 눈이
+   * 따라가지 못한다.
+   */
+  pulse?: number;
 }
 
 /*
@@ -119,12 +128,18 @@ const StatusContainer = styled.View`
 
 const ActionStack = styled.View`
   align-items: flex-end;
-  gap: 6px;
+  gap: 8px;
 `;
 
-const TextAction = styled.TouchableOpacity`
-  padding-vertical: 4px;
-  padding-horizontal: 6px;
+/*
+ * 글자뿐인 작은 동작(결석·취소). 예전 크기는 24pt 남짓이라 아이패드에서 손가락으로
+ * 노리기 어려웠다. 누를 자리는 키우되, 위아래로 붙은 다른 동작과 누름 범위가 겹치지
+ * 않게 hitSlop은 옆으로만 넉넉히 준다 (TEXT_ACTION_SLOP).
+ */
+const TextAction = styled(PressableScale)`
+  padding-vertical: 8px;
+  padding-horizontal: 12px;
+  border-radius: 12px;
 `;
 
 const TextActionLabel = styled.Text<{ $tone: 'danger' | 'muted' }>`
@@ -211,8 +226,30 @@ const OffsetText = styled.Text`
   margin-top: 2px;
 `;
 
-const TimeButton = styled.TouchableOpacity`
-  padding-vertical: 2px;
+const TimeButton = styled(PressableScale)`
+  padding-vertical: 4px;
+  padding-horizontal: 6px;
+  border-radius: 10px;
+  align-items: flex-end;
+`;
+
+/*
+ * 하원. 등원 완료 카드에서 가장 자주 누르는 것이라 글자가 아니라 테두리가 있는
+ * 알로 만든다. 바로 아래의 '취소'와 모양이 같으면 손이 헷갈린다.
+ */
+const CheckOutAction = styled(PressableScale)`
+  margin-top: 6px;
+  padding-vertical: 7px;
+  padding-horizontal: 16px;
+  border-radius: 16px;
+  border-width: 1px;
+  border-color: ${({ theme }) => theme.colors.primaryStrong};
+`;
+
+const CheckOutLabel = styled.Text`
+  font-size: 13px;
+  font-family: ${({ theme }) => theme.fonts.bold};
+  color: ${({ theme }) => theme.colors.primaryStrong};
 `;
 
 /** 등원·하원을 구분해 주는 앞머리. 시각이 둘이면 어느 쪽인지 늘 보여야 한다. */
@@ -246,9 +283,18 @@ const getInitials = (name: string) => {
   return initials;
 };
 
-const PressableCard = styled.TouchableOpacity`
+const PressableCard = styled(PressableScale)`
   flex-grow: 1;
 `;
+
+/** 옆으로만 넉넉히. 위아래로 넓히면 쌓여 있는 이웃 동작의 자리를 빼앗는다. */
+const TEXT_ACTION_SLOP = { top: 2, bottom: 2, left: 10, right: 10 };
+const TIME_SLOP = { top: 0, bottom: 0, left: 10, right: 10 };
+
+const styles = StyleSheet.create({
+  /* 카드가 한 행에서 높이를 맞추려면 감싸는 뷰도 전부 늘어나야 한다 (CardContainer 참고). */
+  grow: { flexGrow: 1 },
+});
 
 const StudentCard: React.FC<StudentCardProps> = ({
   student,
@@ -265,7 +311,10 @@ const StudentCard: React.FC<StudentCardProps> = ({
   onCheckOut,
   onEditLeaveTime,
   hasNameTwin = false,
+  pulse,
 }) => {
+  const pop = usePop(pulse);
+
   const handleCheckIn = useCallback(() => onCheckIn?.(student), [onCheckIn, student]);
   const handleMarkAbsent = useCallback(() => onMarkAbsent?.(student), [onMarkAbsent, student]);
   const handleUndo = useCallback(() => onUndo?.(student), [onUndo, student]);
@@ -355,6 +404,9 @@ const StudentCard: React.FC<StudentCardProps> = ({
             {onEditTime ? (
               <TimeButton
                 onPress={handleEditTime}
+                pressScale={0.92}
+                pressOpacity={0.6}
+                hitSlop={TIME_SLOP}
                 accessibilityRole="button"
                 accessibilityLabel={`${student.name} 등원 시각 수정`}
               >
@@ -371,6 +423,9 @@ const StudentCard: React.FC<StudentCardProps> = ({
               <TimeButton
                 onPress={handleEditLeaveTime}
                 disabled={!onEditLeaveTime}
+                pressScale={0.92}
+                pressOpacity={0.6}
+                hitSlop={TIME_SLOP}
                 accessibilityRole="button"
                 accessibilityLabel={`${student.name} 하원 시각 수정`}
               >
@@ -380,18 +435,24 @@ const StudentCard: React.FC<StudentCardProps> = ({
             )}
             {leaveOffset && <OffsetText>{leaveOffset}</OffsetText>}
             {attended && !attendance.leaveTime && onCheckOut && (
-              <TextAction
+              <CheckOutAction
                 onPress={handleCheckOut}
+                pressScale={0.9}
+                hitSlop={TEXT_ACTION_SLOP}
                 accessibilityRole="button"
                 accessibilityLabel={`${student.name} 하원 처리`}
               >
-                <TextActionLabel $tone="muted">하원</TextActionLabel>
-              </TextAction>
+                <CheckOutLabel>하원</CheckOutLabel>
+              </CheckOutAction>
             )}
 
             {onUndo ? (
               <TextAction
                 onPress={handleUndo}
+                pressScale={0.88}
+                pressOpacity={0.55}
+                hitSlop={TEXT_ACTION_SLOP}
+                style={{ marginTop: 8 }}
                 accessibilityRole="button"
                 accessibilityLabel={`${student.name} 기록 취소`}
               >
@@ -414,6 +475,9 @@ const StudentCard: React.FC<StudentCardProps> = ({
             {onMarkAbsent && (
               <TextAction
                 onPress={handleMarkAbsent}
+                pressScale={0.88}
+                pressOpacity={0.55}
+                hitSlop={TEXT_ACTION_SLOP}
                 accessibilityRole="button"
                 accessibilityLabel={`${student.name} 결석 처리`}
               >
@@ -426,14 +490,21 @@ const StudentCard: React.FC<StudentCardProps> = ({
     </CardContainer>
   );
 
-  const body = withdrawn === '' ? card : <Faded>{card}</Faded>;
+  // 튀는 뷰는 늘 둔다. pulse가 있을 때만 감싸면 트리 모양이 바뀌어 카드가
+  // 통째로 새로 만들어지고, 그 순간 한 번 깜빡인다.
+  const body = (
+    <Animated.View style={[styles.grow, { transform: [{ scale: pop }] }]}>
+      {withdrawn === '' ? card : <Faded>{card}</Faded>}
+    </Animated.View>
+  );
 
   if (!onPress) return body;
 
+  // 넓은 카드는 조금만 눌린다. 같은 비율이면 작은 버튼보다 몇 배를 움직인다.
   return (
     <PressableCard
       onPress={handlePress}
-      activeOpacity={0.7}
+      pressScale={0.98}
       accessibilityRole="button"
       accessibilityLabel={`${student.name} 정보 수정`}
     >

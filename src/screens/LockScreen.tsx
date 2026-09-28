@@ -1,8 +1,12 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { Animated } from 'react-native';
 import styled from 'styled-components/native';
 import { Ionicons } from '@expo/vector-icons';
 import { authenticateWithBiometrics, hasBiometrics, verifyPin } from '../security/lock';
 import ForestBackground from '../components/common/ForestBackground';
+import PressableScale from '../components/common/PressableScale';
+import { popFrom, useAnimatedNumber, useShake } from '../hooks/useMotion';
+import { haptic } from '../utils/haptics';
 
 export const PIN_LENGTH = 4;
 
@@ -54,7 +58,8 @@ const Pad = styled.View`
   gap: 12px;
 `;
 
-const Key = styled.TouchableOpacity`
+/* 숫자판. 전화기 키패드처럼 누를 때마다 쑥 들어가야 몇 번 눌렀는지 손이 안다. */
+const Key = styled(PressableScale).attrs({ pressScale: 0.88, haptic: 'tap' as const })`
   width: 74px;
   height: 62px;
   border-radius: ${({ theme }) => theme.borderRadius.medium}px;
@@ -71,7 +76,7 @@ const KeyText = styled.Text`
   color: ${({ theme }) => theme.colors.textPrimary};
 `;
 
-const BiometricButton = styled.TouchableOpacity`
+const BiometricButton = styled(PressableScale).attrs({ pressScale: 0.95 })`
   flex-direction: row;
   align-items: center;
   gap: 8px;
@@ -84,6 +89,32 @@ const BiometricLabel = styled.Text`
   font-size: 15px;
   color: ${({ theme }) => theme.colors.primaryStrong};
 `;
+
+/** 빈 칸. 0을 가운데 두려고 자리만 차지한다. 누를 것이 아니므로 버튼이 아니다. */
+const KeySpacer = styled.View`
+  width: 74px;
+  height: 62px;
+`;
+
+/**
+ * 점 하나. 채워지는 순간 톡 튀어나온다 — 화면을 보지 않고 쳐도 몇 자리 들어갔는지
+ * 곁눈으로 잡힌다.
+ */
+const PinDot: React.FC<{ filled: boolean }> = ({ filled }) => {
+  const scale = useAnimatedNumber(1);
+  const was = useRef(filled);
+
+  useEffect(() => {
+    if (filled && !was.current) popFrom(scale, 0.4);
+    was.current = filled;
+  }, [filled, scale]);
+
+  return (
+    <Animated.View style={{ transform: [{ scale }] }}>
+      <Dot $filled={filled} />
+    </Animated.View>
+  );
+};
 
 interface Props {
   onUnlock: () => void;
@@ -99,9 +130,15 @@ const LockScreen: React.FC<Props> = ({ onUnlock, autoPrompt }) => {
   const [error, setError] = useState(false);
   const [checking, setChecking] = useState(false);
   const [biometricsReady, setBiometricsReady] = useState(false);
+  // 틀리면 점 줄이 고개를 젓는다. 글자만 바뀌면 PIN을 치느라 숫자판을 보고 있던
+  // 눈에는 안 들어온다.
+  const [shakeX, shake] = useShake();
 
   const tryBiometrics = useCallback(async () => {
-    if (await authenticateWithBiometrics()) onUnlock();
+    if (await authenticateWithBiometrics()) {
+      haptic('success');
+      onUnlock();
+    }
   }, [onUnlock]);
 
   // 앱을 열거나 자리를 비웠다 돌아온 경우에만 자동으로 물어본다.
@@ -129,18 +166,21 @@ const LockScreen: React.FC<Props> = ({ onUnlock, autoPrompt }) => {
       setChecking(true);
       try {
         if (await verifyPin(next)) {
+          haptic('success');
           setPin('');
           onUnlock();
           return;
         }
         // 틀리면 즉시 비운다. 지우고 다시 치게 하면 손이 한 번 더 간다.
+        haptic('error');
+        shake();
         setPin('');
         setError(true);
       } finally {
         setChecking(false);
       }
     },
-    [pin, checking, onUnlock]
+    [pin, checking, onUnlock, shake]
   );
 
   const back = useCallback(() => {
@@ -156,11 +196,13 @@ const LockScreen: React.FC<Props> = ({ onUnlock, autoPrompt }) => {
       <Title>출석부</Title>
       <Hint $error={error}>{error ? 'PIN이 맞지 않습니다' : 'PIN을 입력하세요'}</Hint>
 
-      <Dots>
-        {Array.from({ length: PIN_LENGTH }, (_, index) => (
-          <Dot key={index} $filled={index < pin.length} />
-        ))}
-      </Dots>
+      <Animated.View style={{ transform: [{ translateX: shakeX }] }}>
+        <Dots>
+          {Array.from({ length: PIN_LENGTH }, (_, index) => (
+            <PinDot key={index} filled={index < pin.length} />
+          ))}
+        </Dots>
+      </Animated.View>
 
       <Pad>
         {['1', '2', '3', '4', '5', '6', '7', '8', '9'].map((digit) => (
@@ -173,9 +215,7 @@ const LockScreen: React.FC<Props> = ({ onUnlock, autoPrompt }) => {
             <KeyText>{digit}</KeyText>
           </Key>
         ))}
-        <Key disabled style={{ opacity: 0 }} accessibilityElementsHidden>
-          <KeyText> </KeyText>
-        </Key>
+        <KeySpacer />
         <Key onPress={() => press('0')} accessibilityRole="button" accessibilityLabel="0">
           <KeyText>0</KeyText>
         </Key>

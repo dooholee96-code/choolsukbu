@@ -1,6 +1,6 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import styled from 'styled-components/native';
-import { Platform, SectionList, View } from 'react-native';
+import { Animated, Platform, SectionList, View } from 'react-native';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { format } from 'date-fns';
 import { Ionicons } from '@expo/vector-icons';
@@ -11,11 +11,14 @@ import { useResponsive } from '../hooks/useResponsive';
 import Screen from '../components/common/Screen';
 import GridRow from '../components/common/GridRow';
 import StudentCard from '../components/StudentCard';
-import { isTimeWithinRange, getCurrentTime } from '../utils/date';
+import PressableScale from '../components/common/PressableScale';
+import { useBump } from '../hooks/useMotion';
+import { haptic, HapticKind } from '../utils/haptics';
+import { isTimeWithinRange, getCurrentTime, formatTimeLabel } from '../utils/date';
 import { buildRoster, closureNote, isClosedOn, RosterEntry } from '../utils/roster';
 import { duplicateNames } from '../utils/student';
 import { chunk } from '../utils/array';
-import { confirm } from '../utils/dialog';
+import { confirm, notify } from '../utils/dialog';
 import { Student, Attendance } from '../types';
 
 const Header = styled.View`
@@ -38,7 +41,7 @@ const TitleText = styled.Text`
   color: ${({ theme }) => theme.colors.textPrimary};
 `;
 
-const HeaderAction = styled.TouchableOpacity`
+const HeaderAction = styled(PressableScale)`
   flex-direction: row;
   align-items: center;
   gap: 6px;
@@ -50,7 +53,7 @@ const HeaderAction = styled.TouchableOpacity`
   border-color: ${({ theme }) => theme.colors.border};
 `;
 
-const SyncLine = styled.TouchableOpacity`
+const SyncLine = styled(PressableScale)`
   flex-direction: row;
   align-items: center;
   gap: 6px;
@@ -193,6 +196,52 @@ const HomeScreen: React.FC = () => {
     edge: 'in' | 'out';
   } | null>(null);
 
+  /**
+   * 방금 손댄 카드. 그 카드만 한 번 튄다.
+   *
+   * 잠시 뒤 비운다. 남겨 두면 다른 학생을 찍어 목록이 다시 짜일 때 이 카드가 새로
+   * 그려지면서 또 튄다 — 아무것도 안 했는데 움직이는 카드는 눈을 끈다.
+   */
+  const [pulse, setPulse] = useState<{ id: string; n: number } | null>(null);
+  const pulseCount = useRef(0);
+  const pulseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const bumpCard = useCallback((studentId: string) => {
+    pulseCount.current += 1;
+    setPulse({ id: studentId, n: pulseCount.current });
+    if (pulseTimer.current) clearTimeout(pulseTimer.current);
+    pulseTimer.current = setTimeout(() => setPulse(null), 700);
+  }, []);
+
+  useEffect(
+    () => () => {
+      if (pulseTimer.current) clearTimeout(pulseTimer.current);
+    },
+    []
+  );
+
+  /**
+   * 기록 한 번. 끝나면 카드를 튀기고 햅틱을 내고, 실패하면 알린다.
+   *
+   * 예전에는 실패가 어디에도 닿지 않았다. 카드의 onPress가 돌려준 약속을 아무도
+   * 받지 않아서, 저장이 안 돼도 화면은 조용했다 — 누른 사람은 된 줄 안다.
+   * 햅틱을 결과 뒤에 내는 것도 같은 이유다. 누르자마자 '성공'을 떨면 실패한 날도
+   * 성공이라고 말하게 된다.
+   */
+  const act = useCallback(
+    async (studentId: string, task: () => Promise<unknown>, done: HapticKind, failure: string) => {
+      try {
+        await task();
+        haptic(done);
+        bumpCard(studentId);
+      } catch {
+        haptic('error');
+        notify('저장 실패', `${failure}\n다시 시도해 주세요.`);
+      }
+    },
+    [bumpCard]
+  );
+
   const closed = isClosedOn(todayExceptions);
   const note = closureNote(todayExceptions);
 
@@ -265,6 +314,9 @@ const HomeScreen: React.FC = () => {
   /** 결석은 등원이 아니므로 출석 수에서 뺀다. */
   const checkedInCount = checkedInOnSchedule.length + unexpectedArrivals.length;
 
+  /** 숫자가 바뀌면 살짝 부푼다. 카드가 옮겨 간 것과 숫자가 오른 것이 한 번에 읽힌다. */
+  const countScale = useBump(checkedInCount);
+
   const sections = useMemo<Section[]>(() => {
     if (closed) return [];
 
@@ -301,9 +353,14 @@ const HomeScreen: React.FC = () => {
           ? 'scheduled'
           : 'unexpected';
 
-      await checkInStudent(student.id, status);
+      await act(
+        student.id,
+        () => checkInStudent(student.id, status),
+        'success',
+        `${student.name} 학생의 등원을 기록하지 못했습니다.`
+      );
     },
-    [rosterById, checkInStudent]
+    [rosterById, checkInStudent, act]
   );
 
   const handleMarkAbsent = useCallback(
@@ -313,15 +370,50 @@ const HomeScreen: React.FC = () => {
         message: `${student.name} 학생을 결석 처리할까요?\n보충 건이 함께 생성됩니다.`,
         confirmLabel: '결석',
         destructive: true,
-        onConfirm: () => markAbsent(student.id),
+        onConfirm: () =>
+          act(
+            student.id,
+            () => markAbsent(student.id),
+            'warning',
+            `${student.name} 학생의 결석을 기록하지 못했습니다.`
+          ),
       });
     },
-    [markAbsent]
+    [markAbsent, act]
   );
 
+  /**
+   * 오늘 기록 취소. 한 번 더 묻는다.
+   *
+   * 되돌린 뒤 다시 등원을 누르면 **그때 시각**으로 새로 남는다. 4시에 온 학생을 6시에
+   * 실수로 취소하면 도착 시각과 하원 시각을 함께 잃는다. 바로 위에 하원 버튼이 붙으면서
+   * 잘못 누를 일도 늘었다.
+   */
   const handleUndo = useCallback(
-    (student: Student) => undoTodayAttendance(student.id),
-    [undoTodayAttendance]
+    (student: Student) => {
+      const record = attendanceByStudent.get(student.id);
+      const what =
+        record?.status === 'absent'
+          ? '결석 기록과 함께 만들어진 보충 건도 지웁니다.'
+          : record
+            ? `${formatTimeLabel(record.time)} 등원 기록${record.leaveTime ? '과 하원 시각' : ''}을 지웁니다.\n다시 등원을 누르면 그때 시각으로 새로 남습니다.`
+            : '';
+
+      confirm({
+        title: '기록 취소',
+        message: `${student.name} 학생의 오늘 기록을 취소할까요?\n${what}`,
+        confirmLabel: '취소하기',
+        destructive: true,
+        onConfirm: () =>
+          act(
+            student.id,
+            () => undoTodayAttendance(student.id),
+            'tap',
+            `${student.name} 학생의 기록을 취소하지 못했습니다.`
+          ),
+      });
+    },
+    [attendanceByStudent, undoTodayAttendance, act]
   );
 
   const handleEditTime = useCallback(
@@ -336,10 +428,14 @@ const HomeScreen: React.FC = () => {
 
   /** 지금 시각으로 하원. 대부분은 아이가 나가는 순간에 누르므로 물어볼 것이 없다. */
   const handleCheckOut = useCallback(
-    (_student: Student, attendance: Attendance) => {
-      setLeaveTime(attendance.id, getCurrentTime()).catch(() => {});
-    },
-    [setLeaveTime]
+    (student: Student, attendance: Attendance) =>
+      act(
+        student.id,
+        () => setLeaveTime(attendance.id, getCurrentTime()),
+        'success',
+        `${student.name} 학생의 하원을 기록하지 못했습니다.`
+      ),
+    [setLeaveTime, act]
   );
 
   const handleTimeChange = useCallback(
@@ -348,12 +444,20 @@ const HomeScreen: React.FC = () => {
       if (event.type === 'dismissed' || !selected || !timeTarget) return;
 
       const time = format(selected, 'HH:mm');
-      if (timeTarget.edge === 'in') updateAttendanceTime(timeTarget.attendance.id, time);
-      else setLeaveTime(timeTarget.attendance.id, time);
+      const { attendance, edge } = timeTarget;
+      act(
+        attendance.studentId,
+        () =>
+          edge === 'in'
+            ? updateAttendanceTime(attendance.id, time)
+            : setLeaveTime(attendance.id, time),
+        'select',
+        edge === 'in' ? '등원 시각을 고치지 못했습니다.' : '하원 시각을 고치지 못했습니다.'
+      );
 
       if (Platform.OS === 'ios') setTimeTarget(null);
     },
-    [timeTarget, updateAttendanceTime, setLeaveTime]
+    [timeTarget, updateAttendanceTime, setLeaveTime, act]
   );
 
   const openSchedule = useCallback(() => navigation.navigate('ScheduleModal'), [navigation]);
@@ -382,6 +486,9 @@ const HomeScreen: React.FC = () => {
       <SectionList<Student[], Section>
         sections={sections}
         keyExtractor={(row, index) => row[0]?.id ?? `row-${index}`}
+        // 목록 데이터가 그대로여도 튈 카드가 바뀌면 다시 그려야 한다. 없으면
+        // 하원·시각 수정처럼 칸을 옮기지 않는 기록에서 카드가 튀지 않는다.
+        extraData={pulse}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: 24 }}
         ListHeaderComponent={
@@ -398,6 +505,8 @@ const HomeScreen: React.FC = () => {
                   {lock.enabled && (
                     <HeaderAction
                       onPress={lock.lock}
+                      pressScale={0.9}
+                      haptic="tap"
                       accessibilityRole="button"
                       accessibilityLabel="지금 잠그기"
                     >
@@ -406,6 +515,7 @@ const HomeScreen: React.FC = () => {
                   )}
                   <HeaderAction
                     onPress={openSchedule}
+                    pressScale={0.93}
                     accessibilityRole="button"
                     accessibilityLabel="일정 관리"
                   >
@@ -417,6 +527,9 @@ const HomeScreen: React.FC = () => {
                   <SyncLine
                     onPress={handleSync}
                     disabled={syncing}
+                    pressScale={0.95}
+                    pressOpacity={0.6}
+                    hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
                     accessibilityRole="button"
                     accessibilityLabel="지금 동기화"
                   >
@@ -444,9 +557,14 @@ const HomeScreen: React.FC = () => {
                  이후 월계표 화면에서만 노출한다. */
               <SummaryCard>
                 <SummaryTitle>오늘 등원</SummaryTitle>
-                <SummaryValue>
-                  {checkedInCount} / {roster.length}
-                </SummaryValue>
+                {/* 폭을 글자에 맞춰야 글자 한가운데를 중심으로 부푼다. */}
+                <Animated.View
+                  style={{ alignSelf: 'flex-start', transform: [{ scale: countScale }] }}
+                >
+                  <SummaryValue>
+                    {checkedInCount} / {roster.length}
+                  </SummaryValue>
+                </Animated.View>
                 <StatsContainer $spread={sizeClass === 'compact'}>
                   <StatItem>
                     <StatLabel>예정</StatLabel>
@@ -487,6 +605,7 @@ const HomeScreen: React.FC = () => {
                   onCheckOut={section.checkable ? undefined : handleCheckOut}
                   onEditLeaveTime={section.checkable ? undefined : handleEditLeaveTime}
                   hasNameTwin={twins.has(student.name.trim())}
+                  pulse={pulse?.id === student.id ? pulse.n : undefined}
                 />
               );
             }}

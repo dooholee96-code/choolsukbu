@@ -5,6 +5,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { useData } from '../hooks/useData';
 import Screen from '../components/common/Screen';
+import PressableScale from '../components/common/PressableScale';
 import { Attendance, ScheduleException, Student } from '../types';
 import { formatDateLabel, formatTimeLabel } from '../utils/date';
 import { isWithdrawn, studentSubtitle } from '../utils/student';
@@ -33,7 +34,7 @@ const MonthBar = styled.View`
   margin-top: ${({ theme }) => theme.spacing.medium}px;
 `;
 
-const MonthButton = styled.TouchableOpacity`
+const MonthButton = styled(PressableScale)`
   padding: 8px;
 `;
 
@@ -82,7 +83,7 @@ const Segmented = styled.View`
   overflow: hidden;
 `;
 
-const SegmentButton = styled.TouchableOpacity<{ $active: boolean }>`
+const SegmentButton = styled(PressableScale)<{ $active: boolean }>`
   flex: 1;
   padding-vertical: 10px;
   align-items: center;
@@ -302,6 +303,9 @@ const HistoryScreen: React.FC = () => {
 
       <MonthBar>
         <MonthButton
+          pressScale={0.85}
+          haptic="select"
+          hitSlop={8}
           onPress={() => shiftMonth(-1)}
           accessibilityRole="button"
           accessibilityLabel="이전 달"
@@ -312,6 +316,9 @@ const HistoryScreen: React.FC = () => {
           {cursor.year}년 {cursor.month + 1}월
         </MonthLabel>
         <MonthButton
+          pressScale={0.85}
+          haptic="select"
+          hitSlop={8}
           onPress={() => shiftMonth(1)}
           disabled={isCurrentMonth}
           accessibilityRole="button"
@@ -349,6 +356,8 @@ const HistoryScreen: React.FC = () => {
           <SegmentButton
             key={m}
             $active={mode === m}
+            pressScale={0.97}
+            haptic={mode === m ? undefined : 'select'}
             onPress={() => setMode(m)}
             accessibilityRole="button"
             accessibilityState={{ selected: mode === m }}

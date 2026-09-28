@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { View, ActivityIndicator, Text, TouchableOpacity, Modal, Animated } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
@@ -26,7 +26,7 @@ import { useResponsive } from './src/hooks/useResponsive';
 import { useAppLock } from './src/hooks/useAppLock';
 import { AppLockContext } from './src/hooks/appLockContext';
 import type { RootStackParamList, TabParamList } from './src/types/navigation';
-import { popFrom, useAnimatedNumber } from './src/hooks/useMotion';
+import { usePopOnRise } from './src/hooks/useMotion';
 import { haptic } from './src/utils/haptics';
 
 const Tab = createBottomTabNavigator<TabParamList>();
@@ -45,7 +45,7 @@ const TAB_ICONS: Record<keyof TabParamList, [keyof typeof Ionicons.glyphMap, key
  *
  * tabBarIcon이 주는 focused로는 안 된다. 탭바는 아이콘을 '고른 모양'과 '안 고른
  * 모양' 두 벌로 겹쳐 그리고 투명도만 바꾸는데, 각 벌에 주는 focused는 늘 같은
- * 값이라 바뀌는 순간이 없다. 그래서 탭 자체가 포커스를 얻었는지(selected)를 본다.
+ * 값이라 바뀌는 순간이 없다. 그래서 탭바 안에서 이 탭이 골라졌는지(selected)를 본다.
  */
 function TabIcon({
   name,
@@ -58,13 +58,7 @@ function TabIcon({
   color: string;
   size: number;
 }) {
-  const scale = useAnimatedNumber(1);
-  const was = useRef(selected);
-
-  useEffect(() => {
-    if (selected && !was.current) popFrom(scale, 0.78);
-    was.current = selected;
-  }, [selected, scale]);
+  const scale = usePopOnRise(selected, 0.78);
 
   return (
     <Animated.View style={{ transform: [{ scale }] }}>
@@ -85,10 +79,14 @@ function TabNavigator() {
       screenOptions={({ route, navigation }) => ({
         tabBarIcon: ({ focused, color, size }) => {
           const [active, inactive] = TAB_ICONS[route.name] ?? ['help', 'help'];
+          // isFocused()가 아니라 탭바 자신의 상태를 본다. isFocused()는 위의 스택까지
+          // 따지므로, 모달이 떠 있는 동안 탭바가 다시 그려지면(키보드 등) false가 됐다가
+          // 모달이 닫힐 때 true로 돌아와 아무도 누르지 않은 탭이 튄다.
+          const { index, routes } = navigation.getState();
           return (
             <TabIcon
               name={focused ? active : inactive}
-              selected={navigation.isFocused()}
+              selected={routes[index]?.key === route.key}
               color={color}
               size={size}
             />

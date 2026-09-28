@@ -101,6 +101,9 @@ export const usePop = (pulse: number | undefined, from = 0.94): Animated.Value =
 /**
  * 값이 바뀌면 살짝 부풀었다 돌아온다. 오늘 등원 수 같은 숫자에 쓴다.
  * 처음 그릴 때는 가만히 있다 — 화면을 열 때마다 숫자가 튀면 아무것도 알려주지 않는다.
+ *
+ * undefined는 '아직 모름'이다. 데이터가 늦게 올라오는 화면은 그때까지 undefined를
+ * 넘긴다. 처음 값을 알게 된 순간은 바뀐 것이 아니므로 튀지 않는다.
  */
 export const useBump = (value: unknown, to = 1.12): Animated.Value => {
   const scale = useAnimatedNumber(1);
@@ -108,9 +111,26 @@ export const useBump = (value: unknown, to = 1.12): Animated.Value => {
 
   useEffect(() => {
     if (Object.is(previous.current, value)) return;
+    const known = previous.current !== undefined;
     previous.current = value;
-    popFrom(scale, to);
+    if (known) popFrom(scale, to);
   }, [value, to, scale]);
+
+  return scale;
+};
+
+/**
+ * active가 꺼져 있다 켜지는 순간 from에서 1로 튄다. 처음부터 켜져 있으면 가만히 있다.
+ * 고른 탭 아이콘, 채워진 PIN 점처럼 '방금 켜진 것'에 쓴다.
+ */
+export const usePopOnRise = (active: boolean, from: number): Animated.Value => {
+  const scale = useAnimatedNumber(1);
+  const was = useRef(active);
+
+  useEffect(() => {
+    if (active && !was.current) popFrom(scale, from);
+    was.current = active;
+  }, [active, from, scale]);
 
   return scale;
 };

@@ -54,4 +54,8 @@ const ForestBackground: React.FC = () => {
   );
 };
 
-export default ForestBackground;
+/**
+ * 받는 값이 없으니 창 크기가 바뀔 때만 다시 그리면 된다. 감싸지 않으면 화면이
+ * 다시 그려질 때마다(등원 한 번마다) 배경 SVG까지 같이 비교한다.
+ */
+export default React.memo(ForestBackground);

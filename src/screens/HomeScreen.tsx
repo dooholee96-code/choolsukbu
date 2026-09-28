@@ -14,7 +14,7 @@ import StudentCard from '../components/StudentCard';
 import PressableScale from '../components/common/PressableScale';
 import { useBump } from '../hooks/useMotion';
 import { haptic, HapticKind } from '../utils/haptics';
-import { isTimeWithinRange, getCurrentTime, formatTimeLabel } from '../utils/date';
+import { isTimeWithinRange, getCurrentTime, formatTimeLabel, fromDateKey } from '../utils/date';
 import { buildRoster, closureNote, isClosedOn, RosterEntry } from '../utils/roster';
 import { duplicateNames } from '../utils/student';
 import { chunk } from '../utils/array';
@@ -156,6 +156,11 @@ const EmptyText = styled.Text`
 `;
 
 interface Section {
+  /**
+   * 칸의 정체. 제목은 인원 수가 들어가 바뀌므로 key로 쓸 수 없다. 칸이 생기고
+   * 없어질 때(결석이 처음 생기는 순간 등) 뒤쪽 칸들이 통째로 새로 만들어지지 않게 한다.
+   */
+  key: 'pending' | 'onSchedule' | 'unexpected' | 'absent';
   title: string;
   /** 한 행씩 끊어 담은 학생 목록 */
   data: Student[][];
@@ -185,6 +190,8 @@ const HomeScreen: React.FC = () => {
     syncError,
     syncing,
     syncNow,
+    loaded,
+    today,
   } = useData();
   const { columns, sizeClass } = useResponsive();
   const navigation = useNavigation();
@@ -266,8 +273,12 @@ const HomeScreen: React.FC = () => {
    * 아예 나타나지 않아 등원을 찍을 방법이 없었다.
    */
   const roster = useMemo(
-    () => buildRoster(students, todayExceptions, new Date()),
-    [students, todayExceptions]
+    // 요일은 목록이 읽힌 날짜로 정한다. new Date()로 정하면 자정 직후 목록은 새 날짜인데
+    // 명단만 어제 요일로 짜이거나, 반대로 목록은 그대로인데 요일만 넘어간다.
+    () => buildRoster(students, todayExceptions, fromDateKey(today)),
+    // today가 꼭 있어야 한다. 목록은 바뀌지 않으면 예전 배열 그대로라(utils/reconcile),
+    // 원생도 예외도 그대로인 채 날짜만 넘어가면 이것 없이는 어제 요일의 명단이 남는다.
+    [students, todayExceptions, today]
   );
 
   /** 이름이 겹치는 원생이 있으면 카드가 그 사실을 알린다. */
@@ -314,25 +325,37 @@ const HomeScreen: React.FC = () => {
   /** 결석은 등원이 아니므로 출석 수에서 뺀다. */
   const checkedInCount = checkedInOnSchedule.length + unexpectedArrivals.length;
 
-  /** 숫자가 바뀌면 살짝 부푼다. 카드가 옮겨 간 것과 숫자가 오른 것이 한 번에 읽힌다. */
-  const countScale = useBump(checkedInCount);
+  /**
+   * 숫자가 바뀌면 살짝 부푼다. 카드가 옮겨 간 것과 숫자가 오른 것이 한 번에 읽힌다.
+   * 첫 읽기 전의 0은 '0명'이 아니라 모르는 값이다. 그대로 넘기면 앱을 열 때마다
+   * 0에서 실제 수로 바뀌며 튄다.
+   */
+  const countScale = useBump(loaded ? checkedInCount : undefined);
 
   const sections = useMemo<Section[]>(() => {
     if (closed) return [];
 
     const all: Section[] = [
-      { title: `등원 예정 — ${pending.length}`, data: chunk(pending, columns), checkable: true },
       {
+        key: 'pending',
+        title: `등원 예정 — ${pending.length}`,
+        data: chunk(pending, columns),
+        checkable: true,
+      },
+      {
+        key: 'onSchedule',
         title: `등원 완료 — ${checkedInOnSchedule.length}`,
         data: chunk(checkedInOnSchedule, columns),
         checkable: false,
       },
       {
+        key: 'unexpected',
         title: `예외 등원 — ${unexpectedArrivals.length}`,
         data: chunk(unexpectedArrivals, columns),
         checkable: false,
       },
       {
+        key: 'absent',
         title: `결석 — ${absentStudents.length}`,
         data: chunk(absentStudents, columns),
         checkable: false,
@@ -390,11 +413,12 @@ const HomeScreen: React.FC = () => {
    * 잘못 누를 일도 늘었다.
    */
   const handleUndo = useCallback(
-    (student: Student) => {
-      const record = attendanceByStudent.get(student.id);
+    (student: Student, record?: Attendance) => {
+      // 보충 건은 날짜를 잡기 전일 때만 같이 지운다 (softDeleteCheckIn). 잡았거나 끝낸
+      // 건까지 지운다고 말하면, 남아 있는 보충을 사라진 줄 알고 손대지 않게 된다.
       const what =
         record?.status === 'absent'
-          ? '결석 기록과 함께 만들어진 보충 건도 지웁니다.'
+          ? '결석 기록과, 아직 날짜를 잡지 않은 보충 건을 지웁니다.\n날짜를 잡았거나 끝낸 보충 건은 남습니다.'
           : record
             ? `${formatTimeLabel(record.time)} 등원 기록${record.leaveTime ? '과 하원 시각' : ''}을 지웁니다.\n다시 등원을 누르면 그때 시각으로 새로 남습니다.`
             : '';
@@ -413,7 +437,7 @@ const HomeScreen: React.FC = () => {
           ),
       });
     },
-    [attendanceByStudent, undoTodayAttendance, act]
+    [undoTodayAttendance, act]
   );
 
   const handleEditTime = useCallback(
@@ -485,7 +509,10 @@ const HomeScreen: React.FC = () => {
     <Screen>
       <SectionList<Student[], Section>
         sections={sections}
-        keyExtractor={(row, index) => row[0]?.id ?? `row-${index}`}
+        // 행은 자리로 부른다. 첫 학생 id로 부르면 한 명이 빠질 때마다 뒤 행들의 첫 학생이
+        // 바뀌어 행이 통째로 새로 만들어지고, 그 안의 카드도 전부 처음부터 다시 그려진다.
+        // 행 안의 카드는 GridRow가 학생 id로 부르므로 같은 행에 남은 카드는 그대로 간다.
+        keyExtractor={(_row, index) => String(index)}
         // 목록 데이터가 그대로여도 튈 카드가 바뀌면 다시 그려야 한다. 없으면
         // 하원·시각 수정처럼 칸을 옮기지 않는 기록에서 카드가 튀지 않는다.
         extraData={pulse}
@@ -495,7 +522,7 @@ const HomeScreen: React.FC = () => {
           <>
             <Header>
               <View>
-                <DateText>{new Date().toLocaleDateString('ko-KR')}</DateText>
+                <DateText>{fromDateKey(today).toLocaleDateString('ko-KR')}</DateText>
                 <TitleText>오늘의 출석</TitleText>
               </View>
               <View style={{ alignItems: 'flex-end' }}>

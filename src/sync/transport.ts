@@ -1,6 +1,7 @@
 import { Platform } from 'react-native';
 import { logger } from '../utils/logger';
 import { SyncSnapshot } from './merge';
+import type { Availability } from './run';
 
 /**
  * iCloud Drive에 스냅샷 파일을 읽고 쓴다.
@@ -17,9 +18,6 @@ const DIRECTORY = '/출석부';
 const PREFIX = 'device-';
 const SUFFIX = '.json';
 
-export type Availability =
-  | { ok: true }
-  | { ok: false; reason: 'platform' | 'module' | 'signedOut' | 'error' };
 
 type CloudModule = {
   CloudStorage: {
@@ -50,8 +48,30 @@ const loadModule = (): CloudModule | null => {
   return cached;
 };
 
+/**
+ * 이 빌드가 iCloud 권한을 갖고 만들어졌는가. app.config.js가 권한 파일을 보고 정해 앱에
+ * 심어 둔 값이다.
+ *
+ * 모듈이 있는지로는 알 수 없다. 동기화 라이브러리는 무료 빌드에도 그대로 들어가고
+ * 권한만 빠진다. 그 상태에서 물어보면 'iCloud에 로그인되지 않음'이 나오거나, 로그인은
+ * 됐다며 올리다 실패한다 — 어느 쪽이든 사용자는 고칠 수 없는 것을 고치라는 말을 듣는다.
+ */
+const builtWithICloud = (): boolean => {
+  try {
+    // 여기서만 부른다. 최상단에서 부르면 이 파일을 노드에서 불러올 수 없다.
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const Constants = require('expo-constants').default as {
+      expoConfig?: { extra?: { icloudSync?: unknown } } | null;
+    };
+    return Constants.expoConfig?.extra?.icloudSync === true;
+  } catch {
+    return false;
+  }
+};
+
 export const checkAvailability = async (): Promise<Availability> => {
   if (Platform.OS !== 'ios') return { ok: false, reason: 'platform' };
+  if (!builtWithICloud()) return { ok: false, reason: 'module' };
 
   const module = loadModule();
   if (!module?.CloudStorage) return { ok: false, reason: 'module' };

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AppState } from 'react-native';
 import { isLockEnabled } from '../security/lock';
 
@@ -97,5 +97,10 @@ export const useAppLock = (): AppLock => {
     setLocked(true);
   }, []);
 
-  return { ready, enabled, locked, reason, refresh, unlock, lock };
+  // 매번 새 객체를 돌려주면 App이 다시 그려질 때마다 잠금 상태를 읽는 화면(오늘,
+  // 설정)이 바뀐 것 없이 따라 그려진다.
+  return useMemo(
+    () => ({ ready, enabled, locked, reason, refresh, unlock, lock }),
+    [ready, enabled, locked, reason, refresh, unlock, lock]
+  );
 };

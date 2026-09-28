@@ -22,8 +22,12 @@ interface StudentCardProps {
   onCheckIn?: (student: Student) => void;
   /** 결석 처리. 넘기면 Check In 아래에 결석 버튼이 붙는다. */
   onMarkAbsent?: (student: Student) => void;
-  /** 이미 기록된 카드에서 오늘 기록을 되돌린다. */
-  onUndo?: (student: Student) => void;
+  /**
+   * 이미 기록된 카드에서 오늘 기록을 되돌린다. 카드가 가진 기록을 함께 넘긴다 —
+   * 부모가 기록을 찾으려고 목록을 들고 있으면, 등원 하나에 그 함수가 새로 만들어져
+   * 모든 카드가 다시 그려진다.
+   */
+  onUndo?: (student: Student, attendance?: Attendance) => void;
   /** 카드 자체를 눌렀을 때. 원생 정보 수정 진입에 쓴다. */
   onPress?: (student: Student) => void;
   showFee?: boolean; // 금액 표시 여부 제어
@@ -317,7 +321,10 @@ const StudentCard: React.FC<StudentCardProps> = ({
 
   const handleCheckIn = useCallback(() => onCheckIn?.(student), [onCheckIn, student]);
   const handleMarkAbsent = useCallback(() => onMarkAbsent?.(student), [onMarkAbsent, student]);
-  const handleUndo = useCallback(() => onUndo?.(student), [onUndo, student]);
+  const handleUndo = useCallback(
+    () => onUndo?.(student, attendance),
+    [onUndo, student, attendance]
+  );
   const handlePress = useCallback(() => onPress?.(student), [onPress, student]);
   const handleEditTime = useCallback(
     () => attendance && onEditTime?.(student, attendance),

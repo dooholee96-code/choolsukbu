@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import styled from 'styled-components/native';
 import { View, ScrollView, Platform, KeyboardAvoidingView } from 'react-native';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
@@ -201,6 +201,12 @@ const StudentFormModal: React.FC = () => {
   );
   const [fee, setFee] = useState(editing?.fee != null ? String(editing.fee) : '');
   const [isSaving, setIsSaving] = useState(false);
+  /**
+   * 저장은 한 번만. isSaving으로 버튼이 흐려지는 것은 **다음 화면부터**라, 그 사이
+   * 두 번째 누름이 들어오면 새 id로 한 명이 더 등록된다. 이 값은 누른 즉시 바뀐다.
+   * 저장에 성공하면 되돌리지 않는다 — 폼은 끝났고, 늦게 눌린 확인창이 또 저장하면 안 된다.
+   */
+  const saving = useRef(false);
 
   // iOS의 modal/formSheet는 상태 표시줄 아래에서 시작하므로 창의 top 인셋을 더하면
   // 그만큼 위가 비고 내용이 아래로 밀린다. Android 모달은 전체 화면이라 인셋이 필요하다.
@@ -242,6 +248,9 @@ const StudentFormModal: React.FC = () => {
   );
 
   const save = async () => {
+    if (saving.current) return;
+    saving.current = true;
+
     // 요일은 선택 순서가 아니라 주간 순서로 저장한다.
     const orderedDays = DAYS.filter((day) => selectedDays.includes(day));
     const parsedFee = Number(fee.replace(/[^0-9]/g, ''));
@@ -273,6 +282,8 @@ const StudentFormModal: React.FC = () => {
       await (isEditing ? updateStudent(nextStudent) : addStudent(nextStudent));
       navigation.goBack();
     } catch (error) {
+      // 실패했을 때만 다시 누를 수 있게 한다.
+      saving.current = false;
       logger.error('Failed to save student', error);
       notify('저장 실패', '원생 정보를 저장하지 못했습니다. 다시 시도해 주세요.');
     } finally {

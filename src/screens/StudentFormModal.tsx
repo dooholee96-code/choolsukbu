@@ -8,6 +8,7 @@ import { format } from 'date-fns';
 import { Ionicons } from '@expo/vector-icons';
 import { useData } from '../hooks/useData';
 import Button from '../components/common/Button';
+import PressableScale from '../components/common/PressableScale';
 import Chip from '../components/common/Chip';
 import { DayOfWeek, DaySchedule, Student } from '../types';
 import { createId } from '../utils/id';
@@ -71,7 +72,7 @@ const TimeField = styled.View`
   flex: 1;
 `;
 
-const TimePickerButton = styled.TouchableOpacity`
+const TimePickerButton = styled(PressableScale).attrs({ pressScale: 0.96 })`
   background-color: ${({ theme }) => theme.colors.cardBackground};
   padding: ${({ theme }) => theme.spacing.medium}px;
   border-radius: ${({ theme }) => theme.borderRadius.medium}px;
@@ -92,7 +93,7 @@ const Actions = styled.View`
   gap: 12px;
 `;
 
-const ToggleRow = styled.TouchableOpacity`
+const ToggleRow = styled(PressableScale).attrs({ pressScale: 0.98, haptic: 'select' as const })`
   flex-direction: row;
   align-items: center;
   gap: 10px;

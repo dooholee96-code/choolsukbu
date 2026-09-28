@@ -1,5 +1,5 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { View, ActivityIndicator, Text, TouchableOpacity, Modal } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { View, ActivityIndicator, Text, TouchableOpacity, Modal, Animated } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
@@ -26,6 +26,8 @@ import { useResponsive } from './src/hooks/useResponsive';
 import { useAppLock } from './src/hooks/useAppLock';
 import { AppLockContext } from './src/hooks/appLockContext';
 import type { RootStackParamList, TabParamList } from './src/types/navigation';
+import { popFrom, useAnimatedNumber } from './src/hooks/useMotion';
+import { haptic } from './src/utils/haptics';
 
 const Tab = createBottomTabNavigator<TabParamList>();
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -37,13 +39,60 @@ const TAB_ICONS: Record<keyof TabParamList, [keyof typeof Ionicons.glyphMap, key
   History: ['calendar', 'calendar-outline'],
 };
 
+/**
+ * 탭 아이콘. 고른 탭이 되는 순간 톡 튄다 — 아래쪽 탭바는 시선 밖이라, 눌렀는데
+ * 화면만 바뀌면 어느 탭을 눌렀는지 손이 모른다.
+ *
+ * tabBarIcon이 주는 focused로는 안 된다. 탭바는 아이콘을 '고른 모양'과 '안 고른
+ * 모양' 두 벌로 겹쳐 그리고 투명도만 바꾸는데, 각 벌에 주는 focused는 늘 같은
+ * 값이라 바뀌는 순간이 없다. 그래서 탭 자체가 포커스를 얻었는지(selected)를 본다.
+ */
+function TabIcon({
+  name,
+  selected,
+  color,
+  size,
+}: {
+  name: keyof typeof Ionicons.glyphMap;
+  selected: boolean;
+  color: string;
+  size: number;
+}) {
+  const scale = useAnimatedNumber(1);
+  const was = useRef(selected);
+
+  useEffect(() => {
+    if (selected && !was.current) popFrom(scale, 0.78);
+    was.current = selected;
+  }, [selected, scale]);
+
+  return (
+    <Animated.View style={{ transform: [{ scale }] }}>
+      <Ionicons name={name} size={size} color={color} />
+    </Animated.View>
+  );
+}
+
 function TabNavigator() {
   return (
     <Tab.Navigator
-      screenOptions={({ route }) => ({
+      // 다른 탭으로 옮길 때만 떤다. 지금 탭을 또 누르는 것은 아무것도 바꾸지 않는다.
+      screenListeners={({ navigation }) => ({
+        tabPress: () => {
+          if (!navigation.isFocused()) haptic('select');
+        },
+      })}
+      screenOptions={({ route, navigation }) => ({
         tabBarIcon: ({ focused, color, size }) => {
           const [active, inactive] = TAB_ICONS[route.name] ?? ['help', 'help'];
-          return <Ionicons name={focused ? active : inactive} size={size} color={color} />;
+          return (
+            <TabIcon
+              name={focused ? active : inactive}
+              selected={navigation.isFocused()}
+              color={color}
+              size={size}
+            />
+          );
         },
         tabBarActiveTintColor: theme.colors.primaryStrong,
         tabBarInactiveTintColor: theme.colors.textSecondary,

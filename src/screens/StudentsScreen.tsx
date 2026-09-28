@@ -8,6 +8,7 @@ import { useResponsive } from '../hooks/useResponsive';
 import Screen from '../components/common/Screen';
 import GridRow from '../components/common/GridRow';
 import StudentCard from '../components/StudentCard';
+import PressableScale from '../components/common/PressableScale';
 import { chunk } from '../utils/array';
 import { duplicateNames, isWithdrawn } from '../utils/student';
 import { Student } from '../types';
@@ -38,7 +39,7 @@ const SubText = styled.Text`
   color: ${({ theme }) => theme.colors.textSecondary};
 `;
 
-const RoundButton = styled.TouchableOpacity<{ $variant: 'primary' | 'plain' }>`
+const RoundButton = styled(PressableScale)<{ $variant: 'primary' | 'plain' }>`
   background-color: ${({ theme, $variant }) =>
     $variant === 'primary' ? theme.colors.primaryStrong : theme.colors.cardBackground};
   width: 44px;
@@ -70,7 +71,7 @@ const Segmented = styled.View`
   overflow: hidden;
 `;
 
-const SegmentButton = styled.TouchableOpacity<{ $active: boolean }>`
+const SegmentButton = styled(PressableScale)<{ $active: boolean }>`
   flex: 1;
   padding-vertical: 10px;
   align-items: center;
@@ -129,6 +130,8 @@ const StudentsScreen: React.FC = () => {
         <HeaderActions>
           <RoundButton
             $variant="plain"
+            pressScale={0.88}
+            haptic="select"
             onPress={() => setShowFee((previous) => !previous)}
             accessibilityRole="button"
             accessibilityLabel={showFee ? '수강료 숨기기' : '수강료 보기'}
@@ -142,6 +145,7 @@ const StudentsScreen: React.FC = () => {
           </RoundButton>
           <RoundButton
             $variant="plain"
+            pressScale={0.88}
             onPress={() => navigation.navigate('SettingsModal')}
             accessibilityRole="button"
             accessibilityLabel="설정"
@@ -154,6 +158,7 @@ const StudentsScreen: React.FC = () => {
           </RoundButton>
           <RoundButton
             $variant="primary"
+            pressScale={0.88}
             onPress={() => navigation.navigate('StudentFormModal')}
             accessibilityRole="button"
             accessibilityLabel="원생 추가"
@@ -174,6 +179,9 @@ const StudentsScreen: React.FC = () => {
             <SegmentButton
               key={value}
               $active={tab === value}
+              pressScale={0.97}
+              // 이미 고른 칸을 다시 누르면 아무것도 바뀌지 않으니 떨지 않는다.
+              haptic={tab === value ? undefined : 'select'}
               onPress={() => setTab(value)}
               accessibilityRole="button"
               accessibilityState={{ selected: tab === value }}

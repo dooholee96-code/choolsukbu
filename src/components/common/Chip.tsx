@@ -1,13 +1,13 @@
 import React from 'react';
 import styled from 'styled-components/native';
-import { TouchableOpacityProps } from 'react-native';
+import PressableScale, { PressableScaleProps } from './PressableScale';
 
-interface ChipProps extends TouchableOpacityProps {
+interface ChipProps extends PressableScaleProps {
   label: string;
   selected?: boolean;
 }
 
-const StyledChip = styled.TouchableOpacity<{ $selected: boolean }>`
+const StyledChip = styled(PressableScale)<{ $selected: boolean }>`
   background-color: ${({ theme, $selected }) =>
     $selected ? theme.colors.primaryStrong : theme.colors.cardBackground};
   padding-vertical: 10px;
@@ -26,10 +26,13 @@ const ChipText = styled.Text<{ $selected: boolean }>`
   font-size: 14px;
 `;
 
+/** 켜고 끄는 작은 알. 작아서 깊게 눌리고, 고르는 것이 바뀌었다는 햅틱을 낸다. */
 const Chip: React.FC<ChipProps> = ({ label, selected = false, ...props }) => {
   return (
     <StyledChip
       $selected={selected}
+      pressScale={0.9}
+      haptic="select"
       accessibilityRole="button"
       accessibilityLabel={label}
       accessibilityState={{ selected }}

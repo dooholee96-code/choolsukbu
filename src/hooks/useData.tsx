@@ -2,8 +2,10 @@ import React, { createContext, useState, useEffect, useContext, useCallback, use
 import { AppState } from 'react-native';
 import { Attendance, MakeUp, ScheduleException, Student } from '../types';
 import { getDB } from '../db';
+import { exclusive } from '../db/queue';
 import { getCurrentDate } from '../utils/date';
 import { logger } from '../utils/logger';
+import { reconcile } from '../utils/reconcile';
 import { useSync } from './useSync';
 import type { SyncOutcome } from '../sync';
 import { buildBackup, readBackup, restoreBackup, summarize, type BackupSummary } from '../sync/backup';
@@ -18,6 +20,13 @@ import * as exceptions from '../data/exceptions';
  * SQL은 src/data의 도메인 모듈에, 동기화 시점 관리는 useSync에 있다. 여기서는
  * 화면이 들고 있어야 하는 상태를 모으고, 쓰기가 끝날 때마다 다시 읽고 올릴 것을
  * 예약하는 일만 한다.
+ *
+ * 두 가지를 지킨다. 그래야 등원 한 번에 원생 카드 전부가 다시 그려지지 않는다.
+ *   - 함수는 앱이 떠 있는 동안 늘 같은 것이다. 데이터가 바뀔 때마다 새로 만들면
+ *     그 함수를 받는 카드가 전부 '바뀐 것'이 된다.
+ *   - 다시 읽어도 바뀌지 않은 행은 예전 객체 그대로다 (utils/reconcile).
+ *
+ * 그 대신 '데이터가 바뀌었다'를 함수의 정체로 알아채던 화면은 이제 revision을 본다.
  */
 interface DataContextType {
   students: Student[];
@@ -26,6 +35,19 @@ interface DataContextType {
   makeups: MakeUp[];
   /** 오늘 날짜의 일정 예외만. 다른 날짜는 loadExceptionsRange로 읽는다. */
   todayExceptions: ScheduleException[];
+  /** 첫 읽기가 끝났는가. 그 전의 빈 목록은 '0건'이 아니라 '아직 모름'이다. */
+  loaded: boolean;
+  /**
+   * 위의 목록이 어느 날짜의 것인가 ('YYYY-MM-DD'). 화면이 '오늘'을 직접 계산하지
+   * 않고 이것을 쓴다. 자정이 지나 목록은 새 날짜로 바뀌었는데 화면만 어제 요일로
+   * 명단을 짜는 일이 없어야 한다.
+   */
+  today: string;
+  /**
+   * DB를 다시 읽을 때마다 오른다. 쓰기, 다른 기기에서 온 변경, 날짜 바뀜 모두.
+   * 이력처럼 위의 상태에 담지 않고 그때그때 읽는 화면이 '다시 읽을 때'를 안다.
+   */
+  revision: number;
 
   addStudent: (student: Student) => Promise<void>;
   updateStudent: (student: Student) => Promise<void>;
@@ -85,6 +107,22 @@ interface DataContextType {
   syncNow: () => Promise<SyncOutcome>;
 }
 
+/** 상태가 아닌 것 — 화면이 부르는 함수들. 앱이 떠 있는 동안 바뀌지 않는다. */
+type DataActions = Omit<
+  DataContextType,
+  | 'students'
+  | 'todayAttendances'
+  | 'makeups'
+  | 'todayExceptions'
+  | 'loaded'
+  | 'today'
+  | 'revision'
+  | 'lastSyncAt'
+  | 'syncUnavailable'
+  | 'syncError'
+  | 'syncing'
+>;
+
 const DataContext = createContext<DataContextType | undefined>(undefined);
 
 export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -94,28 +132,35 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [todayAttendances, setTodayAttendances] = useState<Attendance[]>([]);
   const [makeups, setMakeups] = useState<MakeUp[]>([]);
   const [todayExceptions, setTodayExceptions] = useState<ScheduleException[]>([]);
+  const [loaded, setLoaded] = useState(false);
+  const [today, setToday] = useState(getCurrentDate);
+  const [revision, setRevision] = useState(0);
 
   /** 지금 화면에 올라와 있는 데이터가 어느 날짜의 것인지 */
   const loadedDate = useRef(getCurrentDate());
 
   const refreshData = useCallback(async () => {
-    const today = getCurrentDate();
-    loadedDate.current = today;
+    const date = getCurrentDate();
+    loadedDate.current = date;
 
     try {
       // 화면이 쓰는 범위만 올린다. 출결 테이블 전체를 올리면 체크인 한 번의
       // 비용이 누적 이력에 비례해 늘어난다. 이력 조회는 필요할 때 따로 읽는다.
       const [list, records, pending, rules] = await Promise.all([
         students.listStudents(db),
-        attendance.listForDate(db, today),
+        attendance.listForDate(db, date),
         makeup.listPending(db),
-        exceptions.listForDate(db, today),
+        exceptions.listForDate(db, date),
       ]);
 
-      setStudentList(list);
-      setTodayAttendances(records);
-      setMakeups(pending);
-      setTodayExceptions(rules);
+      // 바뀌지 않은 목록은 예전 배열 그대로라 React가 갱신을 건너뛴다.
+      setStudentList((previous) => reconcile(previous, list));
+      setTodayAttendances((previous) => reconcile(previous, records));
+      setMakeups((previous) => reconcile(previous, pending));
+      setTodayExceptions((previous) => reconcile(previous, rules));
+      setToday(date);
+      setLoaded(true);
+      setRevision((n) => n + 1);
     } catch (error) {
       logger.error('Error fetching data:', error);
     }
@@ -137,11 +182,13 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   /**
    * 쓰기 한 번을 감싼다. 실패는 로그에 남기고 부르는 쪽으로 던진다 —
    * 화면이 '저장 실패'를 띄울 수 있어야 한다.
+   *
+   * 쓰기 자체는 줄을 선다 (db/queue). 다시 읽기는 줄 밖에서 한다.
    */
   const write = useCallback(
     async (label: string, action: () => Promise<unknown>) => {
       try {
-        await action();
+        await exclusive(action);
         await commit();
       } catch (error) {
         logger.error(`${label} failed`, error);
@@ -183,13 +230,12 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
   }, [refreshData, syncNow]);
 
-  const value = useMemo<DataContextType>(
+  /**
+   * 화면이 부르는 함수들. db·write·commit·refreshData·syncNow가 모두 한 번 만들어지면
+   * 바뀌지 않으므로 이 묶음도 앱이 떠 있는 동안 그대로다.
+   */
+  const actions = useMemo<DataActions>(
     () => ({
-      students: studentList,
-      todayAttendances,
-      makeups,
-      todayExceptions,
-
       addStudent: (student) => write('addStudent', () => students.insertStudent(db, student)),
       updateStudent: (student) =>
         write('updateStudent', () => students.updateStudentRow(db, student)),
@@ -198,25 +244,18 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setStudentWithdrawn: (studentId, date) =>
         write('setWithdrawn', () => students.setWithdrawn(db, studentId, date)),
       importStudents: async (incoming) => {
-        const result = await students.importStudentRows(db, incoming);
+        const result = await exclusive(() => students.importStudentRows(db, incoming));
         await commit();
         return result;
       },
 
+      // 같은 날 두 번 남지 않게 하는 것은 SQL 쪽이 한 문장으로 맡는다 (연타 대비).
       checkInStudent: (studentId, status) =>
-        write('checkIn', async () => {
-          const date = getCurrentDate();
-          // 같은 날 중복 기록 방지. UI가 버튼을 숨기더라도 연타나 화면 복귀
-          // 타이밍에 따라 두 번 눌릴 수 있다.
-          if (await attendance.findCheckIn(db, studentId, date)) return;
-          await attendance.insertCheckIn(db, studentId, date, status);
-        }),
+        write('checkIn', () =>
+          attendance.insertCheckIn(db, studentId, getCurrentDate(), status)
+        ),
       markAbsent: (studentId) =>
-        write('markAbsent', async () => {
-          const date = getCurrentDate();
-          if (await attendance.findCheckIn(db, studentId, date)) return;
-          await attendance.insertAbsence(db, studentId, date);
-        }),
+        write('markAbsent', () => attendance.insertAbsence(db, studentId, getCurrentDate())),
       undoTodayAttendance: (studentId) =>
         write('undoAttendance', () =>
           attendance.softDeleteCheckIn(db, studentId, getCurrentDate())
@@ -249,7 +288,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const snapshot = readBackup(text);
         if (!snapshot) return null;
 
-        const applied = await restoreBackup(db, snapshot);
+        const applied = await exclusive(() => restoreBackup(db, snapshot));
         await commit();
         return { summary: summarize(snapshot), applied };
       },
@@ -262,13 +301,44 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       loadExceptionsRange: (from, to) => exceptions.listRange(db, from, to),
 
       refreshData,
-      lastSyncAt: sync.lastSyncAt,
-      syncUnavailable: sync.unavailable,
-      syncError: sync.error,
-      syncing: sync.syncing,
-      syncNow: sync.syncNow,
+      syncNow,
     }),
-    [db, studentList, todayAttendances, makeups, todayExceptions, write, commit, refreshData, sync]
+    [db, write, commit, refreshData, syncNow]
+  );
+
+  // sync 객체 자체는 넣지 않는다. useSync가 렌더마다 새 객체를 돌려주므로, 넣으면
+  // App이 다시 그려질 때마다(잠금·해제) 값이 새로 만들어져 모든 화면이 다시 그려진다.
+  const { lastSyncAt, unavailable: syncUnavailable, error: syncError, syncing } = sync;
+
+  const value = useMemo<DataContextType>(
+    () => ({
+      students: studentList,
+      todayAttendances,
+      makeups,
+      todayExceptions,
+      loaded,
+      today,
+      revision,
+      ...actions,
+      lastSyncAt,
+      syncUnavailable,
+      syncError,
+      syncing,
+    }),
+    [
+      studentList,
+      todayAttendances,
+      makeups,
+      todayExceptions,
+      loaded,
+      today,
+      revision,
+      actions,
+      lastSyncAt,
+      syncUnavailable,
+      syncError,
+      syncing,
+    ]
   );
 
   return <DataContext.Provider value={value}>{children}</DataContext.Provider>;

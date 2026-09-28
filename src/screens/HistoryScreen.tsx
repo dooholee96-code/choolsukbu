@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import styled, { useTheme } from 'styled-components/native';
 import { ActivityIndicator, SectionList, View } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
@@ -170,7 +170,7 @@ const monthBounds = (year: number, month: number) => ({
 });
 
 const HistoryScreen: React.FC = () => {
-  const { students, loadAttendanceRange, loadExceptionsRange } = useData();
+  const { students, loadAttendanceRange, loadExceptionsRange, revision } = useData();
   const theme = useTheme();
 
   const today = new Date();
@@ -198,18 +198,19 @@ const HistoryScreen: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [from, to, loadAttendanceRange, loadExceptionsRange]);
+    // revision: 다른 탭에서 찍었거나 다른 기기에서 넘어온 기록이 있으면 다시 읽는다.
+    // 탭이 뒤에 있을 때는 useFocusEffect가 돌아올 때까지 미룬다.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [from, to, loadAttendanceRange, loadExceptionsRange, revision]);
 
-  // 다른 탭에서 체크인하고 돌아오면 최신 상태여야 한다.
+  // 다른 탭에서 체크인하고 돌아오면 최신 상태여야 한다. 보고 있는 동안 달을 넘기면
+  // load가 바뀌어 여기서 다시 돈다. useEffect로 한 번 더 부르면 같은 달을 두 번 읽고,
+  // 탭이 뒤에 있을 때도 쓰기가 일어날 때마다(load가 새로 만들어진다) 다시 읽는다.
   useFocusEffect(
     useCallback(() => {
       load();
     }, [load])
   );
-
-  useEffect(() => {
-    load();
-  }, [load]);
 
   const shiftMonth = (delta: number) =>
     setCursor(({ year, month }) => {

@@ -4,18 +4,6 @@ import { getCurrentTime } from '../utils/date';
 import { createId } from '../utils/id';
 import { stamp } from './stamp';
 
-/**
- * 오늘 정규 수업에 대한 기록이 이미 있는지 본다.
- * 출석과 결석은 같은 자리를 두고 다투는 값이므로 type으로만 판정한다.
- */
-export const findCheckIn = (db: SQLiteDatabase, studentId: string, date: string) =>
-  db.getFirstAsync<{ id: string }>(
-    'SELECT id FROM attendance WHERE studentId = ? AND date = ? AND type = ? AND deletedAt IS NULL LIMIT 1;',
-    studentId,
-    date,
-    'checkIn'
-  );
-
 /** 화면이 쓰는 것은 오늘 기록뿐이다. 전체 이력은 필요할 때 따로 읽는다. */
 export const listForDate = (db: SQLiteDatabase, date: string) =>
   db.getAllAsync<Attendance>(
@@ -43,6 +31,13 @@ export const listAttendanceRange = (db: SQLiteDatabase, fromDate: string, toDate
     toDate
   );
 
+/**
+ * 그 날 정규 기록이 아직 없을 때만 넣는다.
+ *
+ * 확인과 삽입을 한 문장으로 묶는다. 먼저 조회하고 따로 넣으면, 연타로 두 요청이
+ * 겹쳤을 때 둘 다 '없음'을 본 뒤 둘 다 넣어 같은 날 등원이 두 줄 남는다.
+ * 출석과 결석은 같은 자리를 두고 다투는 값이므로 status가 아니라 type으로 본다.
+ */
 export const insertCheckIn = (
   db: SQLiteDatabase,
   studentId: string,
@@ -50,34 +45,51 @@ export const insertCheckIn = (
   status: 'scheduled' | 'unexpected'
 ) =>
   db.runAsync(
-    'INSERT INTO attendance (id, studentId, date, time, status, type, updatedAt) VALUES (?, ?, ?, ?, ?, ?, ?);',
+    `INSERT INTO attendance (id, studentId, date, time, status, type, updatedAt)
+     SELECT ?, ?, ?, ?, ?, 'checkIn', ?
+     WHERE NOT EXISTS (
+       SELECT 1 FROM attendance
+       WHERE studentId = ? AND date = ? AND type = 'checkIn' AND deletedAt IS NULL
+     );`,
     createId(),
     studentId,
     date,
     getCurrentTime(),
     status,
-    'checkIn',
-    stamp()
+    stamp(),
+    studentId,
+    date
   );
 
 /**
  * 결석 처리. 출결에 absent를 남기고 같은 날짜로 보충 건을 연다.
  * 보충은 결석에서만 생기므로 두 기록은 항상 함께 만들어져야 한다.
+ *
+ * 등원과 같은 방식으로 한 문장에서 확인하고 넣는다. 그 날 기록이 이미 있으면
+ * (먼저 찍힌 등원, 연타로 겹친 결석) 아무것도 남기지 않는다 — 보충 건도 열지 않는다.
+ * 결석 기록 없이 보충만 생기면 빠진 적 없는 수업을 메우라는 건이 된다.
  */
 export const insertAbsence = async (db: SQLiteDatabase, studentId: string, date: string) => {
   const now = stamp();
 
   await db.withTransactionAsync(async () => {
-    await db.runAsync(
-      'INSERT INTO attendance (id, studentId, date, time, status, type, updatedAt) VALUES (?, ?, ?, ?, ?, ?, ?);',
+    const inserted = await db.runAsync(
+      `INSERT INTO attendance (id, studentId, date, time, status, type, updatedAt)
+       SELECT ?, ?, ?, ?, 'absent', 'checkIn', ?
+       WHERE NOT EXISTS (
+         SELECT 1 FROM attendance
+         WHERE studentId = ? AND date = ? AND type = 'checkIn' AND deletedAt IS NULL
+       );`,
       createId(),
       studentId,
       date,
       getCurrentTime(),
-      'absent',
-      'checkIn',
-      now
+      now,
+      studentId,
+      date
     );
+    if (inserted.changes === 0) return;
+
     await db.runAsync(
       'INSERT INTO makeup (id, studentId, originalDate, makeUpDate, completed, updatedAt) VALUES (?, ?, ?, ?, 0, ?);',
       createId(),

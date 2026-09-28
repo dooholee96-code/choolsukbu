@@ -194,7 +194,9 @@ const StudentsScreen: React.FC = () => {
 
       <FlatList<Student[]>
         data={rows}
-        keyExtractor={(row, index) => row[0]?.id ?? `row-${index}`}
+        // 행은 자리로 부른다 (HomeScreen 참고). 첫 원생 id로 부르면 한 명이 늘거나
+        // 줄 때마다 뒤 행이 통째로 새로 만들어진다.
+        keyExtractor={(_row, index) => String(index)}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: 24 }}
         renderItem={({ item }) => (

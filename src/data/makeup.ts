@@ -54,8 +54,14 @@ export const completeMakeupRow = async (
       now,
       makeupId
     );
+    // 같은 id의 보충 출결이 이미 있을 수 있다. 다른 기기가 먼저 완료했는데 이 기기가 그
+    // 사이 보충일을 바꿔 보충 건은 '대기'로 이기고 출결 행만 넘어온 경우다. 그냥 INSERT면
+    // 기본키 충돌로 매번 되돌려져, 어느 기기에서도 이 보충을 다시 완료할 수 없다.
     await db.runAsync(
-      'INSERT INTO attendance (id, studentId, date, time, status, type, updatedAt) VALUES (?, ?, ?, ?, ?, ?, ?);',
+      `INSERT INTO attendance (id, studentId, date, time, status, type, updatedAt) VALUES (?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET
+         date = excluded.date, time = excluded.time, status = excluded.status,
+         updatedAt = excluded.updatedAt, deletedAt = NULL;`,
       makeupId,
       target.studentId,
       date,

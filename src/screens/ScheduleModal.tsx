@@ -182,6 +182,7 @@ const ScheduleModal: React.FC = () => {
     setClosure,
     addStudentException,
     removeException,
+    revision,
   } = useData();
 
   const [date, setDate] = useState(() => new Date());
@@ -198,7 +199,9 @@ const ScheduleModal: React.FC = () => {
       logger.error('Failed to load schedule exceptions', error);
       notify('불러오기 실패', '그 날짜의 일정을 읽지 못했습니다.');
     }
-  }, [dateKey, loadExceptionsForDate]);
+    // revision: 창을 열어 둔 사이에 다른 기기에서 일정이 넘어와도 맞춘다.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dateKey, loadExceptionsForDate, revision]);
 
   useEffect(() => {
     reload();

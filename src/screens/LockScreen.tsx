@@ -1,11 +1,11 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { Animated } from 'react-native';
 import styled from 'styled-components/native';
 import { Ionicons } from '@expo/vector-icons';
 import { authenticateWithBiometrics, hasBiometrics, verifyPin } from '../security/lock';
 import ForestBackground from '../components/common/ForestBackground';
 import PressableScale from '../components/common/PressableScale';
-import { popFrom, useAnimatedNumber, useShake } from '../hooks/useMotion';
+import { usePopOnRise, useShake } from '../hooks/useMotion';
 import { haptic } from '../utils/haptics';
 
 export const PIN_LENGTH = 4;
@@ -101,13 +101,7 @@ const KeySpacer = styled.View`
  * 곁눈으로 잡힌다.
  */
 const PinDot: React.FC<{ filled: boolean }> = ({ filled }) => {
-  const scale = useAnimatedNumber(1);
-  const was = useRef(filled);
-
-  useEffect(() => {
-    if (filled && !was.current) popFrom(scale, 0.4);
-    was.current = filled;
-  }, [filled, scale]);
+  const scale = usePopOnRise(filled, 0.4);
 
   return (
     <Animated.View style={{ transform: [{ scale }] }}>

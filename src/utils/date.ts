@@ -6,6 +6,15 @@ import { DayOfWeek } from '../types';
 export const toDateKey = (date: Date) => format(date, 'yyyy-MM-dd');
 
 export const getCurrentDate = () => toDateKey(new Date());
+
+/**
+ * 'YYYY-MM-DD'를 그 날 정오의 Date로. 요일과 표시용 날짜만 필요할 때 쓴다.
+ * 자정으로 만들면 서머타임이 있는 곳에서 하루 앞뒤로 밀릴 수 있어 정오로 둔다.
+ */
+export const fromDateKey = (key: string): Date => {
+  const [year, month, day] = key.split('-').map(Number);
+  return new Date(year, (month || 1) - 1, day || 1, 12);
+};
 export const getCurrentTime = () => format(new Date(), 'HH:mm');
 
 export const getDayOfWeek = (date: Date): DayOfWeek => {

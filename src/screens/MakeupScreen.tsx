@@ -11,7 +11,23 @@ import GridRow from '../components/common/GridRow';
 import MakeupCard, { MakeupEntry } from '../components/MakeupCard';
 import { chunk } from '../utils/array';
 import { isWithdrawn } from '../utils/student';
-import { confirm } from '../utils/dialog';
+import { confirm, notify } from '../utils/dialog';
+import { haptic, HapticKind } from '../utils/haptics';
+
+/**
+ * 기록 한 번의 마무리. 오늘 화면(HomeScreen의 act)과 같은 규칙이다 — 햅틱은 결과를
+ * 본 뒤에 내고, 실패하면 알린다. 데이터 계층은 실패를 던지는데 여기서 받지 않으면
+ * 화면은 조용하고, 누른 사람은 된 줄 안다.
+ */
+const record = (task: Promise<unknown>, done: HapticKind, failure: string) => {
+  task.then(
+    () => haptic(done),
+    () => {
+      haptic('error');
+      notify('저장 실패', `${failure}\n다시 시도해 주세요.`);
+    }
+  );
+};
 
 const Header = styled.View`
   margin-bottom: ${({ theme }) => theme.spacing.large}px;
@@ -95,7 +111,11 @@ const MakeupScreen: React.FC = () => {
       if (Platform.OS !== 'ios') setPickerTarget(null);
       if (!target || event.type === 'dismissed' || !selected) return;
 
-      scheduleMakeup(target.makeup.id, format(selected, 'yyyy-MM-dd'));
+      record(
+        scheduleMakeup(target.makeup.id, format(selected, 'yyyy-MM-dd')),
+        'select',
+        `${target.student.name} 학생의 보충일을 저장하지 못했습니다.`
+      );
       if (Platform.OS === 'ios') setPickerTarget(null);
     },
     [pickerTarget, scheduleMakeup]
@@ -107,7 +127,12 @@ const MakeupScreen: React.FC = () => {
         title: '보충 완료',
         message: `${entry.student.name} 학생의 보충을 완료 처리할까요?`,
         confirmLabel: '완료',
-        onConfirm: () => completeMakeup(entry.makeup.id),
+        onConfirm: () =>
+          record(
+            completeMakeup(entry.makeup.id),
+            'success',
+            `${entry.student.name} 학생의 보충을 완료하지 못했습니다.`
+          ),
       });
     },
     [completeMakeup]
@@ -120,7 +145,12 @@ const MakeupScreen: React.FC = () => {
         message: `${entry.student.name} 학생의 보충 건을 삭제할까요?`,
         confirmLabel: '삭제',
         destructive: true,
-        onConfirm: () => deleteMakeup(entry.makeup.id),
+        onConfirm: () =>
+          record(
+            deleteMakeup(entry.makeup.id),
+            'tap',
+            `${entry.student.name} 학생의 보충 건을 삭제하지 못했습니다.`
+          ),
       });
     },
     [deleteMakeup]
@@ -139,7 +169,8 @@ const MakeupScreen: React.FC = () => {
 
       <FlatList<MakeupEntry[]>
         data={rows}
-        keyExtractor={(row, index) => row[0]?.makeup.id ?? `row-${index}`}
+        // 행은 자리로 부른다 (HomeScreen 참고).
+        keyExtractor={(_row, index) => String(index)}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: 24 }}
         renderItem={({ item }) => (

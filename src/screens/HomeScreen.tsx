@@ -11,6 +11,7 @@ import { useResponsive } from '../hooks/useResponsive';
 import Screen from '../components/common/Screen';
 import GridRow from '../components/common/GridRow';
 import StudentCard from '../components/StudentCard';
+import BoardLane, { LaneEmpty, LaneGap, LaneGroupTitle } from '../components/BoardLane';
 import PressableScale from '../components/common/PressableScale';
 import { useBump } from '../hooks/useMotion';
 import { haptic, HapticKind } from '../utils/haptics';
@@ -123,6 +124,31 @@ const StatValue = styled.Text`
   color: white;
   font-size: 20px;
   font-family: ${({ theme }) => theme.fonts.bold};`;
+
+/* 보드용 납작한 요약. 큰 숫자 카드가 차지하던 세로 자리를 명단에 돌려준다. */
+const SummaryBar = styled.View`
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  background-color: ${({ theme }) => theme.colors.primaryStrong};
+  padding-vertical: 12px;
+  padding-horizontal: ${({ theme }) => theme.spacing.large}px;
+  border-radius: ${({ theme }) => theme.borderRadius.medium}px;
+  margin-bottom: ${({ theme }) => theme.spacing.medium}px;
+`;
+
+const SummaryLead = styled.View`
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+`;
+
+const Board = styled.View`
+  flex: 1;
+  flex-direction: row;
+  gap: ${({ theme }) => theme.spacing.medium}px;
+  padding-bottom: ${({ theme }) => theme.spacing.medium}px;
+`;
 
 const ClosureCard = styled.View`
   background-color: ${({ theme }) => theme.colors.secondary}20;
@@ -322,6 +348,26 @@ const HomeScreen: React.FC = () => {
     };
   }, [students, roster, attendanceByStudent]);
 
+  /**
+   * 보드용: 등원한 학생을 아직 있는 쪽과 하원한 쪽으로 가른다.
+   *
+   * 있는 쪽은 먼저 온 순서다. 대개 먼저 온 아이가 먼저 가므로 하원을 누를 카드가
+   * 칸 위쪽에 모인다. 하원한 쪽은 방금 간 아이가 위 — 잘못 눌렀으면 바로 보인다.
+   */
+  const { inClass, leftToday } = useMemo(() => {
+    const present = [...checkedInOnSchedule, ...unexpectedArrivals];
+    const recordOf = (student: Student) => attendanceByStudent.get(student.id);
+    const staying = present
+      .filter((student) => !recordOf(student)?.leaveTime)
+      .sort((a, b) => (recordOf(a)?.time ?? '').localeCompare(recordOf(b)?.time ?? ''));
+    const left = present
+      .filter((student) => Boolean(recordOf(student)?.leaveTime))
+      .sort((a, b) =>
+        (recordOf(b)?.leaveTime ?? '').localeCompare(recordOf(a)?.leaveTime ?? '')
+      );
+    return { inClass: staying, leftToday: left };
+  }, [checkedInOnSchedule, unexpectedArrivals, attendanceByStudent]);
+
   /** 결석은 등원이 아니므로 출석 수에서 뺀다. */
   const checkedInCount = checkedInOnSchedule.length + unexpectedArrivals.length;
 
@@ -505,6 +551,241 @@ const HomeScreen: React.FC = () => {
           })}에 맞춤`
         : '아직 안 맞춤';
 
+  /**
+   * 카드 한 장. 목록과 보드가 같은 카드를 쓰고, 보드에서는 납작한 모양만 고른다.
+   * checkable은 아직 등원 전인 칸 — 등원·결석 버튼이 붙고, 기록 쪽 동작은 없다.
+   */
+  const renderCard = useCallback(
+    (student: Student, checkable: boolean, dense: boolean) => {
+      const entry = rosterById.get(student.id);
+      return (
+        <StudentCard
+          key={student.id}
+          dense={dense}
+          student={student}
+          attendance={attendanceByStudent.get(student.id)}
+          startTime={entry?.startTime}
+          endTime={entry?.endTime}
+          isExtra={entry?.isExtra}
+          onCheckIn={checkable ? handleCheckIn : undefined}
+          onMarkAbsent={checkable ? handleMarkAbsent : undefined}
+          onUndo={checkable ? undefined : handleUndo}
+          onEditTime={checkable ? undefined : handleEditTime}
+          onCheckOut={checkable ? undefined : handleCheckOut}
+          onEditLeaveTime={checkable ? undefined : handleEditLeaveTime}
+          hasNameTwin={twins.has(student.name.trim())}
+          pulse={pulse?.id === student.id ? pulse.n : undefined}
+        />
+      );
+    },
+    [
+      rosterById,
+      attendanceByStudent,
+      handleCheckIn,
+      handleMarkAbsent,
+      handleUndo,
+      handleEditTime,
+      handleCheckOut,
+      handleEditLeaveTime,
+      twins,
+      pulse,
+    ]
+  );
+
+  /**
+   * 아이패드처럼 넓은 창에서는 칸을 옆으로 늘어놓는다 — 누가 올 차례고, 누가 와 있고,
+   * 누가 갔는지를 스크롤 없이 한 화면에서. 좁은 창(아이폰, Split View로 좁힌 창)은
+   * 예전처럼 한 줄 목록이다. 회전이나 창 크기가 바뀌면 그 자리에서 갈아탄다.
+   */
+  const board = sizeClass !== 'compact';
+  /** 가장 넓은 창만 하원·결석에 칸을 따로 준다. 그보다 좁으면 등원 칸 아래에 붙인다. */
+  const threeLanes = sizeClass === 'expanded';
+
+  const emptyNotice =
+    students.length === 0
+      ? '등록된 원생이 없습니다.\n[원생] 탭에서 추가해 주세요.'
+      : '오늘 등원 예정인 원생이 없습니다.\n[일정]에서 추가할 수 있습니다.';
+
+  const header = (
+    <Header style={board ? { marginBottom: 16 } : undefined}>
+      <View>
+        <DateText>{fromDateKey(today).toLocaleDateString('ko-KR')}</DateText>
+        <TitleText>오늘의 출석</TitleText>
+      </View>
+      <View style={{ alignItems: 'flex-end' }}>
+        <View style={{ flexDirection: 'row', gap: 8 }}>
+          {/* 수업용으로 아이패드를 건네주기 직전에 누른다. 앱을 켠 채로
+              넘기는 경우는 자동 잠금으로 잡을 수 없다. */}
+          {lock.enabled && (
+            <HeaderAction
+              onPress={lock.lock}
+              pressScale={0.9}
+              haptic="tap"
+              accessibilityRole="button"
+              accessibilityLabel="지금 잠그기"
+            >
+              <Ionicons name="lock-closed-outline" size={16} />
+            </HeaderAction>
+          )}
+          <HeaderAction
+            onPress={openSchedule}
+            pressScale={0.93}
+            accessibilityRole="button"
+            accessibilityLabel="일정 관리"
+          >
+            <Ionicons name="calendar-outline" size={16} />
+            <HeaderActionText>일정</HeaderActionText>
+          </HeaderAction>
+        </View>
+        {syncUnavailable === null && (
+          <SyncLine
+            onPress={handleSync}
+            disabled={syncing}
+            pressScale={0.95}
+            pressOpacity={0.6}
+            hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+            accessibilityRole="button"
+            accessibilityLabel="지금 동기화"
+          >
+            <Ionicons
+              name={syncing ? 'sync' : syncError ? 'cloud-offline-outline' : 'cloud-done-outline'}
+              size={12}
+            />
+            <SyncText $warn={Boolean(syncError) || !lastSyncAt}>{syncLabel}</SyncText>
+          </SyncLine>
+        )}
+      </View>
+    </Header>
+  );
+
+  const closure = (
+    <ClosureCard>
+      <Ionicons name="cafe-outline" size={32} />
+      <ClosureTitle>오늘은 휴강입니다</ClosureTitle>
+      {Boolean(note) && <ClosureNote>{note}</ClosureNote>}
+      <ClosureNote>[일정]에서 해제할 수 있습니다.</ClosureNote>
+    </ClosureCard>
+  );
+
+  /* 숫자가 튈 때 폭을 글자에 맞춰야 글자 한가운데를 중심으로 부푼다. */
+  const count = (
+    <Animated.View style={{ alignSelf: 'flex-start', transform: [{ scale: countScale }] }}>
+      <SummaryValue style={board ? { marginBottom: 0, fontSize: 26 } : undefined}>
+        {checkedInCount} / {roster.length}
+      </SummaryValue>
+    </Animated.View>
+  );
+
+  const timePicker = timeTarget && (
+    <DateTimePicker
+      value={dateFromTime(
+        (timeTarget.edge === 'in' ? timeTarget.attendance.time : timeTarget.attendance.leaveTime) ??
+          getCurrentTime()
+      )}
+      mode="time"
+      display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+      onChange={handleTimeChange}
+      accessibilityLabel={timeTarget.edge === 'in' ? '등원 시각' : '하원 시각'}
+    />
+  );
+
+  if (board) {
+    const finishedLane = (
+      <>
+        {leftToday.length > 0 && (
+          <LaneGap>{leftToday.map((student) => renderCard(student, false, true))}</LaneGap>
+        )}
+        {absentStudents.length > 0 && (
+          <>
+            <LaneGroupTitle>결석 — {absentStudents.length}</LaneGroupTitle>
+            <LaneGap>{absentStudents.map((student) => renderCard(student, false, true))}</LaneGap>
+          </>
+        )}
+      </>
+    );
+
+    return (
+      <Screen>
+        {header}
+        {closed ? (
+          closure
+        ) : (
+          <>
+            {/* 금액은 홈에서 다루지 않는다. 수강료는 원생 탭의 토글과
+                이후 월계표 화면에서만 노출한다. */}
+            <SummaryBar>
+              <SummaryLead>
+                <SummaryTitle style={{ marginBottom: 0 }}>오늘 등원</SummaryTitle>
+                {count}
+              </SummaryLead>
+              <StatsContainer $spread={false} style={{ gap: 36 }}>
+                <StatItem>
+                  <StatLabel>수업 중</StatLabel>
+                  <StatValue>{inClass.length}</StatValue>
+                </StatItem>
+                <StatItem>
+                  <StatLabel>하원</StatLabel>
+                  <StatValue>{leftToday.length}</StatValue>
+                </StatItem>
+                <StatItem>
+                  <StatLabel>결석</StatLabel>
+                  <StatValue>{absentStudents.length}</StatValue>
+                </StatItem>
+                <StatItem>
+                  <StatLabel>남음</StatLabel>
+                  <StatValue>{pending.length}</StatValue>
+                </StatItem>
+              </StatsContainer>
+            </SummaryBar>
+
+            <Board>
+              <BoardLane title="등원 예정" count={pending.length} tone="pending">
+                {pending.length > 0 ? (
+                  <LaneGap>{pending.map((student) => renderCard(student, true, true))}</LaneGap>
+                ) : (
+                  <LaneEmpty>{roster.length === 0 ? emptyNotice : '모두 왔습니다.'}</LaneEmpty>
+                )}
+              </BoardLane>
+
+              <BoardLane title="수업 중" count={inClass.length} tone="present">
+                {inClass.length > 0 ? (
+                  <LaneGap>{inClass.map((student) => renderCard(student, false, true))}</LaneGap>
+                ) : (
+                  <LaneEmpty>
+                    {checkedInCount > 0 ? '모두 하원했습니다.' : '등원하면 여기로 옵니다.'}
+                  </LaneEmpty>
+                )}
+                {!threeLanes && (leftToday.length > 0 || absentStudents.length > 0) && (
+                  <>
+                    {leftToday.length > 0 && (
+                      <LaneGroupTitle>하원 — {leftToday.length}</LaneGroupTitle>
+                    )}
+                    {finishedLane}
+                  </>
+                )}
+              </BoardLane>
+
+              {threeLanes && (
+                <BoardLane
+                  title="하원 · 결석"
+                  count={leftToday.length + absentStudents.length}
+                  tone="done"
+                >
+                  {leftToday.length + absentStudents.length > 0 ? (
+                    finishedLane
+                  ) : (
+                    <LaneEmpty>하원을 누르거나 결석으로 두면 여기로 옵니다.</LaneEmpty>
+                  )}
+                </BoardLane>
+              )}
+            </Board>
+          </>
+        )}
+        {timePicker}
+      </Screen>
+    );
+  }
+
   return (
     <Screen>
       <SectionList<Student[], Section>
@@ -520,79 +801,16 @@ const HomeScreen: React.FC = () => {
         contentContainerStyle={{ paddingBottom: 24 }}
         ListHeaderComponent={
           <>
-            <Header>
-              <View>
-                <DateText>{fromDateKey(today).toLocaleDateString('ko-KR')}</DateText>
-                <TitleText>오늘의 출석</TitleText>
-              </View>
-              <View style={{ alignItems: 'flex-end' }}>
-                <View style={{ flexDirection: 'row', gap: 8 }}>
-                  {/* 수업용으로 아이패드를 건네주기 직전에 누른다. 앱을 켠 채로
-                      넘기는 경우는 자동 잠금으로 잡을 수 없다. */}
-                  {lock.enabled && (
-                    <HeaderAction
-                      onPress={lock.lock}
-                      pressScale={0.9}
-                      haptic="tap"
-                      accessibilityRole="button"
-                      accessibilityLabel="지금 잠그기"
-                    >
-                      <Ionicons name="lock-closed-outline" size={16} />
-                    </HeaderAction>
-                  )}
-                  <HeaderAction
-                    onPress={openSchedule}
-                    pressScale={0.93}
-                    accessibilityRole="button"
-                    accessibilityLabel="일정 관리"
-                  >
-                    <Ionicons name="calendar-outline" size={16} />
-                    <HeaderActionText>일정</HeaderActionText>
-                  </HeaderAction>
-                </View>
-                {syncUnavailable === null && (
-                  <SyncLine
-                    onPress={handleSync}
-                    disabled={syncing}
-                    pressScale={0.95}
-                    pressOpacity={0.6}
-                    hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-                    accessibilityRole="button"
-                    accessibilityLabel="지금 동기화"
-                  >
-                    <Ionicons
-                      name={
-                        syncing ? 'sync' : syncError ? 'cloud-offline-outline' : 'cloud-done-outline'
-                      }
-                      size={12}
-                    />
-                    <SyncText $warn={Boolean(syncError) || !lastSyncAt}>{syncLabel}</SyncText>
-                  </SyncLine>
-                )}
-              </View>
-            </Header>
-
+            {header}
             {closed ? (
-              <ClosureCard>
-                <Ionicons name="cafe-outline" size={32} />
-                <ClosureTitle>오늘은 휴강입니다</ClosureTitle>
-                {Boolean(note) && <ClosureNote>{note}</ClosureNote>}
-                <ClosureNote>[일정]에서 해제할 수 있습니다.</ClosureNote>
-              </ClosureCard>
+              closure
             ) : (
               /* 금액은 홈에서 다루지 않는다. 수강료는 원생 탭의 토글과
                  이후 월계표 화면에서만 노출한다. */
               <SummaryCard>
                 <SummaryTitle>오늘 등원</SummaryTitle>
-                {/* 폭을 글자에 맞춰야 글자 한가운데를 중심으로 부푼다. */}
-                <Animated.View
-                  style={{ alignSelf: 'flex-start', transform: [{ scale: countScale }] }}
-                >
-                  <SummaryValue>
-                    {checkedInCount} / {roster.length}
-                  </SummaryValue>
-                </Animated.View>
-                <StatsContainer $spread={sizeClass === 'compact'}>
+                {count}
+                <StatsContainer $spread>
                   <StatItem>
                     <StatLabel>예정</StatLabel>
                     <StatValue>{roster.length}</StatValue>
@@ -616,52 +834,12 @@ const HomeScreen: React.FC = () => {
             items={item}
             columns={columns}
             keyExtractor={(student) => student.id}
-            renderItem={(student) => {
-              const entry = rosterById.get(student.id);
-              return (
-                <StudentCard
-                  student={student}
-                  attendance={attendanceByStudent.get(student.id)}
-                  startTime={entry?.startTime}
-                  endTime={entry?.endTime}
-                  isExtra={entry?.isExtra}
-                  onCheckIn={section.checkable ? handleCheckIn : undefined}
-                  onMarkAbsent={section.checkable ? handleMarkAbsent : undefined}
-                  onUndo={section.checkable ? undefined : handleUndo}
-                  onEditTime={section.checkable ? undefined : handleEditTime}
-                  onCheckOut={section.checkable ? undefined : handleCheckOut}
-                  onEditLeaveTime={section.checkable ? undefined : handleEditLeaveTime}
-                  hasNameTwin={twins.has(student.name.trim())}
-                  pulse={pulse?.id === student.id ? pulse.n : undefined}
-                />
-              );
-            }}
+            renderItem={(student) => renderCard(student, section.checkable, false)}
           />
         )}
-        ListEmptyComponent={
-          closed ? null : (
-            <EmptyText>
-              {students.length === 0
-                ? '등록된 원생이 없습니다.\n[원생] 탭에서 추가해 주세요.'
-                : '오늘 등원 예정인 원생이 없습니다.\n[일정]에서 추가할 수 있습니다.'}
-            </EmptyText>
-          )
-        }
+        ListEmptyComponent={closed ? null : <EmptyText>{emptyNotice}</EmptyText>}
       />
-
-      {timeTarget && (
-        <DateTimePicker
-          value={dateFromTime(
-            (timeTarget.edge === 'in'
-              ? timeTarget.attendance.time
-              : timeTarget.attendance.leaveTime) ?? getCurrentTime()
-          )}
-          mode="time"
-          display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-          onChange={handleTimeChange}
-          accessibilityLabel={timeTarget.edge === 'in' ? '등원 시각' : '하원 시각'}
-        />
-      )}
+      {timePicker}
     </Screen>
   );
 };

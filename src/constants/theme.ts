@@ -96,6 +96,8 @@ export const layoutBySizeClass: Record<
   { columns: number; maxContentWidth: number; horizontalPadding: number }
 > = {
   compact: { columns: 1, maxContentWidth: 560, horizontalPadding: 16 },
-  medium: { columns: 2, maxContentWidth: 900, horizontalPadding: 24 },
+  /* 폭 제한은 medium 구간의 끝(1100)까지 둔다. 900에서 자르면 iPad Pro 13" 세로(1032)에서
+     오늘 화면의 두 칸 보드가 양옆에 빈 띠를 남기고 좁아진다. */
+  medium: { columns: 2, maxContentWidth: 1100, horizontalPadding: 24 },
   expanded: { columns: 3, maxContentWidth: 1400, horizontalPadding: 32 },
 };

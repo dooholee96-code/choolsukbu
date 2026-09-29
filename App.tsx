@@ -22,7 +22,6 @@ import { initDB } from './src/db';
 import { DataProvider } from './src/hooks/useData';
 import ErrorBoundary from './src/components/ErrorBoundary';
 import { logger } from './src/utils/logger';
-import { useResponsive } from './src/hooks/useResponsive';
 import { useAppLock } from './src/hooks/useAppLock';
 import { AppLockContext } from './src/hooks/appLockContext';
 import type { RootStackParamList, TabParamList } from './src/types/navigation';
@@ -106,11 +105,13 @@ function TabNavigator() {
 }
 
 function RootNavigator() {
-  const { sizeClass } = useResponsive();
-
-  // iPad처럼 넓은 창에서는 모달이 화면 전체를 덮지 않도록 form sheet로 띄운다.
-  // Stage Manager로 창을 좁히면 compact가 되어 다시 전체 모달로 돌아간다.
-  const modalPresentation = sizeClass === 'compact' ? 'modal' : 'formSheet';
+  // 'modal'은 iOS의 automatic 표시다. iPad에서는 가운데 뜨는 page sheet가 되어
+  // 화면 전체를 덮지 않고, 아이폰·좁은 창에서는 아래에서 올라오는 시트가 된다.
+  //
+  // 예전에는 iPad에서 'formSheet'를 썼는데, react-native-screens 4.26부터 form sheet의
+  // 크기와 위치를 네이티브 쪽 동기 갱신으로 정하게 바뀌면서 iPadOS에서 시트는 뜨는데
+  // 내용이 비어 보였다 (흰 화면). 일반 화면은 같은 경로로도 멀쩡해서 'modal'로 바꿨다.
+  const modalPresentation = 'modal';
 
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>

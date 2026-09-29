@@ -5,6 +5,7 @@ export const theme = {
     secondary: '#E8B27A', // 예외 등원
     success: '#7FBFA1', // 출석
     danger: '#D98A96', // 결석
+    lavender: '#A99BD4', // 하원 — 배경의 라벤더 꽃에서
     background: '#F6F2EC', // 크림
     cardBackground: '#FFFDFB',
     textPrimary: '#4B3B53',
@@ -34,6 +35,8 @@ export const theme = {
     secondaryStrong: '#896948',
     successStrong: '#4F7664',
     dangerStrong: '#965F67',
+    /* 흰 글씨 6.2:1, 배경 5.5:1. 위 세 조건을 같은 방식으로 맞췄다. */
+    lavenderStrong: '#665A8C',
   },
   fonts: {
     regular: 'GowunDodum',

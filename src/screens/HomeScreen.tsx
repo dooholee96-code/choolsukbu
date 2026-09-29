@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import styled from 'styled-components/native';
+import styled, { useTheme } from 'styled-components/native';
 import { Animated, Platform, SectionList, View } from 'react-native';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { format } from 'date-fns';
@@ -75,14 +75,28 @@ const HeaderActionText = styled.Text`
   color: ${({ theme }) => theme.colors.primaryStrong};
 `;
 
-const SectionTitle = styled.Text`
-  font-size: 13px;
-  font-family: ${({ theme }) => theme.fonts.bold};
-  color: ${({ theme }) => theme.colors.textSecondary};
+const SectionHeader = styled.View`
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
   margin-bottom: ${({ theme }) => theme.spacing.small}px;
   margin-top: ${({ theme }) => theme.spacing.medium}px;
   background-color: ${({ theme }) => theme.colors.background};
   padding-vertical: 4px;
+`;
+
+/* 보드의 칸 색과 같은 점. 좁은 화면의 목록에서도 어느 무리인지 색으로 이어진다. */
+const SectionDot = styled.View<{ $color: string }>`
+  width: 8px;
+  height: 8px;
+  border-radius: 4px;
+  background-color: ${({ $color }) => $color};
+`;
+
+const SectionTitle = styled.Text`
+  font-size: 13px;
+  font-family: ${({ theme }) => theme.fonts.bold};
+  color: ${({ theme }) => theme.colors.textSecondary};
 `;
 
 const SummaryCard = styled.View`
@@ -220,6 +234,7 @@ const HomeScreen: React.FC = () => {
     today,
   } = useData();
   const { columns, sizeClass } = useResponsive();
+  const theme = useTheme();
   const navigation = useNavigation();
   const lock = useAppLockContext();
 
@@ -598,6 +613,14 @@ const HomeScreen: React.FC = () => {
    * 예전처럼 한 줄 목록이다. 회전이나 창 크기가 바뀌면 그 자리에서 갈아탄다.
    */
   const board = sizeClass !== 'compact';
+
+  /** 목록 머리의 점 색. 카드의 상태 표시(출석·예외·결석)와 같은 색이다. */
+  const sectionColor: Record<Section['key'], string> = {
+    pending: theme.colors.primary,
+    onSchedule: theme.colors.success,
+    unexpected: theme.colors.secondary,
+    absent: theme.colors.danger,
+  };
   /** 가장 넓은 창만 하원·결석에 칸을 따로 준다. 그보다 좁으면 등원 칸 아래에 붙인다. */
   const threeLanes = sizeClass === 'expanded';
 
@@ -697,7 +720,9 @@ const HomeScreen: React.FC = () => {
         )}
         {absentStudents.length > 0 && (
           <>
-            <LaneGroupTitle>결석 — {absentStudents.length}</LaneGroupTitle>
+            <LaneGroupTitle $color={theme.colors.dangerStrong}>
+              결석 — {absentStudents.length}
+            </LaneGroupTitle>
             <LaneGap>{absentStudents.map((student) => renderCard(student, false, true))}</LaneGap>
           </>
         )}
@@ -758,7 +783,9 @@ const HomeScreen: React.FC = () => {
                 {!threeLanes && (leftToday.length > 0 || absentStudents.length > 0) && (
                   <>
                     {leftToday.length > 0 && (
-                      <LaneGroupTitle>하원 — {leftToday.length}</LaneGroupTitle>
+                      <LaneGroupTitle $color={theme.colors.lavenderStrong}>
+                        하원 — {leftToday.length}
+                      </LaneGroupTitle>
                     )}
                     {finishedLane}
                   </>
@@ -828,7 +855,12 @@ const HomeScreen: React.FC = () => {
             )}
           </>
         }
-        renderSectionHeader={({ section }) => <SectionTitle>{section.title}</SectionTitle>}
+        renderSectionHeader={({ section }) => (
+          <SectionHeader>
+            <SectionDot $color={sectionColor[section.key]} />
+            <SectionTitle>{section.title}</SectionTitle>
+          </SectionHeader>
+        )}
         renderItem={({ item, section }) => (
           <GridRow
             items={item}

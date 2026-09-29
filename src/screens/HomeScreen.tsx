@@ -11,7 +11,12 @@ import { useResponsive } from '../hooks/useResponsive';
 import Screen from '../components/common/Screen';
 import GridRow from '../components/common/GridRow';
 import StudentCard from '../components/StudentCard';
-import BoardLane, { LaneEmpty, LaneGap, LaneGroupTitle } from '../components/BoardLane';
+import BoardLane, {
+  LaneEmpty,
+  LaneGap,
+  LaneGroupTitle,
+  TintGroup,
+} from '../components/BoardLane';
 import PressableScale from '../components/common/PressableScale';
 import { useBump } from '../hooks/useMotion';
 import { haptic, HapticKind } from '../utils/haptics';
@@ -132,6 +137,22 @@ const StatLabel = styled.Text`
   color: rgba(255, 255, 255, 0.8);
   font-family: ${({ theme }) => theme.fonts.regular};
   font-size: 12px;
+`;
+
+const StatLabelRow = styled.View`
+  flex-direction: row;
+  align-items: center;
+  gap: 5px;
+`;
+
+/* 보드 칸과 같은 색 점. 진한 요약 띠 위에서도 보이도록 흰 테두리를 두른다. */
+const StatDot = styled.View<{ $color: string }>`
+  width: 9px;
+  height: 9px;
+  border-radius: 5px;
+  border-width: 1.5px;
+  border-color: rgba(255, 255, 255, 0.85);
+  background-color: ${({ $color }) => $color};
 `;
 
 const StatValue = styled.Text`
@@ -614,9 +635,9 @@ const HomeScreen: React.FC = () => {
    */
   const board = sizeClass !== 'compact';
 
-  /** 목록 머리의 점 색. 카드의 상태 표시(출석·예외·결석)와 같은 색이다. */
+  /** 목록 머리의 점 색. 예정은 보드의 칸 색, 나머지는 카드의 상태 표시(출석·예외·결석)와 같은 색. */
   const sectionColor: Record<Section['key'], string> = {
-    pending: theme.colors.primary,
+    pending: theme.colors.sun,
     onSchedule: theme.colors.success,
     unexpected: theme.colors.secondary,
     absent: theme.colors.danger,
@@ -713,20 +734,17 @@ const HomeScreen: React.FC = () => {
   );
 
   if (board) {
-    const finishedLane = (
-      <>
-        {leftToday.length > 0 && (
-          <LaneGap>{leftToday.map((student) => renderCard(student, false, true))}</LaneGap>
-        )}
-        {absentStudents.length > 0 && (
-          <>
-            <LaneGroupTitle $color={theme.colors.dangerStrong}>
-              결석 — {absentStudents.length}
-            </LaneGroupTitle>
-            <LaneGap>{absentStudents.map((student) => renderCard(student, false, true))}</LaneGap>
-          </>
-        )}
-      </>
+    const leftCards = (
+      <LaneGap>{leftToday.map((student) => renderCard(student, false, true))}</LaneGap>
+    );
+
+    const absentGroup = absentStudents.length > 0 && (
+      <TintGroup $color={theme.colors.danger}>
+        <LaneGroupTitle $color={theme.colors.dangerStrong}>
+          결석 — {absentStudents.length}
+        </LaneGroupTitle>
+        <LaneGap>{absentStudents.map((student) => renderCard(student, false, true))}</LaneGap>
+      </TintGroup>
     );
 
     return (
@@ -745,19 +763,31 @@ const HomeScreen: React.FC = () => {
               </SummaryLead>
               <StatsContainer $spread={false} style={{ gap: 36 }}>
                 <StatItem>
-                  <StatLabel>수업 중</StatLabel>
+                  <StatLabelRow>
+                    <StatDot $color={theme.colors.success} />
+                    <StatLabel>수업 중</StatLabel>
+                  </StatLabelRow>
                   <StatValue>{inClass.length}</StatValue>
                 </StatItem>
                 <StatItem>
-                  <StatLabel>하원</StatLabel>
+                  <StatLabelRow>
+                    <StatDot $color={theme.colors.primary} />
+                    <StatLabel>하원</StatLabel>
+                  </StatLabelRow>
                   <StatValue>{leftToday.length}</StatValue>
                 </StatItem>
                 <StatItem>
-                  <StatLabel>결석</StatLabel>
+                  <StatLabelRow>
+                    <StatDot $color={theme.colors.danger} />
+                    <StatLabel>결석</StatLabel>
+                  </StatLabelRow>
                   <StatValue>{absentStudents.length}</StatValue>
                 </StatItem>
                 <StatItem>
-                  <StatLabel>남음</StatLabel>
+                  <StatLabelRow>
+                    <StatDot $color={theme.colors.sun} />
+                    <StatLabel>남음</StatLabel>
+                  </StatLabelRow>
                   <StatValue>{pending.length}</StatValue>
                 </StatItem>
               </StatsContainer>
@@ -780,16 +810,16 @@ const HomeScreen: React.FC = () => {
                     {checkedInCount > 0 ? '모두 하원했습니다.' : '등원하면 여기로 옵니다.'}
                   </LaneEmpty>
                 )}
-                {!threeLanes && (leftToday.length > 0 || absentStudents.length > 0) && (
-                  <>
-                    {leftToday.length > 0 && (
-                      <LaneGroupTitle $color={theme.colors.lavenderStrong}>
-                        하원 — {leftToday.length}
-                      </LaneGroupTitle>
-                    )}
-                    {finishedLane}
-                  </>
+                {/* 좁은 보드에는 하원 칸이 따로 없다. 하원 칸의 파랑을 묶음 바탕으로 가져온다. */}
+                {!threeLanes && leftToday.length > 0 && (
+                  <TintGroup $color={theme.colors.primary}>
+                    <LaneGroupTitle $color={theme.colors.primaryStrong}>
+                      하원 — {leftToday.length}
+                    </LaneGroupTitle>
+                    {leftCards}
+                  </TintGroup>
                 )}
+                {!threeLanes && absentGroup}
               </BoardLane>
 
               {threeLanes && (
@@ -799,7 +829,10 @@ const HomeScreen: React.FC = () => {
                   tone="done"
                 >
                   {leftToday.length + absentStudents.length > 0 ? (
-                    finishedLane
+                    <>
+                      {leftToday.length > 0 && leftCards}
+                      {absentGroup}
+                    </>
                   ) : (
                     <LaneEmpty>하원을 누르거나 결석으로 두면 여기로 옵니다.</LaneEmpty>
                   )}

@@ -7,6 +7,7 @@
     "userInterfaceStyle": "light",
     "ios": {
       "bundleIdentifier": "com.dooholee96.choolsukbu",
+      "appleTeamId": "2K7KJXBSCC",
       "buildNumber": "1",
       "supportsTablet": true,
       "requireFullScreen": false,

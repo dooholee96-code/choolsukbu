@@ -90,7 +90,32 @@ npx expo run:ios --device --configuration Release
 
 **데이터는 지워지지 않는다.** 같은 번들 ID로 덮어쓰는 업그레이드 설치라 SQLite 파일이 그대로 유지된다. 단, 앱을 손으로 삭제하면 데이터도 함께 사라진다.
 
-네이티브 모듈이 늘어난 뒤의 첫 빌드(예: `expo-haptics`)는 `Running pod install in the ios directory`가 찍히며 몇 분 더 걸린다. `expo run:ios`가 `package.json`의 의존성이 바뀐 것을 보고 알아서 돌리는 것이라 따로 할 일은 없다. `ios` 폴더를 지우거나 `prebuild --clean`을 쓰면 Xcode에서 고른 서명 팀이 사라지니 하지 않는다.
+### 켜자마자 꺼지면 — 부품 버전이 어긋난 것이다
+
+SDK 57이 만드는 iOS 프로젝트는 Expo 모듈을 소스로 빌드하지 않고, 각 npm 패키지에 들어 있는
+**미리 컴파일된 파일**을 쓴다 (Podfile의 `EXPO_USE_PRECOMPILED_MODULES`). 그 파일은 패키지를
+올린 시점의 `expo-modules-core`에 맞춰 만들어져서, 버전이 서로 어긋나면 **빌드는 멀쩡히 끝나는데
+앱이 켜지자마자 꺼진다.** 충돌 기록에는 `Symbol not found: ...ExpoModulesCore...`가 찍힌다.
+
+실제로 그랬다. `expo` 57.0.4가 끌어온 `expo-modules-core` 57.0.3과 `expo-file-system` 57.0.2는
+npm에 올라간 조합 자체가 맞지 않았다 — 파일시스템이 찾는 `willDestroy`가 코어에 없었다.
+SDK 57의 최신 패치 세트(`expo` 57.0.26, 코어 57.0.20)로 함께 올려 맞췄다.
+
+의존성을 올렸으면 아이패드에 올리기 전에 한 번 돌린다. 각 모듈이 코어에서 가져다 쓰는 기호가
+전부 코어에 있는지 대조한다 — 앱을 켤 때 iOS가 하는 일과 같다.
+
+```bash
+npm run check:native
+```
+
+Expo 패키지는 **같은 SDK의 최신 패치로 함께** 올린다(`npx expo install --fix`). 하나만 올리면
+이 대조가 깨진다.
+
+서명 팀은 `app.json`의 `ios.appleTeamId`에 적혀 있다. 그래서 `npx expo prebuild --clean`으로
+`ios` 폴더를 새로 만들어도 Xcode에서 팀을 다시 고를 필요가 없다. 팀 ID는 비밀값이 아니다 —
+서명된 모든 앱에 그대로 들어 있다.
+
+네이티브 모듈이 늘어난 뒤의 첫 빌드(예: `expo-haptics`)는 `Running pod install in the ios directory`가 찍히며 몇 분 더 걸린다. `expo run:ios`가 `package.json`의 의존성이 바뀐 것을 보고 알아서 돌리는 것이라 따로 할 일은 없다. `ios` 폴더를 새로 만들어도(`prebuild --clean`) 서명 팀은 `app.json`에서 다시 들어간다.
 
 무료 계정에는 기기당 앱 3개, 주당 App ID 10개 제한도 있다.
 

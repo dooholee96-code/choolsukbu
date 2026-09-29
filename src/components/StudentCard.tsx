@@ -56,6 +56,11 @@ interface StudentCardProps {
    * 따라가지 못한다.
    */
   pulse?: number;
+  /**
+   * 큰 화면의 보드용 납작한 모양. 상태 표시를 이름 옆으로, 버튼을 옆으로 늘어놓아
+   * 카드 높이를 절반 가까이 줄인다 — 아이패드 한 화면에 그날 명단이 다 들어오게.
+   */
+  dense?: boolean;
 }
 
 /*
@@ -64,11 +69,12 @@ interface StudentCardProps {
  * 카드 높이가 0으로 무너지고 내용이 밖으로 넘친다.
  * flex-basis를 auto로 남겨야 자연 높이를 잡은 뒤 한 행에서 높이가 맞춰진다.
  */
-const CardContainer = styled.View`
+const CardContainer = styled.View<{ $dense?: boolean }>`
   flex-grow: 1;
   background-color: ${({ theme }) => theme.colors.cardBackground};
-  padding: ${({ theme }) => theme.spacing.medium}px;
-  border-radius: ${({ theme }) => theme.borderRadius.medium}px;
+  padding: ${({ theme, $dense }) => ($dense ? 12 : theme.spacing.medium)}px;
+  border-radius: ${({ theme, $dense }) =>
+    $dense ? theme.borderRadius.small : theme.borderRadius.medium}px;
   flex-direction: row;
   align-items: center;
   justify-content: space-between;
@@ -92,20 +98,50 @@ const InfoContainer = styled.View`
  * (실제로 여기 있던 '// 20% opacity' 가 align-items: center 를 먹고 있었다.)
  * 아래 primary + '20' 은 8자리 hex(#RRGGBBAA)로 불투명도 약 12.5%다.
  */
-const Avatar = styled.View`
-  width: 48px;
-  height: 48px;
-  border-radius: 24px;
+const Avatar = styled.View<{ $dense?: boolean }>`
+  width: ${({ $dense }) => ($dense ? 36 : 48)}px;
+  height: ${({ $dense }) => ($dense ? 36 : 48)}px;
+  border-radius: ${({ $dense }) => ($dense ? 18 : 24)}px;
   background-color: ${({ theme }) => theme.colors.primary}20;
   align-items: center;
   justify-content: center;
-  margin-right: ${({ theme }) => theme.spacing.medium}px;
+  margin-right: ${({ theme, $dense }) => ($dense ? 12 : theme.spacing.medium)}px;
 `;
 
-const AvatarText = styled.Text`
+const AvatarText = styled.Text<{ $dense?: boolean }>`
   color: ${({ theme }) => theme.colors.primaryStrong};
-  font-size: 18px;
+  font-size: ${({ $dense }) => ($dense ? 15 : 18)}px;
   font-family: ${({ theme }) => theme.fonts.bold};`;
+
+/* 보드용: 이름 옆에 상태 표시를 붙인다. */
+const NameRow = styled.View`
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+`;
+
+/* 보드용: 오른쪽 영역을 세로로 쌓지 않고 옆으로 늘어놓는다. */
+const DenseSide = styled.View`
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  margin-left: ${({ theme }) => theme.spacing.small}px;
+`;
+
+const DenseTimes = styled.View`
+  align-items: flex-end;
+`;
+
+const DenseActions = styled.View`
+  align-items: center;
+  gap: 4px;
+`;
+
+const InlineTime = styled.View`
+  flex-direction: row;
+  align-items: baseline;
+  gap: 4px;
+`;
 
 const TextContainer = styled.View`
   flex: 1;
@@ -181,12 +217,12 @@ const statusTextColor = (theme: ReturnType<typeof useTheme>, status: Status) => 
   }
 };
 
-const StatusTag = styled.View<{ $status: Status }>`
+const StatusTag = styled.View<{ $status: Status; $inline?: boolean }>`
   background-color: ${({ theme, $status }) => statusColor(theme, $status)}20;
-  padding-vertical: 4px;
-  padding-horizontal: 8px;
+  padding-vertical: ${({ $inline }) => ($inline ? 2 : 4)}px;
+  padding-horizontal: ${({ $inline }) => ($inline ? 6 : 8)}px;
   border-radius: 12px;
-  margin-bottom: 4px;
+  margin-bottom: ${({ $inline }) => ($inline ? 0 : 4)}px;
 `;
 
 const StatusText = styled.Text<{ $status: Status }>`
@@ -316,6 +352,7 @@ const StudentCard: React.FC<StudentCardProps> = ({
   onEditLeaveTime,
   hasNameTwin = false,
   pulse,
+  dense = false,
 }) => {
   const pop = usePop(pulse);
 
@@ -365,7 +402,184 @@ const StudentCard: React.FC<StudentCardProps> = ({
   // ReferenceError로 화면이 통째로 죽었다.
   const theme = useTheme();
 
-  const card = (
+  const pills = (
+    <>
+      {isExtra && (
+        <Pill $tone="extra">
+          <PillText $tone="extra">추가 일정</PillText>
+        </Pill>
+      )}
+      {withdrawn !== '' && (
+        <Pill $tone="muted">
+          <PillText $tone="muted">{withdrawn}</PillText>
+        </Pill>
+      )}
+      {/* 이름이 겹치는데 구분이 비어 있으면, 누구에게 찍는지 알 방법이 없다. */}
+      {hasNameTwin && !student.note?.trim() && (
+        <Pill $tone="warn">
+          <PillText $tone="warn">이름 겹침 — 구분 필요</PillText>
+        </Pill>
+      )}
+    </>
+  );
+
+  const statusTag = (inline: boolean) =>
+    attendance ? (
+      <StatusTag $status={attendance.status} $inline={inline}>
+        <StatusText $status={attendance.status}>{STATUS_LABEL[attendance.status]}</StatusText>
+      </StatusTag>
+    ) : null;
+
+  /** 등원 시각. 보드에서는 '등원 4:05 PM'을 한 줄로, 목록에서는 두 줄로. */
+  const arrival = attendance ? (
+    onEditTime ? (
+      <TimeButton
+        onPress={handleEditTime}
+        pressScale={0.92}
+        pressOpacity={0.6}
+        hitSlop={TIME_SLOP}
+        accessibilityRole="button"
+        accessibilityLabel={`${student.name} 등원 시각 수정`}
+      >
+        {dense ? (
+          <InlineTime>
+            {attended && <TimeLead>등원</TimeLead>}
+            <TimeText>{formatTimeLabel(attendance.time)}</TimeText>
+          </InlineTime>
+        ) : (
+          <>
+            {attended && <TimeLead>등원</TimeLead>}
+            <TimeText>{formatTimeLabel(attendance.time)}</TimeText>
+          </>
+        )}
+      </TimeButton>
+    ) : (
+      <SubText>{formatTimeLabel(attendance.time)}</SubText>
+    )
+  ) : null;
+
+  /* 하원. 결석에는 붙지 않는다 — 오지 않은 학생이 간 시각은 없는 값이다. */
+  const departure =
+    attendance && attended && attendance.leaveTime ? (
+      <TimeButton
+        onPress={handleEditLeaveTime}
+        disabled={!onEditLeaveTime}
+        pressScale={0.92}
+        pressOpacity={0.6}
+        hitSlop={TIME_SLOP}
+        accessibilityRole="button"
+        accessibilityLabel={`${student.name} 하원 시각 수정`}
+      >
+        {dense ? (
+          <InlineTime>
+            <TimeLead>하원</TimeLead>
+            <TimeText>{formatTimeLabel(attendance.leaveTime)}</TimeText>
+          </InlineTime>
+        ) : (
+          <>
+            <TimeLead>하원</TimeLead>
+            <TimeText>{formatTimeLabel(attendance.leaveTime)}</TimeText>
+          </>
+        )}
+      </TimeButton>
+    ) : null;
+
+  const checkOut =
+    attendance && attended && !attendance.leaveTime && onCheckOut ? (
+      <CheckOutAction
+        onPress={handleCheckOut}
+        pressScale={0.9}
+        hitSlop={TEXT_ACTION_SLOP}
+        style={dense ? { marginTop: 0 } : undefined}
+        accessibilityRole="button"
+        accessibilityLabel={`${student.name} 하원 처리`}
+      >
+        <CheckOutLabel>하원</CheckOutLabel>
+      </CheckOutAction>
+    ) : null;
+
+  const undo = onUndo ? (
+    <TextAction
+      onPress={handleUndo}
+      pressScale={0.88}
+      pressOpacity={0.55}
+      hitSlop={TEXT_ACTION_SLOP}
+      style={dense ? { paddingVertical: 4 } : { marginTop: 8 }}
+      accessibilityRole="button"
+      accessibilityLabel={`${student.name} 기록 취소`}
+    >
+      <TextActionLabel $tone="muted">취소</TextActionLabel>
+    </TextAction>
+  ) : null;
+
+  const checkIn = onCheckIn ? (
+    <Button title="등원" size="compact" onPress={handleCheckIn} />
+  ) : null;
+
+  const absent = onMarkAbsent ? (
+    <TextAction
+      onPress={handleMarkAbsent}
+      pressScale={0.88}
+      pressOpacity={0.55}
+      hitSlop={TEXT_ACTION_SLOP}
+      accessibilityRole="button"
+      accessibilityLabel={`${student.name} 결석 처리`}
+    >
+      <TextActionLabel $tone="danger">결석</TextActionLabel>
+    </TextAction>
+  ) : null;
+
+  const card = dense ? (
+    <CardContainer $dense>
+      <InfoContainer>
+        <Avatar $dense>
+          <AvatarText $dense>{getInitials(student.name)}</AvatarText>
+        </Avatar>
+        <TextContainer>
+          <NameRow>
+            <NameText numberOfLines={1} style={{ flexShrink: 1 }}>
+              {student.name}
+            </NameText>
+            {statusTag(true)}
+          </NameRow>
+          {/* 학년·구분과 그 날 시간을 한 줄로. 요일별로 다른 원생 목록일 때만 줄을 나눈다. */}
+          <SubText numberOfLines={1}>
+            {[studentSubtitle(student), lines.length === 1 ? lines[0] : '']
+              .filter(Boolean)
+              .join(' · ')}
+          </SubText>
+          {lines.length > 1 &&
+            lines.map((line) => (
+              <SubText key={line} numberOfLines={1}>
+                {line}
+              </SubText>
+            ))}
+          {pills}
+        </TextContainer>
+      </InfoContainer>
+      {attendance ? (
+        <DenseSide>
+          <DenseTimes>
+            {arrival}
+            {offset && <OffsetText>{offset}</OffsetText>}
+            {departure}
+            {leaveOffset && <OffsetText>{leaveOffset}</OffsetText>}
+          </DenseTimes>
+          {(checkOut || undo) && (
+            <DenseActions>
+              {checkOut}
+              {undo}
+            </DenseActions>
+          )}
+        </DenseSide>
+      ) : (
+        <DenseSide>
+          {absent}
+          {checkIn}
+        </DenseSide>
+      )}
+    </CardContainer>
+  ) : (
     <CardContainer>
       <InfoContainer>
         <Avatar>
@@ -379,22 +593,7 @@ const StudentCard: React.FC<StudentCardProps> = ({
               {line}
             </SubText>
           ))}
-          {isExtra && (
-            <Pill $tone="extra">
-              <PillText $tone="extra">추가 일정</PillText>
-            </Pill>
-          )}
-          {withdrawn !== '' && (
-            <Pill $tone="muted">
-              <PillText $tone="muted">{withdrawn}</PillText>
-            </Pill>
-          )}
-          {/* 이름이 겹치는데 구분이 비어 있으면, 누구에게 찍는지 알 방법이 없다. */}
-          {hasNameTwin && !student.note?.trim() && (
-            <Pill $tone="warn">
-              <PillText $tone="warn">이름 겹침 — 구분 필요</PillText>
-            </Pill>
-          )}
+          {pills}
           {showFee && student.fee != null && (
             <SubText numberOfLines={1}>₩{student.fee.toLocaleString()}/월</SubText>
           )}
@@ -403,94 +602,26 @@ const StudentCard: React.FC<StudentCardProps> = ({
       <StatusContainer>
         {attendance ? (
           <>
-            <StatusTag $status={attendance.status}>
-              <StatusText $status={attendance.status}>
-                {STATUS_LABEL[attendance.status]}
-              </StatusText>
-            </StatusTag>
-            {onEditTime ? (
-              <TimeButton
-                onPress={handleEditTime}
-                pressScale={0.92}
-                pressOpacity={0.6}
-                hitSlop={TIME_SLOP}
-                accessibilityRole="button"
-                accessibilityLabel={`${student.name} 등원 시각 수정`}
-              >
-                {attended && <TimeLead>등원</TimeLead>}
-                <TimeText>{formatTimeLabel(attendance.time)}</TimeText>
-              </TimeButton>
-            ) : (
-              <SubText>{formatTimeLabel(attendance.time)}</SubText>
-            )}
+            {statusTag(false)}
+            {arrival}
             {offset && <OffsetText>{offset}</OffsetText>}
-
-            {/* 하원. 결석에는 붙지 않는다 — 오지 않은 학생이 간 시각은 없는 값이다. */}
-            {attended && attendance.leaveTime && (
-              <TimeButton
-                onPress={handleEditLeaveTime}
-                disabled={!onEditLeaveTime}
-                pressScale={0.92}
-                pressOpacity={0.6}
-                hitSlop={TIME_SLOP}
-                accessibilityRole="button"
-                accessibilityLabel={`${student.name} 하원 시각 수정`}
-              >
-                <TimeLead>하원</TimeLead>
-                <TimeText>{formatTimeLabel(attendance.leaveTime)}</TimeText>
-              </TimeButton>
-            )}
+            {departure}
             {leaveOffset && <OffsetText>{leaveOffset}</OffsetText>}
-            {attended && !attendance.leaveTime && onCheckOut && (
-              <CheckOutAction
-                onPress={handleCheckOut}
-                pressScale={0.9}
-                hitSlop={TEXT_ACTION_SLOP}
-                accessibilityRole="button"
-                accessibilityLabel={`${student.name} 하원 처리`}
-              >
-                <CheckOutLabel>하원</CheckOutLabel>
-              </CheckOutAction>
-            )}
-
-            {onUndo ? (
-              <TextAction
-                onPress={handleUndo}
-                pressScale={0.88}
-                pressOpacity={0.55}
-                hitSlop={TEXT_ACTION_SLOP}
-                style={{ marginTop: 8 }}
-                accessibilityRole="button"
-                accessibilityLabel={`${student.name} 기록 취소`}
-              >
-                <TextActionLabel $tone="muted">취소</TextActionLabel>
-              </TextAction>
-            ) : (
-              attendance.status !== 'absent' && (
+            {checkOut}
+            {undo ??
+              (attendance.status !== 'absent' && (
                 <Ionicons
                   name="checkmark-circle"
                   size={22}
                   color={theme.colors.successStrong}
                   style={{ marginTop: 4 }}
                 />
-              )
-            )}
+              ))}
           </>
         ) : (
           <ActionStack>
-            {onCheckIn && <Button title="등원" size="compact" onPress={handleCheckIn} />}
-            {onMarkAbsent && (
-              <TextAction
-                onPress={handleMarkAbsent}
-                pressScale={0.88}
-                pressOpacity={0.55}
-                hitSlop={TEXT_ACTION_SLOP}
-                accessibilityRole="button"
-                accessibilityLabel={`${student.name} 결석 처리`}
-              >
-                <TextActionLabel $tone="danger">결석</TextActionLabel>
-              </TextAction>
-            )}
+            {checkIn}
+            {absent}
           </ActionStack>
         )}
       </StatusContainer>

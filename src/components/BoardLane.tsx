@@ -6,21 +6,23 @@ import styled, { DefaultTheme, useTheme } from 'styled-components/native';
 export type LaneTone = 'pending' | 'present' | 'done';
 
 /**
- * 칸마다 숲 배경에 이미 있는 색 하나씩. 아이의 하루가 왼쪽에서 오른쪽으로 흐른다.
+ * 칸마다 색 하나씩. 신호등처럼 한눈에 갈리도록 서로 먼 색을 골랐다.
+ * 아이의 하루가 왼쪽에서 오른쪽으로 흐른다.
  *
- *   등원 예정  호수 블루 — 아직 오지 않은, 기다리는 칸
- *   수업 중    풀빛 초록 — '출석' 표시와 같은 색이라 카드와 칸이 한 덩어리로 읽힌다
- *   하원·결석  라벤더    — 하루를 마친 칸
+ *   등원 예정  해 노랑    — 아직 오지 않은, 눈길이 먼저 가야 하는 칸
+ *   수업 중    풀빛 초록  — '출석' 표시와 같은 색이라 카드와 칸이 한 덩어리로 읽힌다
+ *   하원       호수 블루  — 하루를 마치고 집에 간 칸
+ *   결석       빨강       — 하원 칸 안에서 따로 묶는다 (TintGroup)
  *
  * 원색은 칸의 옅은 바탕과 테두리·아이콘에만 쓴다. 글씨는 원색 위에서 읽히지 않으므로
  * 제목은 본문 색 그대로 두고, 숫자 뱃지만 진한 색 위의 흰 글씨로 쓴다.
  */
 export const laneColors = (theme: DefaultTheme, tone: LaneTone) =>
   tone === 'pending'
-    ? { base: theme.colors.primary, strong: theme.colors.primaryStrong }
+    ? { base: theme.colors.sun, strong: theme.colors.sunStrong }
     : tone === 'present'
       ? { base: theme.colors.success, strong: theme.colors.successStrong }
-      : { base: theme.colors.lavender, strong: theme.colors.lavenderStrong };
+      : { base: theme.colors.primary, strong: theme.colors.primaryStrong };
 
 const LANE_ICON: Record<LaneTone, keyof typeof Ionicons.glyphMap> = {
   pending: 'time-outline',
@@ -30,15 +32,15 @@ const LANE_ICON: Record<LaneTone, keyof typeof Ionicons.glyphMap> = {
 
 /*
  * 바탕은 원색을 옅게. 뒤의 숲 그림이 살짝 비치도록 불투명하게 칠하지 않는다.
- * hex 뒤 두 자리는 불투명도다 (24 ≈ 14%, 66 ≈ 40%).
+ * hex 뒤 두 자리는 불투명도다 (33 = 20%, 80 = 50%).
  */
 const Lane = styled.View<{ $tone: LaneTone }>`
   flex: 1;
   min-width: 0;
-  background-color: ${({ theme, $tone }) => laneColors(theme, $tone).base}24;
+  background-color: ${({ theme, $tone }) => laneColors(theme, $tone).base}33;
   border-radius: ${({ theme }) => theme.borderRadius.medium}px;
   border-width: 1px;
-  border-color: ${({ theme, $tone }) => laneColors(theme, $tone).base}66;
+  border-color: ${({ theme, $tone }) => laneColors(theme, $tone).base}80;
   overflow: hidden;
 `;
 
@@ -88,8 +90,36 @@ export const LaneGroupTitle = styled.Text<{ $color?: string }>`
   font-family: ${({ theme }) => theme.fonts.bold};
   font-size: 13px;
   color: ${({ theme, $color }) => $color ?? theme.colors.textSecondary};
-  margin-top: ${({ theme }) => theme.spacing.medium}px;
+  margin-top: ${({ theme }) => theme.spacing.small}px;
   margin-bottom: ${({ theme }) => theme.spacing.small}px;
+`;
+
+/**
+ * color를 base 위에 amount만큼 섞은 불투명한 색. '#RRGGBB'만 받는다.
+ *
+ * 칸 안의 묶음을 반투명하게 칠하면 칸의 바탕색과 겹쳐 탁해진다 — 초록 칸 위의
+ * 옅은 빨강은 갈색이 된다. 묶음은 바탕을 가리고 제 색만 보여야 한다.
+ */
+const mix = (color: string, base: string, amount: number) => {
+  const channel = (hex: string, i: number) => parseInt(hex.slice(1 + i * 2, 3 + i * 2), 16);
+  const parts = [0, 1, 2].map((i) =>
+    Math.round(channel(color, i) * amount + channel(base, i) * (1 - amount))
+  );
+  return `rgb(${parts.join(', ')})`;
+};
+
+/**
+ * 칸 안의 다른 색 묶음. 결석은 하원 칸 안에서 빨간 바탕으로, 좁은 보드에서 수업 중 칸
+ * 아래에 붙는 하원은 파란 바탕으로 따로 보인다. $color는 원색이다.
+ */
+export const TintGroup = styled.View<{ $color: string }>`
+  margin-top: ${({ theme }) => theme.spacing.medium}px;
+  padding: 8px;
+  padding-top: 0px;
+  border-radius: ${({ theme }) => theme.borderRadius.small}px;
+  background-color: ${({ theme, $color }) => mix($color, theme.colors.cardBackground, 0.24)};
+  border-width: 1px;
+  border-color: ${({ $color }) => $color}80;
 `;
 
 export const LaneEmpty = styled.Text`

@@ -53,7 +53,12 @@ const C = {
 };
 
 type Box = { minX: number; minY: number; w: number; h: number };
-type Frame = { s: number; offX: number; offY: number };
+/**
+ * s는 장면 배율 — 토끼가 **어디에** 서는지(언덕 위 자리, 깡충 거리).
+ * r은 토끼 배율 — 토끼가 **얼마나 큰지**(몸, 그림자, 뛰는 높이).
+ * 폰에서는 둘이 같고, 넓은 창에서는 r만 줄인다 (RABBIT_SCALE_WIDE).
+ */
+type Frame = { s: number; r: number; offX: number; offY: number };
 
 /* 원점(발밑)을 가로 가운데에 둔 박스. scaleX -1로 뒤집어도 제자리에서 돈다. */
 const SIT_BOX: Box = { minX: -20, minY: -44, w: 40, h: 48 };
@@ -99,13 +104,21 @@ const Sprite: React.FC<{
   style?: Animated.WithAnimatedValue<StyleProp<ViewStyle>>;
   children: React.ReactNode;
 }> = ({ frame, ox, oy, k = 1, box, style, children }) => {
-  const { s, offX, offY } = frame;
-  const w = box.w * k * s;
-  const h = box.h * k * s;
+  const { s, r, offX, offY } = frame;
+  const w = box.w * k * r;
+  const h = box.h * k * r;
   return (
     <Animated.View
       style={[
-        { position: 'absolute', left: offX + (ox + box.minX * k) * s, top: offY + (oy + box.minY * k) * s, width: w, height: h },
+        // 발밑(원점)은 장면 배율로 언덕 위에 두고, 몸은 토끼 배율로 그 위에 세운다.
+        // 토끼를 줄여도 발이 언덕에 붙어 있다.
+        {
+          position: 'absolute',
+          left: offX + ox * s + box.minX * k * r,
+          top: offY + oy * s + box.minY * k * r,
+          width: w,
+          height: h,
+        },
         style,
       ]}
     >
@@ -149,6 +162,13 @@ const WHITE_Y = [0, 0, -12, 0, 0, -12, 0, 0];
 const LAV_K = [0, 0.2, 0.24, 0.28, 0.6, 0.64, 0.68, 1];
 const LAV_Y = [0, 0, -2, 0, 0, -2, 0, 0];
 
+/**
+ * 넓은 창에서 토끼 크기. 배경은 폰 화면 기준이라 iPad 가로에서 3.5배로 커지는데,
+ * 토끼까지 그만큼 키우면 명단 칸 뒤에서 너무 크게 비친다. 언덕·호수는 그대로 두고
+ * 토끼만 이만큼으로 줄인다.
+ */
+const RABBIT_SCALE_WIDE = 0.6;
+
 const AnimatedEllipse = Animated.createAnimatedComponent(Ellipse);
 
 const ForestBackground: React.FC = () => {
@@ -172,7 +192,8 @@ const ForestBackground: React.FC = () => {
 
   /* xMidYMax slice와 같은 계산. 조각들을 배경과 같은 자리에 놓기 위해 직접 구한다. */
   const s = Math.max(width / VB_W, height / VB_H);
-  const frame: Frame = { s, offX: (width - VB_W * s) / 2, offY: height - VB_H * s };
+  const r = sizeClass === 'compact' ? s : s * RABBIT_SCALE_WIDE;
+  const frame: Frame = { s, r, offX: (width - VB_W * s) / 2, offY: height - VB_H * s };
 
   const hop = useLoop(9000, active);
   const white = useLoop(7000, active);
@@ -180,14 +201,14 @@ const ForestBackground: React.FC = () => {
   const ripple = useLoop(3200, active, false);
 
   const hopX = at(hop, HOP_K, HOP_X.map((x) => x * s));
-  const hopY = at(hop, HOP_K, IS_APEX.map((a) => (a ? -22 * s : 0)));
+  const hopY = at(hop, HOP_K, IS_APEX.map((a) => (a ? -22 * r : 0)));
   const hopShadow = at(hop, HOP_K, IS_APEX.map((a) => (a ? 7 / 11 : 1)));
   const hopFlip = at(hop, [0, 0.4999, 0.5, 1], [1, 1, -1, -1]);
 
-  const whiteY = at(white, WHITE_K, WHITE_Y.map((y) => y * s));
+  const whiteY = at(white, WHITE_K, WHITE_Y.map((y) => y * r));
   const whiteShadow = at(white, WHITE_K, WHITE_Y.map((y) => (y ? 9 / 14 : 1)));
 
-  const lavY = at(lav, LAV_K, LAV_Y.map((y) => y * s));
+  const lavY = at(lav, LAV_K, LAV_Y.map((y) => y * r));
   const lavFlip = at(lav, [0, 0.3999, 0.4, 0.5999, 0.6, 1], [-1, -1, 1, 1, -1, -1]);
 
   return (

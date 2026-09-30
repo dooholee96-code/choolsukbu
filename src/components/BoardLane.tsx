@@ -1,5 +1,13 @@
-import React from 'react';
-import { ScrollView } from 'react-native';
+import React, { createContext, useCallback, useContext, useEffect, useRef } from 'react';
+import {
+  Animated,
+  LayoutChangeEvent,
+  NativeScrollEvent,
+  NativeSyntheticEvent,
+  ScrollView,
+  View,
+} from 'react-native';
+import { useBump } from '../hooks/useMotion';
 import { Ionicons } from '@expo/vector-icons';
 import styled, { DefaultTheme, useTheme } from 'styled-components/native';
 
@@ -144,13 +152,84 @@ interface BoardLaneProps {
 }
 
 /**
+ * 칸 안의 카드가 '나를 보여 줘'라고 부르는 통로. 칸마다 따로 스크롤하므로, 명단이 긴
+ * 칸에서는 방금 옮겨 온 카드가 화면 밖(아래)에 떨어질 수 있다. 빛나고 튀어도 보이지
+ * 않으면 소용이 없다.
+ */
+const RevealContext = createContext<((target: View) => void) | null>(null);
+
+/**
+ * 칸 안의 카드 한 장을 감싼다. focus가 바뀌면(방금 기록한 카드) 칸이 그 카드까지 스크롤한다.
+ * 이미 보이는 카드면 움직이지 않는다 — 눈앞의 명단이 괜히 흔들리면 누르던 자리를 잃는다.
+ */
+export const LaneItem: React.FC<{ focus?: number; children: React.ReactNode }> = ({
+  focus,
+  children,
+}) => {
+  const reveal = useContext(RevealContext);
+  const ref = useRef<View>(null);
+
+  useEffect(() => {
+    if (!focus || !reveal) return;
+    // 칸을 옮겨 막 그려진 참이면 아직 자리가 없다. 한 프레임 뒤에 잰다.
+    const frame = requestAnimationFrame(() => {
+      if (ref.current) reveal(ref.current);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [focus, reveal]);
+
+  return <View ref={ref}>{children}</View>;
+};
+
+/** 스크롤해 보여 줄 때 카드 위아래에 남길 틈. 칸 가장자리에 딱 붙으면 잘려 보인다. */
+const REVEAL_MARGIN = 12;
+
+/**
  * 큰 화면 보드의 한 칸. 제목과 인원은 제자리에 두고 명단만 따로 스크롤한다.
  *
  * FlatList가 아니라 ScrollView인 까닭: 한 칸에 많아야 수십 명이고 카드는 memo라,
  * 전부 그려 두는 편이 등원을 찍어 카드가 칸을 옮길 때 빈 자리 없이 바로 보인다.
+ *
+ * 인원 뱃지는 수가 바뀌면 살짝 부푼다. 카드가 떠난 칸과 도착한 칸이 동시에 움찔해서
+ * 어디서 어디로 갔는지가 한 번에 읽힌다.
  */
 const BoardLane: React.FC<BoardLaneProps> = ({ title, count, tone, children }) => {
   const theme = useTheme();
+  const badgeScale = useBump(count, 1.25);
+
+  const scrollRef = useRef<ScrollView>(null);
+  const contentRef = useRef<View>(null);
+  const scrollY = useRef(0);
+  const viewportH = useRef(0);
+
+  const onScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    scrollY.current = event.nativeEvent.contentOffset.y;
+  }, []);
+  const onLayout = useCallback((event: LayoutChangeEvent) => {
+    viewportH.current = event.nativeEvent.layout.height;
+  }, []);
+
+  const reveal = useCallback((target: View) => {
+    const content = contentRef.current;
+    if (!content) return;
+    target.measureLayout(
+      content,
+      (_x, y, _w, h) => {
+        const top = scrollY.current;
+        const bottom = top + viewportH.current;
+        if (y - REVEAL_MARGIN < top) {
+          scrollRef.current?.scrollTo({ y: Math.max(0, y - REVEAL_MARGIN), animated: true });
+        } else if (y + h + REVEAL_MARGIN > bottom) {
+          scrollRef.current?.scrollTo({
+            y: y + h + REVEAL_MARGIN - viewportH.current,
+            animated: true,
+          });
+        }
+      },
+      () => {}
+    );
+  }, []);
+
   return (
     <Lane $tone={tone}>
       <Accent $tone={tone} />
@@ -159,16 +238,24 @@ const BoardLane: React.FC<BoardLaneProps> = ({ title, count, tone, children }) =
           <Ionicons name={LANE_ICON[tone]} size={18} color={laneColors(theme, tone).strong} />
           <Title>{title}</Title>
         </TitleRow>
-        <CountBadge $tone={tone}>
-          <CountText>{count}</CountText>
-        </CountBadge>
+        <Animated.View style={{ transform: [{ scale: badgeScale }] }}>
+          <CountBadge $tone={tone}>
+            <CountText>{count}</CountText>
+          </CountBadge>
+        </Animated.View>
       </LaneHeader>
       <ScrollView
+        ref={scrollRef}
         style={{ flex: 1 }}
         contentContainerStyle={{ paddingHorizontal: 10, paddingBottom: 16 }}
         showsVerticalScrollIndicator={false}
+        onScroll={onScroll}
+        scrollEventThrottle={32}
+        onLayout={onLayout}
       >
-        {children}
+        <RevealContext.Provider value={reveal}>
+          <View ref={contentRef}>{children}</View>
+        </RevealContext.Provider>
       </ScrollView>
     </Lane>
   );

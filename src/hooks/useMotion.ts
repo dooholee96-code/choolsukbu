@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef } from 'react';
-import { AccessibilityInfo, Animated, Platform } from 'react-native';
+import { AccessibilityInfo, Animated, Easing, Platform } from 'react-native';
 
 /**
  * 화면이 손가락에 답하는 방식.
@@ -117,6 +117,38 @@ export const useBump = (value: unknown, to = 1.12): Animated.Value => {
   }, [value, to, scale]);
 
   return scale;
+};
+
+/**
+ * pulse가 바뀔 때마다 한 번 빛났다가 서서히 꺼진다. 방금 기록한 카드의 색 테두리에 쓴다.
+ *
+ * 튀는 것(usePop)은 '여기로 왔다', 빛은 '무엇이 됐다'를 말한다 — 초록이면 등원,
+ * 파랑이면 하원, 빨강이면 결석. 아이패드는 진동이 없어서(utils/haptics) 결과를
+ * 손끝이 아니라 눈으로 확인해야 하는데, 튀는 것은 0.4초면 끝나 곁눈으로 놓치기 쉽다.
+ * 빛은 1초 남짓 남는다.
+ *
+ * usePop처럼 처음 그려질 때도 pulse가 있으면 빛난 채로 시작한다 (칸을 옮겨 새로
+ * 그려지므로). '동작 줄이기'에서도 끈다 — 움직임이 아니라 색이 옅어지는 것뿐이다.
+ */
+export const useGlow = (pulse: number | undefined): Animated.Value => {
+  const glow = useAnimatedNumber(pulse ? 1 : 0);
+  const seen = useRef<number | undefined>(undefined);
+
+  useEffect(() => {
+    if (!pulse || seen.current === pulse) return;
+    seen.current = pulse;
+
+    glow.setValue(1);
+    Animated.timing(glow, {
+      toValue: 0,
+      duration: 900,
+      delay: 350,
+      easing: Easing.out(Easing.quad),
+      useNativeDriver: NATIVE_DRIVER,
+    }).start();
+  }, [pulse, glow]);
+
+  return glow;
 };
 
 /**

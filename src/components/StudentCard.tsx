@@ -1,10 +1,10 @@
-import React, { useCallback } from 'react';
+import React, { useCallback, useRef } from 'react';
 import { Animated, StyleSheet } from 'react-native';
 import styled, { useTheme } from 'styled-components/native';
 import { Student, Attendance } from '../types';
 import Button from './common/Button';
 import PressableScale from './common/PressableScale';
-import { usePop } from '../hooks/useMotion';
+import { useGlow, usePop } from '../hooks/useMotion';
 import { arrivalOffsetLabel, departureOffsetLabel, formatTimeLabel } from '../utils/date';
 import { scheduleLines } from '../utils/schedule';
 import { studentSubtitle, withdrawnLabel } from '../utils/student';
@@ -61,6 +61,11 @@ interface StudentCardProps {
    * 카드 높이를 절반 가까이 줄인다 — 아이패드 한 화면에 그날 명단이 다 들어오게.
    */
   dense?: boolean;
+  /**
+   * pulse와 함께 넘기면 카드 테두리가 이 색으로 한 번 빛났다 꺼진다. 무엇이 기록됐는지를
+   * 색으로 말한다 (등원 초록, 하원 파랑, 결석 빨강, 취소 노랑). 원색을 넘긴다.
+   */
+  glowColor?: string;
 }
 
 /*
@@ -323,6 +328,23 @@ const getInitials = (name: string) => {
   return initials;
 };
 
+/*
+ * 카드 위에 겹치는 빛. 글씨가 가려지지 않게 바탕은 아주 옅게, 테두리만 또렷하게.
+ * 누름을 가로채지 않도록 pointerEvents는 JSX에서 끈다.
+ */
+const Glow = styled(Animated.View)<{ $color: string; $dense?: boolean }>`
+  position: absolute;
+  top: 0px;
+  left: 0px;
+  right: 0px;
+  bottom: 0px;
+  border-radius: ${({ theme, $dense }) =>
+    $dense ? theme.borderRadius.small : theme.borderRadius.medium}px;
+  border-width: 2.5px;
+  border-color: ${({ $color }) => $color};
+  background-color: ${({ $color }) => $color}26;
+`;
+
 const PressableCard = styled(PressableScale)`
   flex-grow: 1;
 `;
@@ -353,8 +375,14 @@ const StudentCard: React.FC<StudentCardProps> = ({
   hasNameTwin = false,
   pulse,
   dense = false,
+  glowColor,
 }) => {
   const pop = usePop(pulse);
+  const glow = useGlow(glowColor ? pulse : undefined);
+  // 부모는 0.7초 뒤 pulse와 색을 함께 비운다. 빛은 그보다 오래 남으므로 색을 쥐고 있는다 —
+  // 색이 먼저 사라지면 빛이 꺼지는 도중에 뚝 끊긴다.
+  const lastGlow = useRef<string | undefined>(undefined);
+  if (glowColor) lastGlow.current = glowColor;
 
   const handleCheckIn = useCallback(() => onCheckIn?.(student), [onCheckIn, student]);
   const handleMarkAbsent = useCallback(() => onMarkAbsent?.(student), [onMarkAbsent, student]);
@@ -633,6 +661,14 @@ const StudentCard: React.FC<StudentCardProps> = ({
   const body = (
     <Animated.View style={[styles.grow, { transform: [{ scale: pop }] }]}>
       {withdrawn === '' ? card : <Faded>{card}</Faded>}
+      {lastGlow.current && (
+        <Glow
+          pointerEvents="none"
+          $color={lastGlow.current}
+          $dense={dense}
+          style={{ opacity: glow }}
+        />
+      )}
     </Animated.View>
   );
 

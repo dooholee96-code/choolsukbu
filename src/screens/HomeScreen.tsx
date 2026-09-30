@@ -15,6 +15,7 @@ import BoardLane, {
   LaneEmpty,
   LaneGap,
   LaneGroupTitle,
+  LaneItem,
   TintGroup,
 } from '../components/BoardLane';
 import PressableScale from '../components/common/PressableScale';
@@ -228,6 +229,22 @@ interface Section {
   checkable: boolean;
 }
 
+/**
+ * 방금 한 기록이 무엇이었는지. 카드가 어떤 색으로 빛날지를 정한다 (보드 칸 색과 같다).
+ * 시각 고침은 빛내지 않고 튀기만 한다 — 상태가 바뀐 것이 아니다.
+ */
+type CardEffect = 'in' | 'out' | 'absent' | 'undo' | 'edit';
+
+/** 요약 숫자. 바뀌면 살짝 부푼다. 첫 읽기 전(ready 아님)의 0에서 튀지 않는다. */
+const BumpValue: React.FC<{ value: number; ready: boolean }> = ({ value, ready }) => {
+  const scale = useBump(ready ? value : undefined, 1.2);
+  return (
+    <Animated.View style={{ alignSelf: 'flex-start', transform: [{ scale }] }}>
+      <StatValue>{value}</StatValue>
+    </Animated.View>
+  );
+};
+
 /** 'HH:mm' 을 피커가 요구하는 Date로. */
 const dateFromTime = (time: string) => {
   const [hours, minutes] = time.split(':').map(Number);
@@ -271,13 +288,15 @@ const HomeScreen: React.FC = () => {
    * 잠시 뒤 비운다. 남겨 두면 다른 학생을 찍어 목록이 다시 짜일 때 이 카드가 새로
    * 그려지면서 또 튄다 — 아무것도 안 했는데 움직이는 카드는 눈을 끈다.
    */
-  const [pulse, setPulse] = useState<{ id: string; n: number } | null>(null);
+  const [pulse, setPulse] = useState<{ id: string; n: number; effect: CardEffect } | null>(
+    null
+  );
   const pulseCount = useRef(0);
   const pulseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const bumpCard = useCallback((studentId: string) => {
+  const bumpCard = useCallback((studentId: string, effect: CardEffect) => {
     pulseCount.current += 1;
-    setPulse({ id: studentId, n: pulseCount.current });
+    setPulse({ id: studentId, n: pulseCount.current, effect });
     if (pulseTimer.current) clearTimeout(pulseTimer.current);
     pulseTimer.current = setTimeout(() => setPulse(null), 700);
   }, []);
@@ -298,11 +317,17 @@ const HomeScreen: React.FC = () => {
    * 성공이라고 말하게 된다.
    */
   const act = useCallback(
-    async (studentId: string, task: () => Promise<unknown>, done: HapticKind, failure: string) => {
+    async (
+      studentId: string,
+      task: () => Promise<unknown>,
+      done: HapticKind,
+      failure: string,
+      effect: CardEffect
+    ) => {
       try {
         await task();
         haptic(done);
-        bumpCard(studentId);
+        bumpCard(studentId, effect);
       } catch {
         haptic('error');
         notify('저장 실패', `${failure}\n다시 시도해 주세요.`);
@@ -462,7 +487,8 @@ const HomeScreen: React.FC = () => {
         student.id,
         () => checkInStudent(student.id, status),
         'success',
-        `${student.name} 학생의 등원을 기록하지 못했습니다.`
+        `${student.name} 학생의 등원을 기록하지 못했습니다.`,
+        'in'
       );
     },
     [rosterById, checkInStudent, act]
@@ -480,7 +506,8 @@ const HomeScreen: React.FC = () => {
             student.id,
             () => markAbsent(student.id),
             'warning',
-            `${student.name} 학생의 결석을 기록하지 못했습니다.`
+            `${student.name} 학생의 결석을 기록하지 못했습니다.`,
+            'absent'
           ),
       });
     },
@@ -515,7 +542,8 @@ const HomeScreen: React.FC = () => {
             student.id,
             () => undoTodayAttendance(student.id),
             'tap',
-            `${student.name} 학생의 기록을 취소하지 못했습니다.`
+            `${student.name} 학생의 기록을 취소하지 못했습니다.`,
+            'undo'
           ),
       });
     },
@@ -539,7 +567,8 @@ const HomeScreen: React.FC = () => {
         student.id,
         () => setLeaveTime(attendance.id, getCurrentTime()),
         'success',
-        `${student.name} 학생의 하원을 기록하지 못했습니다.`
+        `${student.name} 학생의 하원을 기록하지 못했습니다.`,
+        'out'
       ),
     [setLeaveTime, act]
   );
@@ -558,7 +587,8 @@ const HomeScreen: React.FC = () => {
             ? updateAttendanceTime(attendance.id, time)
             : setLeaveTime(attendance.id, time),
         'select',
-        edge === 'in' ? '등원 시각을 고치지 못했습니다.' : '하원 시각을 고치지 못했습니다.'
+        edge === 'in' ? '등원 시각을 고치지 못했습니다.' : '하원 시각을 고치지 못했습니다.',
+        'edit'
       );
 
       if (Platform.OS === 'ios') setTimeTarget(null);
@@ -591,10 +621,22 @@ const HomeScreen: React.FC = () => {
    * 카드 한 장. 목록과 보드가 같은 카드를 쓰고, 보드에서는 납작한 모양만 고른다.
    * checkable은 아직 등원 전인 칸 — 등원·결석 버튼이 붙고, 기록 쪽 동작은 없다.
    */
+  const glowColors: Record<CardEffect, string | undefined> = useMemo(
+    () => ({
+      in: theme.colors.success,
+      out: theme.colors.primary,
+      absent: theme.colors.danger,
+      undo: theme.colors.sun,
+      edit: undefined,
+    }),
+    [theme]
+  );
+
   const renderCard = useCallback(
     (student: Student, checkable: boolean, dense: boolean) => {
       const entry = rosterById.get(student.id);
-      return (
+      const touched = pulse?.id === student.id ? pulse : undefined;
+      const card = (
         <StudentCard
           key={student.id}
           dense={dense}
@@ -610,8 +652,17 @@ const HomeScreen: React.FC = () => {
           onCheckOut={checkable ? undefined : handleCheckOut}
           onEditLeaveTime={checkable ? undefined : handleEditLeaveTime}
           hasNameTwin={twins.has(student.name.trim())}
-          pulse={pulse?.id === student.id ? pulse.n : undefined}
+          pulse={touched?.n}
+          glowColor={touched ? glowColors[touched.effect] : undefined}
         />
+      );
+      // 보드에서는 칸이 따로 스크롤하므로, 방금 옮겨 온 카드가 보이도록 칸을 끌어 준다.
+      return dense ? (
+        <LaneItem key={student.id} focus={touched?.n}>
+          {card}
+        </LaneItem>
+      ) : (
+        card
       );
     },
     [
@@ -625,6 +676,7 @@ const HomeScreen: React.FC = () => {
       handleEditLeaveTime,
       twins,
       pulse,
+      glowColors,
     ]
   );
 
@@ -767,28 +819,28 @@ const HomeScreen: React.FC = () => {
                     <StatDot $color={theme.colors.success} />
                     <StatLabel>수업 중</StatLabel>
                   </StatLabelRow>
-                  <StatValue>{inClass.length}</StatValue>
+                  <BumpValue value={inClass.length} ready={loaded} />
                 </StatItem>
                 <StatItem>
                   <StatLabelRow>
                     <StatDot $color={theme.colors.primary} />
                     <StatLabel>하원</StatLabel>
                   </StatLabelRow>
-                  <StatValue>{leftToday.length}</StatValue>
+                  <BumpValue value={leftToday.length} ready={loaded} />
                 </StatItem>
                 <StatItem>
                   <StatLabelRow>
                     <StatDot $color={theme.colors.danger} />
                     <StatLabel>결석</StatLabel>
                   </StatLabelRow>
-                  <StatValue>{absentStudents.length}</StatValue>
+                  <BumpValue value={absentStudents.length} ready={loaded} />
                 </StatItem>
                 <StatItem>
                   <StatLabelRow>
                     <StatDot $color={theme.colors.sun} />
                     <StatLabel>남음</StatLabel>
                   </StatLabelRow>
-                  <StatValue>{pending.length}</StatValue>
+                  <BumpValue value={pending.length} ready={loaded} />
                 </StatItem>
               </StatsContainer>
             </SummaryBar>
@@ -873,15 +925,15 @@ const HomeScreen: React.FC = () => {
                 <StatsContainer $spread>
                   <StatItem>
                     <StatLabel>예정</StatLabel>
-                    <StatValue>{roster.length}</StatValue>
+                    <BumpValue value={roster.length} ready={loaded} />
                   </StatItem>
                   <StatItem>
                     <StatLabel>등원</StatLabel>
-                    <StatValue>{checkedInCount}</StatValue>
+                    <BumpValue value={checkedInCount} ready={loaded} />
                   </StatItem>
                   <StatItem>
                     <StatLabel>남음</StatLabel>
-                    <StatValue>{pending.length}</StatValue>
+                    <BumpValue value={pending.length} ready={loaded} />
                   </StatItem>
                 </StatsContainer>
               </SummaryCard>

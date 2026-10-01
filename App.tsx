@@ -12,6 +12,8 @@ import { ThemeProvider } from 'styled-components/native';
 import HomeScreen from './src/screens/HomeScreen';
 import StudentsScreen from './src/screens/StudentsScreen';
 import MakeupScreen from './src/screens/MakeupScreen';
+import PaymentsScreen from './src/screens/PaymentsScreen';
+import PaymentModal from './src/screens/PaymentModal';
 import HistoryScreen from './src/screens/HistoryScreen';
 import StudentFormModal from './src/screens/StudentFormModal';
 import SettingsModal from './src/screens/SettingsModal';
@@ -34,6 +36,7 @@ const Stack = createNativeStackNavigator<RootStackParamList>();
 const TAB_ICONS: Record<keyof TabParamList, [keyof typeof Ionicons.glyphMap, keyof typeof Ionicons.glyphMap]> = {
   Today: ['home', 'home-outline'],
   Students: ['people', 'people-outline'],
+  Payments: ['wallet', 'wallet-outline'],
   Makeup: ['book', 'book-outline'],
   History: ['calendar', 'calendar-outline'],
 };
@@ -98,6 +101,7 @@ function TabNavigator() {
     >
       <Tab.Screen name="Today" component={HomeScreen} options={{ title: '오늘' }} />
       <Tab.Screen name="Students" component={StudentsScreen} options={{ title: '원생' }} />
+      <Tab.Screen name="Payments" component={PaymentsScreen} options={{ title: '수납' }} />
       <Tab.Screen name="Makeup" component={MakeupScreen} options={{ title: '보충' }} />
       <Tab.Screen name="History" component={HistoryScreen} options={{ title: '이력' }} />
     </Tab.Navigator>
@@ -129,6 +133,11 @@ function RootNavigator() {
       <Stack.Screen
         name="ScheduleModal"
         component={ScheduleModal}
+        options={{ presentation: modalPresentation }}
+      />
+      <Stack.Screen
+        name="PaymentModal"
+        component={PaymentModal}
         options={{ presentation: modalPresentation }}
       />
     </Stack.Navigator>

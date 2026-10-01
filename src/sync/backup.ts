@@ -23,6 +23,7 @@ export interface BackupSummary {
   attendance: number;
   makeups: number;
   exceptions: number;
+  payments: number;
   exportedAt: string;
 }
 
@@ -66,7 +67,9 @@ export const readBackup = (text: string): SyncSnapshot | null => {
     !isRowArray(snapshot.students) ||
     !isRowArray(snapshot.attendance) ||
     !isRowArray(snapshot.makeups) ||
-    !isRowArray(snapshot.exceptions)
+    !isRowArray(snapshot.exceptions) ||
+    // 수납 기능 전의 백업에는 없다. 있는데 목록이 아니면 엉뚱한 파일이다.
+    (snapshot.payments !== undefined && !isRowArray(snapshot.payments))
   ) {
     return null;
   }
@@ -80,6 +83,7 @@ export const summarize = (snapshot: SyncSnapshot): BackupSummary => ({
   attendance: snapshot.attendance.filter((row) => !row.deletedAt).length,
   makeups: snapshot.makeups.filter((row) => !row.deletedAt).length,
   exceptions: snapshot.exceptions.filter((row) => !row.deletedAt).length,
+  payments: (snapshot.payments ?? []).filter((row) => !row.deletedAt).length,
   exportedAt: snapshot.exportedAt,
 });
 

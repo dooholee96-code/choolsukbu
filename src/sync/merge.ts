@@ -1,4 +1,4 @@
-import { Attendance, MakeUp, ScheduleException, Student, SyncMeta } from '../types';
+import { Attendance, MakeUp, Payment, ScheduleException, Student, SyncMeta } from '../types';
 
 /**
  * 기기 하나가 iCloud에 올리는 파일의 내용.
@@ -15,6 +15,12 @@ export interface SyncSnapshot {
   attendance: Attendance[];
   makeups: MakeUp[];
   exceptions: ScheduleException[];
+  /**
+   * 수납. 나중에 붙어서 없을 수 있다 — 수납 기능 전에 만든 백업, 아직 앱을 올리지 않은
+   * 다른 기기의 동기화 파일. 없으면 '수납 0건'으로 읽는다. 그래서 버전을 올리지 않았다:
+   * 올리면 옛 앱이 새 파일을, 새 앱이 옛 백업을 통째로 건너뛴다.
+   */
+  payments?: Payment[];
 }
 
 export const SNAPSHOT_VERSION = 1;
@@ -38,6 +44,11 @@ export const attendanceKey = (row: Attendance) =>
 export const makeupKey = (row: MakeUp) => row.id;
 export const exceptionKey = (row: ScheduleException) =>
   `${row.date}|${row.kind}|${row.studentId ?? ''}`;
+/**
+ * 수납은 id로만 합친다. 같은 학생이 같은 달에 두 번 내는 일(분납)이 실제로 있어서,
+ * 학생과 달로 묶으면 한 건이 지워져 그 해 수입이 줄어든다.
+ */
+export const paymentKey = (row: Payment) => row.id;
 
 /**
  * 같은 키를 가진 두 기록 중 살아남을 쪽.
@@ -79,6 +90,8 @@ export interface MergeResult {
   attendance: Attendance[];
   makeups: MakeUp[];
   exceptions: ScheduleException[];
+  /** 없으면 0건 (SyncSnapshot.payments 참고). */
+  payments?: Payment[];
 }
 
 /**
@@ -95,6 +108,7 @@ export const mergeSnapshots = (local: MergeResult, remotes: SyncSnapshot[]): Mer
     attendance: mergeRows(attendanceKey, local.attendance, ...usable.map((s) => s.attendance ?? [])),
     makeups: mergeRows(makeupKey, local.makeups, ...usable.map((s) => s.makeups ?? [])),
     exceptions: mergeRows(exceptionKey, local.exceptions, ...usable.map((s) => s.exceptions ?? [])),
+    payments: mergeRows(paymentKey, local.payments ?? [], ...usable.map((s) => s.payments ?? [])),
   };
 };
 

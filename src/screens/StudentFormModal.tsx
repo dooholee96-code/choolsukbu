@@ -200,6 +200,7 @@ const StudentFormModal: React.FC = () => {
     null
   );
   const [fee, setFee] = useState(editing?.fee != null ? String(editing.fee) : '');
+  const [preschool, setPreschool] = useState(Boolean(editing?.preschool));
   const [isSaving, setIsSaving] = useState(false);
   /**
    * 저장은 한 번만. isSaving으로 버튼이 흐려지는 것은 **다음 화면부터**라, 그 사이
@@ -275,6 +276,7 @@ const StudentFormModal: React.FC = () => {
       fee: parsedFee > 0 ? parsedFee : undefined,
       note: note.trim() || null,
       withdrawnAt: editing?.withdrawnAt ?? null,
+      preschool,
     };
 
     setIsSaving(true);
@@ -354,7 +356,8 @@ const StudentFormModal: React.FC = () => {
       title: '원생 삭제',
       message:
         `${editing.name} 학생을 삭제할까요?\n` +
-        '출결 기록과 보충 건도 함께 삭제되며 되돌릴 수 없습니다.\n\n' +
+        '출결 기록과 보충 건도 함께 삭제되며 되돌릴 수 없습니다.\n' +
+        '받은 수강료 기록은 신고에 필요해서 남습니다.\n\n' +
         '그만둔 학생이라면 [퇴원 처리]를 쓰세요. 명단에서만 빠지고 기록은 남습니다.',
       confirmLabel: '삭제',
       destructive: true,
@@ -587,6 +590,25 @@ const StudentFormModal: React.FC = () => {
               placeholder="월 수강료"
               keyboardType="number-pad"
             />
+
+            {/* 미취학 아동의 학원비는 보호자의 교육비 공제 대상이라 연초에 자료를 낸다.
+                수납을 기록하는 순간의 값이 그 수납 건에 남는다 (types의 Student.preschool). */}
+            <ToggleRow
+              onPress={() => setPreschool((on) => !on)}
+              accessibilityRole="checkbox"
+              accessibilityState={{ checked: preschool }}
+              accessibilityLabel="미취학 아동"
+              style={{ marginTop: 8 }}
+            >
+              <ToggleBox $on={preschool}>
+                {preschool && <Ionicons name="checkmark" size={14} color="white" />}
+              </ToggleBox>
+              <ToggleLabel>미취학 아동 (초등학교 입학 전)</ToggleLabel>
+            </ToggleRow>
+            <HintText>
+              교육비 공제 자료에 들어갑니다. 입학하면 꺼 주세요 — 그 전에 받은 수강료는 그대로
+              자료에 남습니다.
+            </HintText>
 
             <Actions>
               <Button

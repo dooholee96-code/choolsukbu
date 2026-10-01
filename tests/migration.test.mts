@@ -145,3 +145,22 @@ test('v5에서 붙은 칸은 비어 있고, 그 비어 있음이 곧 예전 상�
   assert.equal(noted.n, 0);
   assert.equal(left.n, 0, '없던 하원 시각이 생기면 안 된다');
 });
+
+test('옛 데이터베이스에도 수납 테이블과 미취학 칸이 생기고, 기존 원생은 미취학이 아니다', async () => {
+  const raw = openV1();
+  await createSchema(wrap(raw));
+  await runMigrations(wrap(raw));
+
+  const columns = (raw.prepare('PRAGMA table_info(students)').all() as { name: string }[]).map((c) => c.name);
+  assert.ok(columns.includes('preschool'));
+  const { n } = raw.prepare("SELECT COUNT(*) AS n FROM students WHERE preschool IS NOT NULL").get() as { n: number };
+  assert.equal(n, 0, '지금까지 없던 구분이라 비워 둔다');
+
+  raw.exec("INSERT INTO payment (id, studentId, paidOn, month, amount, method) VALUES ('p1','s1','2026-03-05','2026-03',250000,'card')");
+  assert.equal((raw.prepare('SELECT COUNT(*) AS n FROM payment').get() as { n: number }).n, 1);
+
+  // 두 번 돌려도 같다 (중간에 끊긴 마이그레이션)
+  raw.exec('PRAGMA user_version = 5');
+  await runMigrations(wrap(raw));
+  assert.equal((raw.prepare('PRAGMA user_version').get() as { user_version: number }).user_version, LATEST);
+});

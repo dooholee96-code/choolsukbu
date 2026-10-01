@@ -21,15 +21,18 @@ const parseScheduledDays = (raw: unknown): DayOfWeek[] => {
   }
 };
 
-type Row = Omit<Student, 'scheduledDays' | 'dayTimes'> & {
+type Row = Omit<Student, 'scheduledDays' | 'dayTimes' | 'preschool'> & {
   scheduledDays: string;
   dayTimes: string | null;
+  /** v6에서 TEXT로 붙인 컬럼이라 '1'로 돌아온다. 옛 행은 NULL. */
+  preschool: string | number | null;
 };
 
 const toStudent = (row: Row): Student => ({
   ...row,
   scheduledDays: parseScheduledDays(row.scheduledDays),
   dayTimes: parseDayTimes(row.dayTimes),
+  preschool: Number(row.preschool) === 1,
 });
 
 /**
@@ -55,7 +58,7 @@ export const listStudentsIncludingDeleted = async (db: SQLiteDatabase): Promise<
 
 export const insertStudent = (db: SQLiteDatabase, student: Student) =>
   db.runAsync(
-    'INSERT INTO students (id, name, grade, scheduledDays, scheduledStartTime, scheduledEndTime, dayTimes, fee, withdrawnAt, note, updatedAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);',
+    'INSERT INTO students (id, name, grade, scheduledDays, scheduledStartTime, scheduledEndTime, dayTimes, fee, withdrawnAt, note, preschool, updatedAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);',
     student.id,
     student.name,
     student.grade,
@@ -66,6 +69,7 @@ export const insertStudent = (db: SQLiteDatabase, student: Student) =>
     student.fee ?? null,
     student.withdrawnAt ?? null,
     student.note?.trim() || null,
+    student.preschool ? 1 : 0,
     stamp()
   );
 
@@ -76,7 +80,7 @@ export const insertStudent = (db: SQLiteDatabase, student: Student) =>
  */
 export const updateStudentRow = (db: SQLiteDatabase, student: Student) =>
   db.runAsync(
-    'UPDATE students SET name = ?, grade = ?, scheduledDays = ?, scheduledStartTime = ?, scheduledEndTime = ?, dayTimes = ?, fee = ?, note = ?, updatedAt = ? WHERE id = ?;',
+    'UPDATE students SET name = ?, grade = ?, scheduledDays = ?, scheduledStartTime = ?, scheduledEndTime = ?, dayTimes = ?, fee = ?, note = ?, preschool = ?, updatedAt = ? WHERE id = ?;',
     student.name,
     student.grade,
     JSON.stringify(student.scheduledDays),
@@ -85,6 +89,7 @@ export const updateStudentRow = (db: SQLiteDatabase, student: Student) =>
     serializeDayTimes(student),
     student.fee ?? null,
     student.note?.trim() || null,
+    student.preschool ? 1 : 0,
     stamp(),
     student.id
   );
@@ -106,7 +111,10 @@ export const setWithdrawn = (db: SQLiteDatabase, studentId: string, date: string
 };
 
 /**
- * 원생과 그에 딸린 기록을 지운다.
+ * 원생과 그에 딸린 기록을 지운다. **수납 기록은 남긴다.**
+ *
+ * 받은 돈은 이미 일어난 일이고 그 해 신고에 들어가야 한다. 원생을 지웠다고 수입이
+ * 사라지면 신고 금액이 실제보다 줄어든다. 수납 장부는 지운 원생의 이름도 찾아 붙인다.
  *
  * 행을 없애지 않고 deletedAt만 찍는다. 그냥 지우면 상대 기기 파일에는 아직
  * 그 원생이 남아 있어 다음 동기화에서 되살아난다. 화면 질의가 모두

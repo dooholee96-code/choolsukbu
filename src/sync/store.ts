@@ -3,6 +3,7 @@ import { serializeDayTimes } from '../utils/schedule';
 import { listAttendanceIncludingDeleted } from '../data/attendance';
 import { listExceptionsIncludingDeleted } from '../data/exceptions';
 import { listMakeupsIncludingDeleted } from '../data/makeup';
+import { listPaymentsIncludingDeleted } from '../data/payments';
 import { listStudentsIncludingDeleted } from '../data/students';
 import {
   attendanceKey,
@@ -10,6 +11,7 @@ import {
   exceptionKey,
   makeupKey,
   MergeResult,
+  paymentKey,
   studentKey,
   supersededIds,
 } from './merge';
@@ -22,14 +24,15 @@ import {
  * 컬럼이 하나 늘 때 한쪽만 고쳐지고, 그 차이는 동기화한 뒤에야 드러난다.
  */
 export const readAll = async (db: SQLiteDatabase): Promise<MergeResult> => {
-  const [students, attendance, makeups, exceptions] = await Promise.all([
+  const [students, attendance, makeups, exceptions, payments] = await Promise.all([
     listStudentsIncludingDeleted(db),
     listAttendanceIncludingDeleted(db),
     listMakeupsIncludingDeleted(db),
     listExceptionsIncludingDeleted(db),
+    listPaymentsIncludingDeleted(db),
   ]);
 
-  return { students, attendance, makeups, exceptions };
+  return { students, attendance, makeups, exceptions, payments };
 };
 
 /**
@@ -50,6 +53,7 @@ export const applyMerge = async (
   const attendance = changedRows(attendanceKey, local.attendance, merged.attendance);
   const makeups = changedRows(makeupKey, local.makeups, merged.makeups);
   const exceptions = changedRows(exceptionKey, local.exceptions, merged.exceptions);
+  const payments = changedRows(paymentKey, local.payments ?? [], merged.payments ?? []);
 
   // 같은 키에서 진 로컬 행. 남겨두면 화면에 중복으로 뜬다.
   const staleAttendance = supersededIds(attendanceKey, local.attendance, merged.attendance);
@@ -62,6 +66,7 @@ export const applyMerge = async (
     attendance.length +
     makeups.length +
     exceptions.length +
+    payments.length +
     staleAttendance.length +
     staleExceptions.length;
   if (total === 0) return 0;
@@ -69,8 +74,8 @@ export const applyMerge = async (
   await db.withTransactionAsync(async () => {
     for (const row of students) {
       await db.runAsync(
-        `INSERT INTO students (id, name, grade, scheduledDays, scheduledStartTime, scheduledEndTime, dayTimes, fee, withdrawnAt, note, updatedAt, deletedAt)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO students (id, name, grade, scheduledDays, scheduledStartTime, scheduledEndTime, dayTimes, fee, withdrawnAt, note, preschool, updatedAt, deletedAt)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(id) DO UPDATE SET
            name = excluded.name, grade = excluded.grade,
            scheduledDays = excluded.scheduledDays,
@@ -78,6 +83,7 @@ export const applyMerge = async (
            scheduledEndTime = excluded.scheduledEndTime,
            dayTimes = excluded.dayTimes, fee = excluded.fee,
            withdrawnAt = excluded.withdrawnAt, note = excluded.note,
+           preschool = excluded.preschool,
            updatedAt = excluded.updatedAt, deletedAt = excluded.deletedAt;`,
         row.id,
         row.name,
@@ -89,6 +95,7 @@ export const applyMerge = async (
         row.fee ?? null,
         row.withdrawnAt ?? null,
         row.note ?? null,
+        row.preschool ? 1 : 0,
         row.updatedAt ?? null,
         row.deletedAt ?? null
       );
@@ -150,6 +157,31 @@ export const applyMerge = async (
         row.studentId ?? null,
         row.startTime ?? null,
         row.endTime ?? null,
+        row.note ?? null,
+        row.updatedAt ?? null,
+        row.deletedAt ?? null
+      );
+    }
+
+    // 원생 다음에 넣는다 (외래키). 위의 원생 반복이 먼저 끝나 있다.
+    for (const row of payments) {
+      await db.runAsync(
+        `INSERT INTO payment (id, studentId, paidOn, month, amount, kind, method, cashReceipt, preschool, note, updatedAt, deletedAt)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET
+           paidOn = excluded.paidOn, month = excluded.month, amount = excluded.amount,
+           kind = excluded.kind, method = excluded.method, cashReceipt = excluded.cashReceipt,
+           preschool = excluded.preschool, note = excluded.note,
+           updatedAt = excluded.updatedAt, deletedAt = excluded.deletedAt;`,
+        row.id,
+        row.studentId,
+        row.paidOn,
+        row.month,
+        row.amount,
+        row.kind ?? 'tuition',
+        row.method,
+        row.cashReceipt ? 1 : 0,
+        row.preschool ? 1 : 0,
         row.note ?? null,
         row.updatedAt ?? null,
         row.deletedAt ?? null

@@ -1,6 +1,6 @@
 import React, { createContext, useState, useEffect, useContext, useCallback, useMemo, useRef } from 'react';
 import { AppState } from 'react-native';
-import { Attendance, MakeUp, ScheduleException, Student } from '../types';
+import { Attendance, MakeUp, Payment, PaymentMethod, ScheduleException, Student } from '../types';
 import { getDB } from '../db';
 import { exclusive } from '../db/queue';
 import { getCurrentDate } from '../utils/date';
@@ -13,6 +13,7 @@ import * as students from '../data/students';
 import * as attendance from '../data/attendance';
 import * as makeup from '../data/makeup';
 import * as exceptions from '../data/exceptions';
+import * as payments from '../data/payments';
 
 /**
  * 화면이 보는 데이터의 유일한 출입구.
@@ -86,6 +87,11 @@ interface DataContextType {
   ) => Promise<void>;
   removeException: (exceptionId: string) => Promise<void>;
 
+  /** 받은 수강료 한 건. 원생의 미취학 표시는 부르는 쪽이 받는 순간의 값으로 채운다. */
+  recordPayment: (payment: Payment) => Promise<void>;
+  updatePayment: (payment: Payment) => Promise<void>;
+  deletePayment: (paymentId: string) => Promise<void>;
+
   /** 상태에 담지 않고 그때그때 읽는 질의들. 담는 순간 오늘로 좁혀 둔 이유가 사라진다. */
   loadAllAttendance: () => Promise<Attendance[]>;
   loadAllMakeups: () => Promise<MakeUp[]>;
@@ -93,6 +99,14 @@ interface DataContextType {
   loadAttendanceRange: (fromDate: string, toDate: string) => Promise<Attendance[]>;
   loadExceptionsForDate: (date: string) => Promise<ScheduleException[]>;
   loadExceptionsRange: (fromDate: string, toDate: string) => Promise<ScheduleException[]>;
+  /** 그 달 수강료로 받은 것 ('YYYY-MM'). */
+  loadPaymentsForMonth: (month: string) => Promise<Payment[]>;
+  /** 받은 날이 그 기간 안인 것. 신고 자료가 쓴다. */
+  loadPaymentsPaidBetween: (fromDate: string, toDate: string) => Promise<Payment[]>;
+  /** 그 원생이 마지막으로 낸 결제수단. 없으면 null. 수납 기록의 기본값이 된다. */
+  loadLastPaymentMethod: (studentId: string) => Promise<PaymentMethod | null>;
+  /** 지운 원생까지. 수납 장부가 지운 원생의 이름을 붙일 때 쓴다. */
+  loadStudentsIncludingDeleted: () => Promise<Student[]>;
 
   /** 기기 전체를 파일 하나로. CSV와 달리 되돌릴 수 있다. */
   exportBackup: () => Promise<string>;
@@ -283,6 +297,12 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       removeException: (exceptionId) =>
         write('removeException', () => exceptions.softDeleteException(db, exceptionId)),
 
+      recordPayment: (payment) => write('recordPayment', () => payments.insertPayment(db, payment)),
+      updatePayment: (payment) =>
+        write('updatePayment', () => payments.updatePaymentRow(db, payment)),
+      deletePayment: (paymentId) =>
+        write('deletePayment', () => payments.softDeletePayment(db, paymentId)),
+
       exportBackup: () => buildBackup(db),
       restoreBackup: async (text) => {
         const snapshot = readBackup(text);
@@ -299,6 +319,10 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       loadAttendanceRange: (from, to) => attendance.listAttendanceRange(db, from, to),
       loadExceptionsForDate: (date) => exceptions.listForDate(db, date),
       loadExceptionsRange: (from, to) => exceptions.listRange(db, from, to),
+      loadPaymentsForMonth: (month) => payments.listForMonth(db, month),
+      loadPaymentsPaidBetween: (from, to) => payments.listPaidBetween(db, from, to),
+      loadStudentsIncludingDeleted: () => students.listStudentsIncludingDeleted(db),
+      loadLastPaymentMethod: (studentId) => payments.lastMethodFor(db, studentId),
 
       refreshData,
       syncNow,

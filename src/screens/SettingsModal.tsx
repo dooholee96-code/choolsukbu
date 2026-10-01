@@ -17,10 +17,17 @@ import {
   pickBackupText,
   exportFile,
 } from '../utils/backup';
+import {
+  buildAcademyReviewCsv,
+  buildPaymentLedgerCsv,
+  buildPreschoolCsv,
+  buildRevenueSummaryCsv,
+} from '../utils/tax';
 import { confirm, notify } from '../utils/dialog';
 import LockSection from '../components/LockSection';
 import { useAppLockContext } from '../hooks/appLockContext';
 import { logger } from '../utils/logger';
+import type { Payment, Student } from '../types';
 
 const Root = styled.View`
   flex: 1;
@@ -71,6 +78,31 @@ const Stack = styled.View`
   gap: 10px;
 `;
 
+const YearBar = styled.View`
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  margin-bottom: ${({ theme }) => theme.spacing.medium}px;
+`;
+
+const YearText = styled.Text`
+  font-size: 18px;
+  font-family: ${({ theme }) => theme.fonts.bold};
+  color: ${({ theme }) => theme.colors.textPrimary};
+  min-width: 90px;
+  text-align: center;
+`;
+
+/**
+ * 신고 자료의 기본 연도. 신고는 대부분 지난해 것을 낸다 — 1월 교육비납입증명서,
+ * 2월 사업장현황신고, 5월 종합소득세. 그 뒤로는 올해 것을 미리 보는 일이 많다.
+ */
+const defaultTaxYear = () => {
+  const now = new Date();
+  return now.getMonth() < 6 ? now.getFullYear() - 1 : now.getFullYear();
+};
+
 const SettingsModal: React.FC = () => {
   const navigation = useNavigation();
   const lock = useAppLockContext();
@@ -83,6 +115,8 @@ const SettingsModal: React.FC = () => {
     importStudents,
     exportBackup,
     restoreBackup,
+    loadPaymentsPaidBetween,
+    loadStudentsIncludingDeleted,
     lastSyncAt,
     syncUnavailable,
     syncError,
@@ -90,6 +124,7 @@ const SettingsModal: React.FC = () => {
     syncNow,
   } = useData();
   const [busy, setBusy] = useState(false);
+  const [taxYear, setTaxYear] = useState(defaultTaxYear);
 
   const run = useCallback(async (task: () => Promise<void>) => {
     setBusy(true);
@@ -127,7 +162,7 @@ const SettingsModal: React.FC = () => {
       notify(
         applied > 0 ? '복원했습니다' : '되돌릴 것이 없습니다',
         `백업 시점: ${new Date(summary.exportedAt).toLocaleString('ko-KR')}\n` +
-          `원생 ${summary.students} · 출결 ${summary.attendance} · 보충 ${summary.makeups}\n\n` +
+          `원생 ${summary.students} · 출결 ${summary.attendance} · 보충 ${summary.makeups} · 수납 ${summary.payments}\n\n` +
           (applied > 0
             ? `${applied}건을 되돌렸습니다.`
             : '이미 이 기기에 모두 있는 기록입니다.')
@@ -171,6 +206,29 @@ const SettingsModal: React.FC = () => {
         return;
       }
       await exportCsv(`출석부_보충_${backupStamp()}.csv`, buildMakeupCsv(records, students));
+    });
+
+  /**
+   * 신고 자료 하나. 그 해에 받은 돈(받은 날 기준)을 읽어 표로 만든다.
+   * 이름은 지운 원생까지 찾는다 — 지운 원생에게 받은 돈도 그 해 수입이다.
+   */
+  const exportTax = (
+    label: string,
+    build: (payments: Payment[], students: Student[]) => string
+  ) =>
+    run(async () => {
+      const [payments, everyone] = await Promise.all([
+        loadPaymentsPaidBetween(`${taxYear}-01-01`, `${taxYear}-12-31`),
+        loadStudentsIncludingDeleted(),
+      ]);
+      if (payments.length === 0) {
+        notify(
+          `${taxYear}년에 받은 돈 기록이 없습니다.`,
+          '[수납] 탭에서 받은 돈을 기록하면 여기에 모입니다.'
+        );
+        return;
+      }
+      await exportCsv(`출석부_${taxYear}_${label}.csv`, build(payments, everyone));
     });
 
   const importRoster = () =>
@@ -276,6 +334,68 @@ const SettingsModal: React.FC = () => {
             <Button title="출결 기록 (전체)" onPress={exportAttendance} disabled={busy} />
             <Button title="보충 기록" onPress={exportMakeups} disabled={busy} />
             <Button title="일정 변경 (휴강·특강)" onPress={exportExceptions} disabled={busy} />
+          </Stack>
+
+          <SectionTitle>신고용 자료 (홈택스)</SectionTitle>
+          <Note>
+            [수납] 탭에 기록한 받은 돈으로 만듭니다. 연도는 받은 날 기준입니다.
+            {'\n'}· 사업장현황신고(2월 10일까지): 수입금액과 그 구성(신용카드·현금영수증·기타)
+            {'\n'}· 학원사업자 수입금액검토표(사업장현황신고 때 함께): 수입구분별 금액, 단가별
+            수강연인원
+            {'\n'}· 수납 장부: 받은 돈 한 건씩 — 종합소득세(5월)의 근거
+            {'\n'}· 미취학 아동 교육비: 보호자가 요청하는 교육비납입증명서에 옮길 금액
+            {'\n\n'}홈택스에 자동으로 제출하지는 않습니다. 숫자를 옮겨 적거나 세무사에게
+            전달하세요. 시설·직원·경비처럼 수납 기록에 없는 칸은 직접 채웁니다.
+          </Note>
+          <YearBar>
+            <Button
+              title="◀"
+              variant="secondary"
+              size="compact"
+              onPress={() => setTaxYear((y) => y - 1)}
+              accessibilityLabel="이전 해"
+            />
+            <YearText>{taxYear}년</YearText>
+            <Button
+              title="▶"
+              variant="secondary"
+              size="compact"
+              onPress={() => setTaxYear((y) => y + 1)}
+              disabled={taxYear >= new Date().getFullYear()}
+              accessibilityLabel="다음 해"
+            />
+          </YearBar>
+          <Stack>
+            <Button
+              title="사업장현황신고 수입금액"
+              onPress={() =>
+                exportTax('사업장현황신고', (payments) => buildRevenueSummaryCsv(payments, taxYear))
+              }
+              disabled={busy}
+            />
+            <Button
+              title="학원사업자 수입금액검토표"
+              onPress={() =>
+                exportTax('수입금액검토표', (payments) => buildAcademyReviewCsv(payments, taxYear))
+              }
+              disabled={busy}
+            />
+            <Button
+              title="수납 장부 (한 건씩)"
+              onPress={() =>
+                exportTax('수납장부', (payments, everyone) => buildPaymentLedgerCsv(payments, everyone))
+              }
+              disabled={busy}
+            />
+            <Button
+              title="미취학 아동 교육비"
+              onPress={() =>
+                exportTax('미취학교육비', (payments, everyone) =>
+                  buildPreschoolCsv(payments, everyone, taxYear)
+                )
+              }
+              disabled={busy}
+            />
           </Stack>
 
           <SectionTitle>가져오기</SectionTitle>

@@ -3,6 +3,7 @@ import type { NavigatorScreenParams } from '@react-navigation/native';
 export type TabParamList = {
   Today: undefined;
   Students: undefined;
+  Payments: undefined;
   Makeup: undefined;
   History: undefined;
 };
@@ -14,6 +15,8 @@ export type RootStackParamList = {
   SettingsModal: undefined;
   /** 휴강·특강·요일 변경처럼 그 날 하루만 달라지는 일정 */
   ScheduleModal: undefined;
+  /** 수강료 받은 한 건. paymentId가 있으면 그 건을 고친다. month는 'YYYY-MM' 수강월. */
+  PaymentModal: { studentId: string; month: string; paymentId?: string };
 };
 
 declare global {

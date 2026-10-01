@@ -31,6 +31,9 @@ export const setLastSyncAt = async (db: SQLiteDatabase, at: string): Promise<voi
   await db.runAsync("UPDATE device SET lastSyncAt = ? WHERE id = 'self';", at);
 };
 
+/** 동기화 파일에 담기는 테이블. */
+export const SYNCED_TABLES = ['students', 'attendance', 'makeup', 'schedule_exception', 'payment'];
+
 /**
  * 마지막으로 올린 뒤에 이 기기에서 바뀐 것이 있는가.
  *
@@ -43,7 +46,9 @@ export const hasChangesSince = async (
 ): Promise<boolean> => {
   if (!since) return true;
 
-  for (const table of ['students', 'attendance', 'makeup', 'schedule_exception']) {
+  // 테이블이 늘면 여기에도 꼭 붙인다. 빠뜨리면 그 테이블만 바뀐 날은 '바뀐 것 없음'으로
+  // 보여 올리지 않는다 — 수납만 기록한 날의 기록이 다른 기기에 영영 가지 않는다.
+  for (const table of SYNCED_TABLES) {
     const row = await db.getFirstAsync<{ n: number }>(
       `SELECT COUNT(*) AS n FROM ${table} WHERE updatedAt > ?;`,
       since

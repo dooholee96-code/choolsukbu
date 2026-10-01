@@ -10,7 +10,7 @@ import type { SQLiteDatabase } from 'expo-sqlite';
 let db: SQLiteDatabase | null = null;
 
 /** 스키마 버전. 컬럼을 바꿀 때 올리고 runMigrations에 분기를 추가한다. */
-export const DATABASE_VERSION = 5;
+export const DATABASE_VERSION = 6;
 
 export const initDB = async () => {
   if (!db) {
@@ -47,6 +47,7 @@ export const createSchema = async (database: SQLiteDatabase) => {
       fee INTEGER,
       withdrawnAt TEXT,
       note TEXT,
+      preschool TEXT,
       updatedAt TEXT,
       deletedAt TEXT
     );
@@ -89,6 +90,23 @@ export const createSchema = async (database: SQLiteDatabase) => {
       deviceId TEXT NOT NULL,
       lastSyncAt TEXT
     );
+    CREATE TABLE IF NOT EXISTS payment (
+      id TEXT PRIMARY KEY,
+      studentId TEXT,
+      paidOn TEXT NOT NULL,
+      month TEXT NOT NULL,
+      amount INTEGER NOT NULL,
+      kind TEXT,
+      method TEXT NOT NULL,
+      cashReceipt INTEGER DEFAULT 0,
+      preschool INTEGER DEFAULT 0,
+      note TEXT,
+      updatedAt TEXT,
+      deletedAt TEXT,
+      FOREIGN KEY (studentId) REFERENCES students (id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_payment_month ON payment (month);
+    CREATE INDEX IF NOT EXISTS idx_payment_paid_on ON payment (paidOn);
     CREATE INDEX IF NOT EXISTS idx_attendance_date ON attendance (date);
     CREATE INDEX IF NOT EXISTS idx_attendance_student_date ON attendance (studentId, date);
     CREATE INDEX IF NOT EXISTS idx_exception_date ON schedule_exception (date);
@@ -182,6 +200,15 @@ export const runMigrations = async (database: SQLiteDatabase) => {
     await addColumn(database, 'students', 'withdrawnAt');
     await addColumn(database, 'students', 'note');
     await addColumn(database, 'attendance', 'leaveTime');
+  }
+
+  // v6: 수납(payment)과 미취학 표시(students.preschool).
+  //
+  // payment 테이블은 위의 createSchema가 이미 만들었다 (CREATE TABLE IF NOT EXISTS는
+  // 옛 기기에서도 그대로 돈다). 여기서는 students에 컬럼만 붙인다. 비어 있으면
+  // 미취학이 아니다 — 지금까지 그런 구분이 없었으니 그대로가 맞다.
+  if (currentVersion < 6) {
+    await addColumn(database, 'students', 'preschool');
   }
 
   await database.execAsync(`PRAGMA user_version = ${DATABASE_VERSION};`);

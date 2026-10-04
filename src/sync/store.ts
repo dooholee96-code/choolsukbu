@@ -4,6 +4,7 @@ import { listAttendanceIncludingDeleted } from '../data/attendance';
 import { listExceptionsIncludingDeleted } from '../data/exceptions';
 import { listMakeupsIncludingDeleted } from '../data/makeup';
 import { listPaymentsIncludingDeleted } from '../data/payments';
+import { getAcademy, saveAcademy } from '../data/academy';
 import { listStudentsIncludingDeleted } from '../data/students';
 import {
   attendanceKey,
@@ -24,15 +25,16 @@ import {
  * 컬럼이 하나 늘 때 한쪽만 고쳐지고, 그 차이는 동기화한 뒤에야 드러난다.
  */
 export const readAll = async (db: SQLiteDatabase): Promise<MergeResult> => {
-  const [students, attendance, makeups, exceptions, payments] = await Promise.all([
+  const [students, attendance, makeups, exceptions, payments, academy] = await Promise.all([
     listStudentsIncludingDeleted(db),
     listAttendanceIncludingDeleted(db),
     listMakeupsIncludingDeleted(db),
     listExceptionsIncludingDeleted(db),
     listPaymentsIncludingDeleted(db),
+    getAcademy(db),
   ]);
 
-  return { students, attendance, makeups, exceptions, payments };
+  return { students, attendance, makeups, exceptions, payments, academy };
 };
 
 /**
@@ -54,6 +56,11 @@ export const applyMerge = async (
   const makeups = changedRows(makeupKey, local.makeups, merged.makeups);
   const exceptions = changedRows(exceptionKey, local.exceptions, merged.exceptions);
   const payments = changedRows(paymentKey, local.payments ?? [], merged.payments ?? []);
+  // 학원 정보는 상대 쪽이 더 나중에 고쳤을 때만 받는다.
+  const academy =
+    merged.academy && (merged.academy.updatedAt ?? '') > (local.academy?.updatedAt ?? '')
+      ? merged.academy
+      : null;
 
   // 같은 키에서 진 로컬 행. 남겨두면 화면에 중복으로 뜬다.
   const staleAttendance = supersededIds(attendanceKey, local.attendance, merged.attendance);
@@ -67,6 +74,7 @@ export const applyMerge = async (
     makeups.length +
     exceptions.length +
     payments.length +
+    (academy ? 1 : 0) +
     staleAttendance.length +
     staleExceptions.length;
   if (total === 0) return 0;
@@ -162,6 +170,8 @@ export const applyMerge = async (
         row.deletedAt ?? null
       );
     }
+
+    if (academy) await saveAcademy(db, academy, academy.updatedAt);
 
     // 원생 다음에 넣는다 (외래키). 위의 원생 반복이 먼저 끝나 있다.
     for (const row of payments) {

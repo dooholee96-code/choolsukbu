@@ -1,10 +1,11 @@
 import React, { useCallback, useState } from 'react';
 import styled from 'styled-components/native';
-import { Platform, ScrollView, View } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { ScrollView } from 'react-native';
 import { useData } from '../hooks/useData';
+import Screen from '../components/common/Screen';
 import Button from '../components/common/Button';
+import AcademySection from '../components/AcademySection';
+import FeeRulesSection from '../components/FeeRulesSection';
 import { parseCSV } from '../utils/csv';
 import {
   backupStamp,
@@ -29,24 +30,17 @@ import { useAppLockContext } from '../hooks/appLockContext';
 import { logger } from '../utils/logger';
 import type { Payment, Student } from '../types';
 
-const Root = styled.View`
-  flex: 1;
-  background-color: ${({ theme }) => theme.colors.background};
-`;
-
+/* 설정은 한 줄로 읽는 글이 많아 넓은 화면에서도 폭을 묶어 둔다. */
 const Content = styled.View`
   width: 100%;
-  max-width: 560px;
+  max-width: 640px;
   align-self: center;
-  padding: ${({ theme }) => theme.spacing.medium}px;
 `;
 
 const TitleText = styled.Text`
-  font-size: 24px;
+  font-size: 28px;
   font-family: ${({ theme }) => theme.fonts.bold};
   color: ${({ theme }) => theme.colors.textPrimary};
-  text-align: center;
-  margin-bottom: ${({ theme }) => theme.spacing.small}px;
 `;
 
 const Lead = styled.Text`
@@ -54,15 +48,23 @@ const Lead = styled.Text`
   font-size: 14px;
   line-height: 21px;
   color: ${({ theme }) => theme.colors.textSecondary};
-  text-align: center;
-  margin-bottom: ${({ theme }) => theme.spacing.large}px;
+  margin-top: 4px;
+`;
+
+/* 묶음 하나. 설정이 길어서 카드로 나눠야 어디까지가 한 일인지 보인다. */
+const Card = styled.View`
+  background-color: ${({ theme }) => theme.colors.cardBackground};
+  border-radius: ${({ theme }) => theme.borderRadius.medium}px;
+  border-width: 1px;
+  border-color: ${({ theme }) => theme.colors.border};
+  padding: ${({ theme }) => theme.spacing.medium}px;
+  margin-top: ${({ theme }) => theme.spacing.medium}px;
 `;
 
 const SectionTitle = styled.Text`
-  font-size: 15px;
+  font-size: 16px;
   font-family: ${({ theme }) => theme.fonts.bold};
   color: ${({ theme }) => theme.colors.textPrimary};
-  margin-top: ${({ theme }) => theme.spacing.large}px;
   margin-bottom: 6px;
 `;
 
@@ -103,10 +105,12 @@ const defaultTaxYear = () => {
   return now.getMonth() < 6 ? now.getFullYear() - 1 : now.getFullYear();
 };
 
-const SettingsModal: React.FC = () => {
-  const navigation = useNavigation();
+/**
+ * 설정 탭. 예전에는 [원생] 탭의 톱니바퀴로 여는 시트였는데, 학원 정보·신고 자료·백업처럼
+ * 원생과 상관없는 것이 늘어 탭으로 뺐다.
+ */
+const SettingsScreen: React.FC = () => {
   const lock = useAppLockContext();
-  const insets = useSafeAreaInsets();
   const {
     students,
     loadAllAttendance,
@@ -269,26 +273,36 @@ const SettingsModal: React.FC = () => {
     });
 
   return (
-    <Root>
+    <Screen>
       <ScrollView
-        // flex 없이는 ScrollView가 내용 높이만큼 커져서 시트 밖으로 잘려 나가고,
-        // 스크롤 영역이 화면보다 커지므로 스크롤도 먹지 않는다.
         style={{ flex: 1 }}
-        contentContainerStyle={{
-          // iOS의 modal/formSheet는 상태 표시줄 아래에서 시작하므로 창의 top 인셋을 더하면 안 된다.
-          paddingTop: (Platform.OS === 'ios' ? 0 : insets.top) + 16,
-          paddingBottom: insets.bottom + 32,
-        }}
+        contentContainerStyle={{ paddingBottom: 32 }}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
       >
         <Content>
           <TitleText>설정</TitleText>
           <Lead>
-            이 앱은 기기 안에만 저장합니다.{'\n'}
-            앱을 지우거나 기기를 바꾸면 기록도 함께 사라집니다.
+            이 앱은 기기 안에만 저장합니다. 앱을 지우거나 기기를 바꾸면 기록도 함께
+            사라지니 전체 백업을 가끔 해 두세요.
           </Lead>
 
-          <LockSection onChanged={lock.refresh} />
+          <Card>
+            <SectionTitle>학원 정보</SectionTitle>
+            <Note>교육비 납입 증명서의 학원 칸에 들어갑니다.</Note>
+            <AcademySection />
+          </Card>
 
+          <Card>
+            <SectionTitle>수강료 기준 · 수업 시간</SectionTitle>
+            <FeeRulesSection />
+          </Card>
+
+          <Card>
+          <LockSection onChanged={lock.refresh} />
+          </Card>
+
+          <Card>
           <SectionTitle>기기 간 동기화</SectionTitle>
           {syncUnavailable ? (
             <Note>{syncUnavailable}</Note>
@@ -311,31 +325,9 @@ const SettingsModal: React.FC = () => {
               />
             </>
           )}
+          </Card>
 
-          <SectionTitle>전체 백업</SectionTitle>
-          <Note>
-            기록 전부를 파일 하나로 저장하고, 그 파일로 되돌립니다. 기기를 바꾸거나
-            앱을 지웠을 때 쓰는 것은 이쪽입니다.
-            {'\n'}복원은 덮어쓰기가 아니라 합치기라, 백업 이후에 찍은 기록은 그대로
-            남고 같은 파일을 두 번 복원해도 두 배가 되지 않습니다.
-          </Note>
-          <Stack>
-            <Button title="전체 백업 저장" onPress={exportWhole} disabled={busy} />
-            <Button title="백업에서 복원" variant="secondary" onPress={restoreWhole} disabled={busy} />
-          </Stack>
-
-          <SectionTitle>표로 내보내기</SectionTitle>
-          <Note>
-            엑셀에서 열어 보려고 만드는 것입니다. 되돌릴 수는 없습니다 — 사람이 읽는
-            형식이라 기록끼리의 연결이 빠집니다. 복구용으로는 위의 전체 백업을 쓰세요.
-          </Note>
-          <Stack>
-            <Button title="원생 명단" onPress={exportStudents} disabled={busy} />
-            <Button title="출결 기록 (전체)" onPress={exportAttendance} disabled={busy} />
-            <Button title="보충 기록" onPress={exportMakeups} disabled={busy} />
-            <Button title="일정 변경 (휴강·특강)" onPress={exportExceptions} disabled={busy} />
-          </Stack>
-
+          <Card>
           <SectionTitle>신고용 자료 (홈택스)</SectionTitle>
           <Note>
             [수납] 탭에 기록한 받은 돈으로 만듭니다. 연도는 받은 날 기준입니다.
@@ -397,7 +389,37 @@ const SettingsModal: React.FC = () => {
               disabled={busy}
             />
           </Stack>
+          </Card>
 
+          <Card>
+          <SectionTitle>전체 백업</SectionTitle>
+          <Note>
+            기록 전부를 파일 하나로 저장하고, 그 파일로 되돌립니다. 기기를 바꾸거나
+            앱을 지웠을 때 쓰는 것은 이쪽입니다.
+            {'\n'}복원은 덮어쓰기가 아니라 합치기라, 백업 이후에 찍은 기록은 그대로
+            남고 같은 파일을 두 번 복원해도 두 배가 되지 않습니다.
+          </Note>
+          <Stack>
+            <Button title="전체 백업 저장" onPress={exportWhole} disabled={busy} />
+            <Button title="백업에서 복원" variant="secondary" onPress={restoreWhole} disabled={busy} />
+          </Stack>
+          </Card>
+
+          <Card>
+          <SectionTitle>표로 내보내기</SectionTitle>
+          <Note>
+            엑셀에서 열어 보려고 만드는 것입니다. 되돌릴 수는 없습니다 — 사람이 읽는
+            형식이라 기록끼리의 연결이 빠집니다. 복구용으로는 위의 전체 백업을 쓰세요.
+          </Note>
+          <Stack>
+            <Button title="원생 명단" onPress={exportStudents} disabled={busy} />
+            <Button title="출결 기록 (전체)" onPress={exportAttendance} disabled={busy} />
+            <Button title="보충 기록" onPress={exportMakeups} disabled={busy} />
+            <Button title="일정 변경 (휴강·특강)" onPress={exportExceptions} disabled={busy} />
+          </Stack>
+          </Card>
+
+          <Card>
           <SectionTitle>가져오기</SectionTitle>
           <Note>
             원생 명단만 가져옵니다. 내보내기로 만든 파일과 같은 형식이어야 합니다
@@ -408,14 +430,12 @@ const SettingsModal: React.FC = () => {
             {'\n'}출결 기록은 덮어쓸 위험이 커서 가져오기를 지원하지 않습니다.
           </Note>
           <Button title="원생 명단 가져오기" variant="secondary" onPress={importRoster} disabled={busy} />
+          </Card>
 
-          <View style={{ marginTop: 28 }}>
-            <Button title="닫기" variant="secondary" onPress={() => navigation.goBack()} />
-          </View>
         </Content>
       </ScrollView>
-    </Root>
+    </Screen>
   );
 };
 
-export default SettingsModal;
+export default SettingsScreen;

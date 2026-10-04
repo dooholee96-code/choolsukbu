@@ -1,5 +1,6 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
-import { DayOfWeek, Student } from '../types';
+import { DayOfWeek, FeeRule, Student } from '../types';
+import { matchFeeRule } from '../utils/fees';
 import { parseDayTimes, serializeDayTimes } from '../utils/schedule';
 import { stamp } from './stamp';
 
@@ -181,4 +182,29 @@ export const importStudentRows = async (db: SQLiteDatabase, incoming: Student[])
   });
 
   return { added, skipped };
+};
+
+/**
+ * 수강료가 비어 있는 원생에게 기준표대로 채운다. 이미 적힌 금액은 건드리지 않는다 —
+ * 형제 할인처럼 일부러 다르게 적은 금액을 기준표가 덮으면 안 된다.
+ * 퇴원생도 건너뛴다. 채운 원생 수를 돌려준다.
+ */
+export const fillMissingFees = async (db: SQLiteDatabase, rules: FeeRule[]): Promise<number> => {
+  const students = await listStudents(db);
+  let filled = 0;
+  await db.withTransactionAsync(async () => {
+    for (const student of students) {
+      if (student.fee != null || student.withdrawnAt) continue;
+      const rule = matchFeeRule(rules, student);
+      if (!rule) continue;
+      await db.runAsync(
+        'UPDATE students SET fee = ?, updatedAt = ? WHERE id = ?;',
+        rule.fee,
+        stamp(),
+        student.id
+      );
+      filled += 1;
+    }
+  });
+  return filled;
 };

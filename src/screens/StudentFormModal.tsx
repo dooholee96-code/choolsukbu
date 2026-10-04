@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import styled from 'styled-components/native';
 import { View, ScrollView, Platform, KeyboardAvoidingView } from 'react-native';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
@@ -10,7 +10,9 @@ import { useData } from '../hooks/useData';
 import Button from '../components/common/Button';
 import PressableScale from '../components/common/PressableScale';
 import Chip from '../components/common/Chip';
-import { DayOfWeek, DaySchedule, Student } from '../types';
+import { DayOfWeek, DaySchedule, FeeRule, Student } from '../types';
+import { DEFAULT_CLASS_MINUTES, describeFeeRule, matchFeeRule } from '../utils/fees';
+import { formatWon } from '../utils/ledger';
 import { createId } from '../utils/id';
 import type { RootStackParamList } from '../types/navigation';
 import { logger } from '../utils/logger';
@@ -172,7 +174,14 @@ const StudentFormModal: React.FC = () => {
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
   const { params } = useRoute<RouteProp<RootStackParamList, 'StudentFormModal'>>();
-  const { students, addStudent, updateStudent, deleteStudent, setStudentWithdrawn } = useData();
+  const {
+    students,
+    addStudent,
+    updateStudent,
+    deleteStudent,
+    setStudentWithdrawn,
+    loadAcademy,
+  } = useData();
 
   // 수정 대상. 신규 등록이면 undefined다.
   const editing = params?.studentId
@@ -201,6 +210,47 @@ const StudentFormModal: React.FC = () => {
   );
   const [fee, setFee] = useState(editing?.fee != null ? String(editing.fee) : '');
   const [preschool, setPreschool] = useState(Boolean(editing?.preschool));
+
+  /*
+   * [설정]의 수강료 기준표와 기본 수업 시간. 사람이 직접 고친 칸은 다시 덮지 않는다 —
+   * 형제 할인처럼 일부러 다르게 적은 금액, 일부러 길게 잡은 수업이 있다.
+   */
+  const [feeRules, setFeeRules] = useState<FeeRule[]>([]);
+  const [classMinutes, setClassMinutes] = useState(DEFAULT_CLASS_MINUTES);
+  const feeTouched = useRef(false);
+  const endTouched = useRef(false);
+  /** 기준표가 채운 금액인가. 맞는 줄이 사라지면(요일을 줄이면) 그 금액도 거둔다. */
+  const feeAutoFilled = useRef(false);
+
+  useEffect(() => {
+    loadAcademy()
+      .then((info) => {
+        setFeeRules(info?.feeRules ?? []);
+        if (info?.classMinutes) setClassMinutes(info.classMinutes);
+      })
+      .catch(() => {});
+  }, [loadAcademy]);
+
+  const feeSuggestion = matchFeeRule(feeRules, { grade, scheduledDays: selectedDays });
+  // 이미 적힌 원생의 수강료는 저절로 바꾸지 않는다. 빈 경우와 새 원생만 채운다.
+  const autoFee = !feeTouched.current && (!isEditing || editing?.fee == null);
+
+  useEffect(() => {
+    if (!autoFee) return;
+    if (feeSuggestion) {
+      setFee(String(feeSuggestion.fee));
+      feeAutoFilled.current = true;
+    } else if (feeAutoFilled.current) {
+      setFee('');
+      feeAutoFilled.current = false;
+    }
+  }, [autoFee, feeSuggestion?.id, feeSuggestion?.fee]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // 새 원생은 끝나는 시각을 '시작 + 기본 수업 시간'으로 맞춘다. 끝 시각을 직접 고르면 멈춘다.
+  useEffect(() => {
+    if (isEditing || endTouched.current) return;
+    setEndTime(new Date(startTime.getTime() + classMinutes * 60_000));
+  }, [isEditing, startTime, classMinutes]);
   const [isSaving, setIsSaving] = useState(false);
   /**
    * 저장은 한 번만. isSaving으로 버튼이 흐려지는 것은 **다음 화면부터**라, 그 사이
@@ -576,7 +626,10 @@ const StudentFormModal: React.FC = () => {
                 {renderTimeField(
                   '수업 종료 시각',
                   endTime,
-                  setEndTime,
+                  (date) => {
+                    endTouched.current = true;
+                    setEndTime(date);
+                  },
                   showEndTimePicker,
                   setShowEndTimePicker
                 )}
@@ -586,10 +639,22 @@ const StudentFormModal: React.FC = () => {
             <Label>월 수강료 (선택)</Label>
             <StyledTextInput
               value={fee}
-              onChangeText={(text) => setFee(text.replace(/[^0-9]/g, ''))}
+              onChangeText={(text) => {
+                feeTouched.current = true;
+                feeAutoFilled.current = false;
+                setFee(text.replace(/[^0-9]/g, ''));
+              }}
               placeholder="월 수강료"
               keyboardType="number-pad"
             />
+            <HintText style={{ marginTop: 6 }}>
+              {feeSuggestion
+                ? `수강료 기준: ${describeFeeRule(feeSuggestion)} → ${formatWon(feeSuggestion.fee)}` +
+                  (fee && Number(fee) !== feeSuggestion.fee ? ' (지금 적힌 금액과 다름)' : '')
+                : feeRules.length
+                  ? '맞는 수강료 기준이 없습니다. 직접 적어 주세요.'
+                  : '[설정] 탭에서 수강료 기준을 정해 두면 학년·요일에 맞춰 채워집니다.'}
+            </HintText>
 
             {/* 미취학 아동의 학원비는 보호자의 교육비 공제 대상이라 연초에 자료를 낸다.
                 수납을 기록하는 순간의 값이 그 수납 건에 남는다 (types의 Student.preschool). */}
@@ -619,6 +684,17 @@ const StudentFormModal: React.FC = () => {
               <View>
                 <Button title="취소" variant="secondary" onPress={() => navigation.goBack()} />
               </View>
+              {isEditing && editing && (
+                <View>
+                  <Button
+                    title="교육비 납입 증명서"
+                    variant="secondary"
+                    onPress={() =>
+                      navigation.navigate('CertificateModal', { studentId: editing.id })
+                    }
+                  />
+                </View>
+              )}
               {/* 그만둔 학생에게 쓰는 것은 이쪽이다. 삭제는 잘못 등록했을 때만. */}
               {isEditing && !editing?.withdrawnAt && (
                 <View>

@@ -32,7 +32,7 @@ export const setLastSyncAt = async (db: SQLiteDatabase, at: string): Promise<voi
 };
 
 /** 동기화 파일에 담기는 테이블. */
-export const SYNCED_TABLES = ['students', 'attendance', 'makeup', 'schedule_exception', 'payment'];
+export const SYNCED_TABLES = ['students', 'attendance', 'makeup', 'schedule_exception', 'payment', 'academy'];
 
 /**
  * 마지막으로 올린 뒤에 이 기기에서 바뀐 것이 있는가.

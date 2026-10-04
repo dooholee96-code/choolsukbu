@@ -152,3 +152,43 @@ export interface Payment extends SyncMeta {
   preschool: boolean;
   note?: string | null;
 }
+
+/**
+ * 학원 정보. 교육비납입증명서에 학원 쪽 칸으로 들어간다 (상호, 사업자등록번호, 소재지,
+ * 전화번호, 교육 내용, 대표자). 한 기기에 하나뿐이고, 동기화·백업으로 다른 기기와 맞춘다.
+ */
+export interface AcademyInfo {
+  /** 상호 (학원 이름) */
+  name: string;
+  /** 대표자 성명 */
+  owner: string;
+  /** 사업자등록번호 '000-00-00000' */
+  bizNumber: string;
+  /** 소재지 */
+  address: string;
+  phone: string;
+  /** 교육 내용 (예: 영어·수학) */
+  subject: string;
+  /** 수강료 기준표. 원생을 등록할 때 월 수강료를 채우는 데 쓴다 (utils/fees). */
+  feeRules?: FeeRule[];
+  /** 기본 수업 시간(분). 새 원생의 끝나는 시각을 채운다. 비우면 60분. */
+  classMinutes?: number;
+  /** 동기화에서 최신을 가리는 근거. */
+  updatedAt?: string;
+}
+
+/**
+ * 수강료 기준 한 줄: '주 N회, 몇~몇 학년이면 월 얼마'. 조건은 비워 둘 수 있다
+ * (비우면 그 조건은 따지지 않는다). 여러 줄이 맞으면 조건을 더 많이 채운 줄이 이긴다 —
+ * '주 3회 25만'과 '4학년 이상 주 3회 40만'이 함께 있으면 4학년은 40만이다.
+ */
+export interface FeeRule {
+  id: string;
+  /** 주 몇 회. null이면 횟수와 상관없이. */
+  perWeek: number | null;
+  /** 학년 범위 (초등 1~6, 중학생 7~9). null이면 그쪽 끝을 따지지 않는다. */
+  gradeFrom: number | null;
+  gradeTo: number | null;
+  /** 월 수강료(원) */
+  fee: number;
+}

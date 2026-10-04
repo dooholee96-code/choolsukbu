@@ -10,7 +10,7 @@ import type { SQLiteDatabase } from 'expo-sqlite';
 let db: SQLiteDatabase | null = null;
 
 /** 스키마 버전. 컬럼을 바꿀 때 올리고 runMigrations에 분기를 추가한다. */
-export const DATABASE_VERSION = 6;
+export const DATABASE_VERSION = 7;
 
 export const initDB = async () => {
   if (!db) {
@@ -104,6 +104,18 @@ export const createSchema = async (database: SQLiteDatabase) => {
       updatedAt TEXT,
       deletedAt TEXT,
       FOREIGN KEY (studentId) REFERENCES students (id)
+    );
+    CREATE TABLE IF NOT EXISTS academy (
+      id TEXT PRIMARY KEY,
+      name TEXT,
+      owner TEXT,
+      bizNumber TEXT,
+      address TEXT,
+      phone TEXT,
+      subject TEXT,
+      feeRules TEXT,
+      classMinutes TEXT,
+      updatedAt TEXT
     );
     CREATE INDEX IF NOT EXISTS idx_payment_month ON payment (month);
     CREATE INDEX IF NOT EXISTS idx_payment_paid_on ON payment (paidOn);
@@ -210,6 +222,8 @@ export const runMigrations = async (database: SQLiteDatabase) => {
   if (currentVersion < 6) {
     await addColumn(database, 'students', 'preschool');
   }
+
+  // v7: 학원 정보(academy). 테이블은 createSchema가 만든다. 비어 있는 것이 곧 '아직 안 적음'이다.
 
   await database.execAsync(`PRAGMA user_version = ${DATABASE_VERSION};`);
 };

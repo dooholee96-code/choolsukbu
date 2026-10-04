@@ -1,4 +1,4 @@
-import { Attendance, MakeUp, Payment, ScheduleException, Student, SyncMeta } from '../types';
+import { AcademyInfo, Attendance, MakeUp, Payment, ScheduleException, Student, SyncMeta } from '../types';
 
 /**
  * 기기 하나가 iCloud에 올리는 파일의 내용.
@@ -21,6 +21,8 @@ export interface SyncSnapshot {
    * 올리면 옛 앱이 새 파일을, 새 앱이 옛 백업을 통째로 건너뛴다.
    */
   payments?: Payment[];
+  /** 학원 정보. payments와 같은 이유로 없을 수 있다. 적은 적이 없으면 null. */
+  academy?: AcademyInfo | null;
 }
 
 export const SNAPSHOT_VERSION = 1;
@@ -92,7 +94,19 @@ export interface MergeResult {
   exceptions: ScheduleException[];
   /** 없으면 0건 (SyncSnapshot.payments 참고). */
   payments?: Payment[];
+  /** 없으면 아직 적지 않은 것. */
+  academy?: AcademyInfo | null;
 }
+
+/** 학원 정보는 한 줄뿐이라 가장 나중에 고친 것 하나만 남는다. 시각이 없는 쪽은 진다. */
+export const latestAcademy = (
+  ...candidates: (AcademyInfo | null | undefined)[]
+): AcademyInfo | null =>
+  candidates.reduce<AcademyInfo | null>((best, next) => {
+    if (!next) return best;
+    if (!best) return next;
+    return (next.updatedAt ?? '') > (best.updatedAt ?? '') ? next : best;
+  }, null);
 
 /**
  * 내 기록과 상대 기기들의 기록을 합친다.
@@ -109,6 +123,7 @@ export const mergeSnapshots = (local: MergeResult, remotes: SyncSnapshot[]): Mer
     makeups: mergeRows(makeupKey, local.makeups, ...usable.map((s) => s.makeups ?? [])),
     exceptions: mergeRows(exceptionKey, local.exceptions, ...usable.map((s) => s.exceptions ?? [])),
     payments: mergeRows(paymentKey, local.payments ?? [], ...usable.map((s) => s.payments ?? [])),
+    academy: latestAcademy(local.academy, ...usable.map((s) => s.academy)),
   };
 };
 

@@ -322,6 +322,20 @@ const PaymentsScreen: React.FC = () => {
         </View>}
 
         <CardActions>
+          {/* 연말정산 때 보호자가 떼어 가는 교육비 납입 증명서. 받은 기록이 있을 때만. */}
+          {entry.payments.length > 0 && (
+            <AddMore
+              onPress={() =>
+                navigation.navigate('CertificateModal', { studentId: entry.student.id })
+              }
+              pressScale={0.9}
+              accessibilityRole="button"
+              accessibilityLabel={`${name} 납입 증명서`}
+              style={{ marginRight: 'auto' }}
+            >
+              <AddMoreText>증명서</AddMoreText>
+            </AddMore>
+          )}
           {status === 'paid' ? (
             <AddMore
               onPress={() => receive(entry)}

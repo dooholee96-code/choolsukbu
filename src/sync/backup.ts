@@ -69,7 +69,8 @@ export const readBackup = (text: string): SyncSnapshot | null => {
     !isRowArray(snapshot.makeups) ||
     !isRowArray(snapshot.exceptions) ||
     // 수납 기능 전의 백업에는 없다. 있는데 목록이 아니면 엉뚱한 파일이다.
-    (snapshot.payments !== undefined && !isRowArray(snapshot.payments))
+    (snapshot.payments !== undefined && !isRowArray(snapshot.payments)) ||
+    (snapshot.academy != null && typeof snapshot.academy !== 'object')
   ) {
     return null;
   }

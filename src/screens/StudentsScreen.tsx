@@ -144,19 +144,6 @@ const StudentsScreen: React.FC = () => {
             />
           </RoundButton>
           <RoundButton
-            $variant="plain"
-            pressScale={0.88}
-            onPress={() => navigation.navigate('SettingsModal')}
-            accessibilityRole="button"
-            accessibilityLabel="설정"
-          >
-            <Ionicons
-              name="settings-outline"
-              size={21}
-              color={theme.colors.textSecondary}
-            />
-          </RoundButton>
-          <RoundButton
             $variant="primary"
             pressScale={0.88}
             onPress={() => navigation.navigate('StudentFormModal')}

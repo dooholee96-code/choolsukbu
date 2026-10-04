@@ -1,6 +1,15 @@
 import React, { createContext, useState, useEffect, useContext, useCallback, useMemo, useRef } from 'react';
 import { AppState } from 'react-native';
-import { Attendance, MakeUp, Payment, PaymentMethod, ScheduleException, Student } from '../types';
+import {
+  AcademyInfo,
+  Attendance,
+  FeeRule,
+  MakeUp,
+  Payment,
+  PaymentMethod,
+  ScheduleException,
+  Student,
+} from '../types';
 import { getDB } from '../db';
 import { exclusive } from '../db/queue';
 import { getCurrentDate } from '../utils/date';
@@ -14,6 +23,7 @@ import * as attendance from '../data/attendance';
 import * as makeup from '../data/makeup';
 import * as exceptions from '../data/exceptions';
 import * as payments from '../data/payments';
+import * as academy from '../data/academy';
 
 /**
  * 화면이 보는 데이터의 유일한 출입구.
@@ -91,6 +101,13 @@ interface DataContextType {
   recordPayment: (payment: Payment) => Promise<void>;
   updatePayment: (payment: Payment) => Promise<void>;
   deletePayment: (paymentId: string) => Promise<void>;
+
+  /** 학원 정보·운영 설정. 적은 적이 없으면 null. 증명서의 학원 칸, 수강료 기준표가 여기 있다. */
+  loadAcademy: () => Promise<AcademyInfo | null>;
+  /** 일부만 고친다. 다른 칸은 지금 저장된 값 그대로다. */
+  patchAcademy: (patch: Partial<Omit<AcademyInfo, 'updatedAt'>>) => Promise<void>;
+  /** 수강료가 비어 있는 재원생에게 기준표대로 채운다. 채운 수. */
+  fillMissingFees: (rules: FeeRule[]) => Promise<number>;
 
   /** 상태에 담지 않고 그때그때 읽는 질의들. 담는 순간 오늘로 좁혀 둔 이유가 사라진다. */
   loadAllAttendance: () => Promise<Attendance[]>;
@@ -302,6 +319,14 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         write('updatePayment', () => payments.updatePaymentRow(db, payment)),
       deletePayment: (paymentId) =>
         write('deletePayment', () => payments.softDeletePayment(db, paymentId)),
+
+      loadAcademy: () => academy.getAcademy(db),
+      patchAcademy: (patch) => write('patchAcademy', () => academy.patchAcademy(db, patch)),
+      fillMissingFees: async (rules) => {
+        const filled = await exclusive(() => students.fillMissingFees(db, rules));
+        await commit();
+        return filled;
+      },
 
       exportBackup: () => buildBackup(db),
       restoreBackup: async (text) => {

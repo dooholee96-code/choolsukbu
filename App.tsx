@@ -16,7 +16,8 @@ import PaymentsScreen from './src/screens/PaymentsScreen';
 import PaymentModal from './src/screens/PaymentModal';
 import HistoryScreen from './src/screens/HistoryScreen';
 import StudentFormModal from './src/screens/StudentFormModal';
-import SettingsModal from './src/screens/SettingsModal';
+import SettingsScreen from './src/screens/SettingsScreen';
+import CertificateModal from './src/screens/CertificateModal';
 import LockScreen from './src/screens/LockScreen';
 import ScheduleModal from './src/screens/ScheduleModal';
 import { theme, systemFontTheme } from './src/constants/theme';
@@ -39,6 +40,7 @@ const TAB_ICONS: Record<keyof TabParamList, [keyof typeof Ionicons.glyphMap, key
   Payments: ['wallet', 'wallet-outline'],
   Makeup: ['book', 'book-outline'],
   History: ['calendar', 'calendar-outline'],
+  Settings: ['settings', 'settings-outline'],
 };
 
 /**
@@ -104,6 +106,7 @@ function TabNavigator() {
       <Tab.Screen name="Payments" component={PaymentsScreen} options={{ title: '수납' }} />
       <Tab.Screen name="Makeup" component={MakeupScreen} options={{ title: '보충' }} />
       <Tab.Screen name="History" component={HistoryScreen} options={{ title: '이력' }} />
+      <Tab.Screen name="Settings" component={SettingsScreen} options={{ title: '설정' }} />
     </Tab.Navigator>
   );
 }
@@ -126,11 +129,6 @@ function RootNavigator() {
         options={{ presentation: modalPresentation }}
       />
       <Stack.Screen
-        name="SettingsModal"
-        component={SettingsModal}
-        options={{ presentation: modalPresentation }}
-      />
-      <Stack.Screen
         name="ScheduleModal"
         component={ScheduleModal}
         options={{ presentation: modalPresentation }}
@@ -138,6 +136,11 @@ function RootNavigator() {
       <Stack.Screen
         name="PaymentModal"
         component={PaymentModal}
+        options={{ presentation: modalPresentation }}
+      />
+      <Stack.Screen
+        name="CertificateModal"
+        component={CertificateModal}
         options={{ presentation: modalPresentation }}
       />
     </Stack.Navigator>

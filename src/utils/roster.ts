@@ -1,5 +1,5 @@
 import { ScheduleException, Student } from '../types';
-import { getDayOfWeek, toDateKey } from './date';
+import { getDayOfWeek, isTimeWithinRange, toDateKey } from './date';
 import { timesForDay } from './schedule';
 import { isWithdrawnOn } from './student';
 
@@ -18,6 +18,28 @@ export interface RosterEntry {
   /** 정규 수업이 아니라 예외로 들어온 자리인지 (특강·요일 이동) */
   isExtra: boolean;
 }
+
+/**
+ * 수업 시작 전 이만큼 일찍 와도 정상 등원이다.
+ *
+ * 학교가 끝나고 바로 오는 아이들이라 수업 20~40분 전에 도착하는 것이 보통이다. 시작
+ * 시각부터만 정상으로 보면 3:40에 온 4시 수업 아이가 전부 '예외'로 남는다 — 실제로
+ * 그랬고, 예외 칸이 정상 등원으로 가득 차서 진짜 예외(명단에 없는 날 온 아이)가 묻혔다.
+ * 수업이 끝난 뒤에 온 것은 그대로 예외다.
+ */
+export const EARLY_ARRIVAL_GRACE_MINUTES = 60;
+
+/**
+ * 등원 시각으로 기록 상태를 정한다. 오늘 명단에 있고 (시작 − 유예) ~ 끝 사이면 정상.
+ * 명단에 없는 날 왔거나 그 시간 밖이면 예외.
+ */
+export const arrivalStatus = (
+  time: string,
+  entry: Pick<RosterEntry, 'startTime' | 'endTime'> | undefined
+): 'scheduled' | 'unexpected' =>
+  entry && isTimeWithinRange(time, entry.startTime, entry.endTime, EARLY_ARRIVAL_GRACE_MINUTES)
+    ? 'scheduled'
+    : 'unexpected';
 
 /** 그 날짜가 학원 전체 휴강인지 */
 export const isClosedOn = (exceptions: ScheduleException[]): boolean =>

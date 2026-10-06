@@ -21,8 +21,8 @@ import BoardLane, {
 import PressableScale from '../components/common/PressableScale';
 import { useBump } from '../hooks/useMotion';
 import { haptic, HapticKind } from '../utils/haptics';
-import { isTimeWithinRange, getCurrentTime, formatTimeLabel, fromDateKey } from '../utils/date';
-import { buildRoster, closureNote, isClosedOn, RosterEntry } from '../utils/roster';
+import { getCurrentTime, formatTimeLabel, fromDateKey } from '../utils/date';
+import { arrivalStatus, buildRoster, closureNote, isClosedOn, RosterEntry } from '../utils/roster';
 import { duplicateNames } from '../utils/student';
 import { chunk } from '../utils/array';
 import { confirm, notify } from '../utils/dialog';
@@ -385,8 +385,15 @@ const HomeScreen: React.FC = () => {
    * 등원 유형은 체크인 시점에 이미 결정되므로 그 status로 그대로 나눈다.
    */
   const { pending, checkedInOnSchedule, unexpectedArrivals, absentStudents } = useMemo(() => {
+    // 다음에 올 아이가 위에 오도록 수업 시작 시각순. 이름순이면 40명 명단에서 4시 반
+    // 아이를 찾으려고 매번 훑어야 한다. 같은 시각끼리는 이름순.
     const pendingList = roster
       .filter((entry) => !attendanceByStudent.has(entry.student.id))
+      .sort(
+        (a, b) =>
+          a.startTime.localeCompare(b.startTime) ||
+          a.student.name.localeCompare(b.student.name, 'ko')
+      )
       .map((entry) => entry.student);
     const onSchedule: Student[] = [];
     const unexpected: Student[] = [];
@@ -473,15 +480,9 @@ const HomeScreen: React.FC = () => {
 
   const handleCheckIn = useCallback(
     async (student: Student) => {
-      const currentTime = getCurrentTime();
-      const entry = rosterById.get(student.id);
-
-      // 오늘 명단에 있고 그 시간대 안이면 정상 등원이다. 특강으로 들어온
-      // 학생도 명단에 있으므로 '예외'로 밀리지 않는다.
-      const status =
-        entry && isTimeWithinRange(currentTime, entry.startTime, entry.endTime)
-          ? 'scheduled'
-          : 'unexpected';
+      // 오늘 명단에 있고 그 시간대(조금 일찍 포함) 안이면 정상 등원이다. 특강으로
+      // 들어온 학생도 명단에 있으므로 '예외'로 밀리지 않는다 (utils/roster).
+      const status = arrivalStatus(getCurrentTime(), rosterById.get(student.id));
 
       await act(
         student.id,

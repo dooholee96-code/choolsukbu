@@ -140,3 +140,29 @@ test('올리다 실패하면 맞춘 시각을 남기지 않는다', async () => 
   assert.equal(outcome.status, 'failed');
   assert.equal(await getLastSyncAt(db), null);
 });
+
+test('올리는 파일에 수납과 학원 정보가 실린다', async () => {
+  // snapshotOf가 테이블을 손으로 나열하던 시절, 나중에 붙인 수납·학원 정보는 백업에는
+  // 담기면서 동기화 파일에는 빠졌다. 다른 기기는 받은 돈을 영영 보지 못했다.
+  const { insertPayment } = await import('../src/data/payments');
+  const { saveAcademy } = await import('../src/data/academy');
+  const db = await open();
+  await insertPayment(db, {
+    id: 'p1', studentId: 's1', paidOn: DAY, month: DAY.slice(0, 7), amount: 250000,
+    kind: 'tuition', method: 'card', cashReceipt: false, preschool: false,
+  });
+  await saveAcademy(db, { name: '숲속영어', owner: '', bizNumber: '', address: '', phone: '', subject: '' });
+
+  const cloud = fakeCloud();
+  await runSyncOnce(db, cloud.transport);
+  const uploaded = cloud.uploads.at(-1);
+  assert.equal(uploaded?.payments?.length, 1, '수납이 실린다');
+  assert.equal(uploaded?.academy?.name, '숲속영어', '학원 정보가 실린다');
+
+  // 그리고 상대 기기가 그 파일을 받으면 수납이 들어온다
+  const other = await open();
+  const outcome = await runSyncOnce(other, fakeCloud({ others: [uploaded!] }).transport);
+  assert.equal(outcome.status, 'synced');
+  const { listForMonth } = await import('../src/data/payments');
+  assert.equal((await listForMonth(other, DAY.slice(0, 7))).length, 1);
+});

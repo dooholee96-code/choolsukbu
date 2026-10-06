@@ -6,18 +6,14 @@ import Screen from '../components/common/Screen';
 import Button from '../components/common/Button';
 import AcademySection from '../components/AcademySection';
 import FeeRulesSection from '../components/FeeRulesSection';
-import { parseCSV } from '../utils/csv';
 import {
-  backupStamp,
   buildAttendanceCsv,
-  buildMakeupCsv,
   buildExceptionCsv,
+  buildMakeupCsv,
   buildStudentsCsv,
-  exportCsv,
-  pickCsvText,
-  pickBackupText,
-  exportFile,
-} from '../utils/backup';
+  parseCSV,
+} from '../utils/csv';
+import { backupStamp, exportCsv, exportFile, pickBackupText, pickCsvText } from '../utils/backup';
 import {
   buildAcademyReviewCsv,
   buildPaymentLedgerCsv,
@@ -424,7 +420,7 @@ const SettingsScreen: React.FC = () => {
           <Note>
             원생 명단만 가져옵니다. 내보내기로 만든 파일과 같은 형식이어야 합니다
             {'\n'}(name, grade, scheduledDays, scheduledStartTime, scheduledEndTime, dayTimes,
-            fee, note, withdrawnAt).
+            fee, note, withdrawnAt, preschool).
             {'\n'}이름·학년·구분이 모두 같은 원생은 건너뜁니다. 동명이인은 구분(note)을 적어
             주세요.
             {'\n'}출결 기록은 덮어쓸 위험이 커서 가져오기를 지원하지 않습니다.

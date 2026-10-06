@@ -1,124 +1,18 @@
-import Papa from 'papaparse';
 import { Platform } from 'react-native';
 import { File, Paths } from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
 import * as DocumentPicker from 'expo-document-picker';
-import { Attendance, MakeUp, ScheduleException, Student } from '../types';
 import { logger } from './logger';
-import { serializeDayTimes } from './schedule';
 
 /**
- * 기기 밖으로 데이터를 꺼내는 유일한 경로.
+ * 기기 밖으로 데이터를 꺼내는 유일한 경로 — 파일로 쓰고, 공유 시트를 열고, 파일을 고른다.
  *
  * 이 앱은 서버가 없고 원생 삭제도 되돌릴 수 없어서, 앱을 지우거나 기기를 바꾸면
  * 기록이 전부 사라진다. 내보내기는 그 상황에 대비한 마지막 방어선이다.
+ *
+ * 표의 내용을 만드는 함수(buildStudentsCsv 등)는 utils/csv에 있다. 여기는 네이티브
+ * 모듈에 묶여 있어 노드에서 불러올 수 없는데, 표의 내용은 테스트로 붙잡아야 한다.
  */
-
-/** CSV 앞에 붙이는 BOM. 없으면 엑셀이 한글을 깨서 연다. */
-const BOM = '﻿';
-
-export const buildStudentsCsv = (students: Student[]): string =>
-  BOM +
-  Papa.unparse(
-    students.map((s) => ({
-      name: s.name,
-      grade: s.grade,
-      scheduledDays: s.scheduledDays.join(','),
-      scheduledStartTime: s.scheduledStartTime,
-      scheduledEndTime: s.scheduledEndTime,
-      dayTimes: serializeDayTimes(s) ?? '',
-      fee: s.fee ?? '',
-      note: s.note ?? '',
-      withdrawnAt: s.withdrawnAt ?? '',
-    })),
-    {
-      columns: [
-        'name',
-        'grade',
-        'scheduledDays',
-        'scheduledStartTime',
-        'scheduledEndTime',
-        'dayTimes',
-        'fee',
-        'note',
-        'withdrawnAt',
-      ],
-    }
-  );
-
-const STATUS_LABEL: Record<Attendance['status'], string> = {
-  scheduled: '출석',
-  unexpected: '예외',
-  absent: '결석',
-};
-
-export const buildAttendanceCsv = (records: Attendance[], students: Student[]): string => {
-  const byId = new Map(students.map((s) => [s.id, s]));
-
-  return (
-    BOM +
-    Papa.unparse(
-      records.map((r) => ({
-        date: r.date,
-        time: r.time,
-        leaveTime: r.leaveTime ?? '',
-        name: byId.get(r.studentId)?.name ?? '(삭제된 원생)',
-        grade: byId.get(r.studentId)?.grade ?? '',
-        note: byId.get(r.studentId)?.note ?? '',
-        status: STATUS_LABEL[r.status] ?? r.status,
-        type: r.type === 'makeUp' ? '보충' : '정규',
-      })),
-      { columns: ['date', 'time', 'leaveTime', 'name', 'grade', 'note', 'status', 'type'] }
-    )
-  );
-};
-
-export const buildMakeupCsv = (makeups: MakeUp[], students: Student[]): string => {
-  const byId = new Map(students.map((s) => [s.id, s]));
-
-  return (
-    BOM +
-    Papa.unparse(
-      makeups.map((m) => ({
-        name: byId.get(m.studentId)?.name ?? '(삭제된 원생)',
-        note: byId.get(m.studentId)?.note ?? '',
-        originalDate: m.originalDate,
-        makeUpDate: m.makeUpDate ?? '',
-        completed: m.completed ? '완료' : '대기',
-      })),
-      { columns: ['name', 'note', 'originalDate', 'makeUpDate', 'completed'] }
-    )
-  );
-};
-
-const KIND_LABEL: Record<ScheduleException['kind'], string> = {
-  closure: '휴강',
-  extra: '추가',
-  skip: '빠짐',
-};
-
-export const buildExceptionCsv = (
-  exceptions: ScheduleException[],
-  students: Student[]
-): string => {
-  const byId = new Map(students.map((s) => [s.id, s]));
-
-  return (
-    BOM +
-    Papa.unparse(
-      exceptions.map((e) => ({
-        date: e.date,
-        kind: KIND_LABEL[e.kind] ?? e.kind,
-        // 휴강은 학원 전체라 원생이 없다. 빈 칸 대신 무엇에 걸린 건지 적는다.
-        name: e.studentId ? byId.get(e.studentId)?.name ?? '(삭제된 원생)' : '(전체)',
-        startTime: e.startTime ?? '',
-        endTime: e.endTime ?? '',
-        note: e.note ?? '',
-      })),
-      { columns: ['date', 'kind', 'name', 'startTime', 'endTime', 'note'] }
-    )
-  );
-};
 
 /**
  * 파일로 쓰고 공유 시트를 연다.

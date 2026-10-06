@@ -111,3 +111,22 @@ test('지각·조기 표시', () => {
   // 자정을 넘는 수업: 단순 뺄셈이면 '21시간 30분 일찍'이 된다
   assert.equal(arrivalOffsetLabel('00:30', '22:00'), '2시간 30분 늦음');
 });
+
+test('수업 시작 전 유예 안에 오면 정상, 그보다 일찍이거나 끝난 뒤면 예외', async () => {
+  const { arrivalStatus, EARLY_ARRIVAL_GRACE_MINUTES } = await import('../src/utils/roster');
+  const entry = { startTime: '16:00', endTime: '17:00' };
+  assert.equal(EARLY_ARRIVAL_GRACE_MINUTES, 60);
+  assert.equal(arrivalStatus('15:40', entry), 'scheduled', '학교 끝나고 바로 온 아이');
+  assert.equal(arrivalStatus('15:00', entry), 'scheduled', '유예의 경계');
+  assert.equal(arrivalStatus('14:59', entry), 'unexpected');
+  assert.equal(arrivalStatus('17:00', entry), 'scheduled', '끝나는 시각까지');
+  assert.equal(arrivalStatus('17:01', entry), 'unexpected', '끝난 뒤');
+  assert.equal(arrivalStatus('16:30', undefined), 'unexpected', '명단에 없는 날');
+});
+
+test('유예가 자정을 넘어가도 구간이 맞다', () => {
+  // 00:30 시작 수업에 전날 23:45에 왔다 — 유예 60분 안이다.
+  assert.equal(isTimeWithinRange('23:45', '00:30', '01:30', 60), true);
+  assert.equal(isTimeWithinRange('23:15', '00:30', '01:30', 60), false);
+  assert.equal(isTimeWithinRange('01:00', '00:30', '01:30', 60), true);
+});

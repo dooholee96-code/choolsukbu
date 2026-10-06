@@ -43,12 +43,19 @@ const toMinutes = (time: string): number | null => {
  * 그 경우 예외 없이 false를 돌려주므로 자정 넘는 수업이 조용히 전부
  * '예외 등원'으로 기록되고 있었다.
  */
-export const isTimeWithinRange = (time: string, startTime: string, endTime: string): boolean => {
+export const isTimeWithinRange = (
+  time: string,
+  startTime: string,
+  endTime: string,
+  /** 시작보다 이만큼 일찍 와도 구간 안으로 본다. 자정을 넘어가면 전날 밤으로 감는다. */
+  earlyGraceMinutes = 0
+): boolean => {
   const current = toMinutes(time);
-  const start = toMinutes(startTime);
+  const rawStart = toMinutes(startTime);
   const end = toMinutes(endTime);
 
-  if (current === null || start === null || end === null) return false;
+  if (current === null || rawStart === null || end === null) return false;
+  const start = (((rawStart - earlyGraceMinutes) % 1440) + 1440) % 1440;
 
   // 자정을 넘지 않는 일반 구간
   if (start <= end) return current >= start && current <= end;

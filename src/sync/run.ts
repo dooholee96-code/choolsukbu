@@ -58,18 +58,15 @@ export const runSyncOnce = async (
   }
 
   try {
-    const snapshotOf = async (deviceId: string): Promise<SyncSnapshot> => {
-      const rows = await readAll(db);
-      return {
-        version: SNAPSHOT_VERSION,
-        deviceId,
-        exportedAt: new Date().toISOString(),
-        students: rows.students,
-        attendance: rows.attendance,
-        makeups: rows.makeups,
-        exceptions: rows.exceptions,
-      };
-    };
+    // readAll이 주는 것을 **통째로** 싣는다. 테이블을 하나씩 나열하면 새 테이블을 붙일 때
+    // 여기를 빠뜨리기 쉽고, 그러면 그 기록은 백업에는 담기면서 동기화로는 영영 건너가지
+    // 않는다 — 실제로 수납(payment)과 학원 정보(academy)가 한동안 그랬다.
+    const snapshotOf = async (deviceId: string): Promise<SyncSnapshot> => ({
+      version: SNAPSHOT_VERSION,
+      deviceId,
+      exportedAt: new Date().toISOString(),
+      ...(await readAll(db)),
+    });
 
     // DB에 닿는 단계는 화면의 쓰기와 같은 줄을 선다 (db/queue). iCloud를 기다리는
     // 동안은 줄 밖이다 — 몇 초씩 막으면 그동안 누른 등원이 전부 밀린다.

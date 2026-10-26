@@ -365,7 +365,12 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       },
       importPayments: async (rows) => {
         const added = await exclusive(() => payments.insertPayments(db, rows));
-        await commit();
+        // 여기부터는 이미 저장되었다. 화면을 새로 그리거나 올리는 데 실패해도 가져오기는 성공이다.
+        try {
+          await commit();
+        } catch (error) {
+          logger.error('importPayments commit failed', error);
+        }
         return added;
       },
       recordPayment: (payment) => write('recordPayment', () => payments.insertPayment(db, payment)),

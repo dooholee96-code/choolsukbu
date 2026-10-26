@@ -5,6 +5,9 @@ import { parsePaymentsCsv, PAYMENT_HEADERS } from '../src/utils/paymentImport';
 import { readAmount, readDate, readDays, readMonth, readTime } from '../src/utils/sheet';
 import { buildPaymentLedgerCsv } from '../src/utils/tax';
 import type { Payment, Student } from '../src/types';
+import { openTestDb } from './helpers/db.mts';
+import { insertStudent } from '../src/data/students';
+import { insertPayments, listPaidBetween, softDeletePayment } from '../src/data/payments';
 
 test('엑셀이 바꿔 놓는 날짜 모양을 받는다', () => {
   for (const text of ['2026-03-05', '2026.3.5', '2026/03/05', '2026. 3. 5.', '2026년 3월 5일']) {
@@ -143,4 +146,34 @@ test('머리글이 다르면 한 줄로 알려 준다', () => {
   assert.equal(payments.length, 0);
   assert.equal(skipped.length, 1);
   assert.match(skipped[0].reason, /받은날/);
+});
+
+test('두 기기에서 같은 파일을 가져와도 id가 같아 한 건으로 합쳐진다', () => {
+  const csv = `${header}\n2026-03-05,,김하늘,,,150000,카드,,\n`;
+  const [onPad] = parsePaymentsCsv(csv, roster, []).payments;
+  const [onPhone] = parsePaymentsCsv(csv, roster, []).payments;
+  assert.equal(onPad.id, onPhone.id);
+  assert.ok(onPad.id.startsWith('import:'));
+});
+
+test('저장할 때 이미 살아 있는 것은 건너뛰고, 지운 것은 되살린다', async () => {
+  const db = await openTestDb();
+  for (const s of roster) await insertStudent(db, s);
+  const csv = `${header}\n2026-03-05,,김하늘,,,150000,카드,,\n2026-03-06,,이바다,,,120000,현금,발급,\n`;
+  const { payments: rows } = parsePaymentsCsv(csv, roster, []);
+  assert.equal(await insertPayments(db, rows), 2);
+  assert.equal(await insertPayments(db, rows), 0, '미리 본 뒤 동기화로 같은 것이 들어온 경우');
+  await softDeletePayment(db, rows[0].id);
+  assert.equal(await insertPayments(db, rows), 1, '지운 것을 다시 가져오면 되살린다');
+  const live = await listPaidBetween(db, '2026-01-01', '2026-12-31');
+  assert.equal(live.filter((p) => !p.deletedAt).length, 2);
+});
+
+test('통화 기호가 부호 앞에 와도, 날짜 뒤에 시각이 붙어도 읽는다', () => {
+  assert.equal(readAmount('₩-50,000'), -50000);
+  assert.equal(readAmount('- 50,000 원'), -50000);
+  assert.equal(readDate('2026-03-05 0:00'), '2026-03-05');
+  assert.equal(readDate('2026-03-05 오전 12:00:00'), '2026-03-05');
+  assert.equal(readDate('2026-03-05 12:00:00 AM'), '2026-03-05');
+  assert.equal(readMonth('2026-03-01 0:00'), '2026-03');
 });

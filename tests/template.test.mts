@@ -86,13 +86,14 @@ test('양식에서 저장한 CSV가 원생 → 수납 순서로 그대로 들어
   const roster = await parseCSV('﻿' + read('tests/fixtures/엑셀양식-원생.csv').toString('utf8'));
   assert.deepEqual(roster.skipped, []);
   assert.equal(roster.students.length, 6);
-  const [haneul, jun, junMwf, seoyeon, min] = roster.students;
+  const [haneul, jun, junMwf, seoyeon, min, saebom] = roster.students;
   assert.deepEqual(haneul.scheduledDays, ['Mon', 'Wed']);
   assert.equal(haneul.preschool, true);
   assert.deepEqual(junMwf.scheduledDays, ['Mon', 'Wed', 'Fri']);
   assert.equal(junMwf.note, '월수반');
   assert.equal(seoyeon.scheduledEndTime, '18:30');
   assert.equal(min.withdrawnAt, '2026-05-15');
+  assert.equal(saebom.note, '강북');
 
   const result = parsePaymentsCsv(
     '﻿' + read('tests/fixtures/엑셀양식-수납.csv').toString('utf8'),
@@ -100,10 +101,15 @@ test('양식에서 저장한 CSV가 원생 → 수납 순서로 그대로 들어
     []
   );
   assert.deepEqual(result.skipped, []);
-  assert.equal(result.payments.length, 9);
+  assert.equal(result.payments.length, 10);
   const byJun = result.payments.filter((p) => p.studentId === jun.id);
   assert.equal(byJun.length, 4, '구분 없는 이준');
-  assert.equal(result.payments.filter((p) => p.studentId === junMwf.id).length, 1, '월수반 이준');
+  const mwf = result.payments.filter((p) => p.studentId === junMwf.id);
+  assert.equal(mwf.length, 1, '월수반 이준');
+  assert.equal(mwf[0].preschool, false, '양식의 미취학 칸이 동명이인을 구분 없는 이준과 헷갈리지 않는다');
+  assert.ok(byJun.every((p) => p.preschool), '구분 없는 이준은 공제 대상');
+  assert.equal(result.payments.filter((p) => p.studentId === saebom.id).length, 1, '이름이 하나뿐이면 구분 없이도 찾는다');
+  assert.equal(result.payments.find((p) => p.note === '수강월 비움')!.month, '2026-05', '수강월이 비면 받은 달');
   const refund = byJun.find((p) => p.amount < 0)!;
   assert.equal(refund.method, 'transfer');
   assert.equal(refund.note, '환불');
@@ -113,5 +119,5 @@ test('양식에서 저장한 CSV가 원생 → 수납 순서로 그대로 들어
   // 같은 파일을 다시 가져오면 모두 겹친다
   const again = parsePaymentsCsv(read('tests/fixtures/엑셀양식-수납.csv').toString('utf8'), roster.students, result.payments);
   assert.equal(again.payments.length, 0);
-  assert.equal(again.duplicates, 9);
+  assert.equal(again.duplicates, 10);
 });

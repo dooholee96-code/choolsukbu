@@ -24,7 +24,9 @@ from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.datavalidation import DataValidation
 
 OUT = Path(__file__).resolve().parent.parent / 'templates' / '출석부_엑셀양식.xlsx'
-ROWS = 500  # 서식과 목록 고르기를 미리 깔아 둘 줄 수
+ROWS = 500  # 원생 시트에 서식과 목록 고르기를 미리 깔아 둘 줄 수
+PAY_ROWS = 1000  # 수납 시트 (한 해 20명 × 12달이면 240줄)
+STUDENTS = f'원생!$A$2:$A${ROWS + 1}'
 
 FONT = '맑은 고딕'
 INK = '4B3B53'
@@ -72,7 +74,7 @@ KINDS = '수강료,특강비,입학금,교재대,모의고사비,기타수입'
 METHODS = '카드,계좌이체,현금'
 
 
-def header_row(ws, columns):
+def header_row(ws, columns, rows=ROWS):
     for i, (name, width, fmt, hint) in enumerate(columns, start=1):
         cell = ws.cell(row=1, column=i, value=name)
         cell.font = head_font
@@ -82,7 +84,7 @@ def header_row(ws, columns):
         ws.column_dimensions[get_column_letter(i)].width = width
         if hint:
             cell.comment = Comment(hint, '출석부')
-        for r in range(2, ROWS + 2):
+        for r in range(2, rows + 2):
             c = ws.cell(row=r, column=i)
             c.number_format = fmt
             c.font = body_font
@@ -91,7 +93,7 @@ def header_row(ws, columns):
     ws.freeze_panes = 'A2'
 
 
-def add_list(ws, col_letter, formula, prompt_title, prompt):
+def add_list(ws, col_letter, formula, prompt_title, prompt, rows=ROWS):
     dv = DataValidation(type='list', formula1=formula, allow_blank=True)
     dv.promptTitle = prompt_title
     dv.prompt = prompt
@@ -99,7 +101,7 @@ def add_list(ws, col_letter, formula, prompt_title, prompt):
     dv.errorTitle = '목록에 없는 값'
     dv.error = '목록에서 골라 주세요.'
     ws.add_data_validation(dv)
-    dv.add(f'{col_letter}2:{col_letter}{ROWS + 1}')
+    dv.add(f'{col_letter}2:{col_letter}{rows + 1}')
 
 
 def guide(wb):
@@ -166,18 +168,53 @@ def students_sheet(wb):
 
 def payments_sheet(wb):
     ws = wb.create_sheet('수납')
-    header_row(ws, PAYMENT_COLUMNS)
-    add_list(ws, 'C', f'원생!$A$2:$A${ROWS + 1}', '원생', '원생 시트의 이름에서 고릅니다')
-    add_list(ws, 'E', f'"{KINDS}"', '수입구분', '비우면 수강료')
-    add_list(ws, 'G', f'"{METHODS}"', '결제수단', '카드·계좌이체·현금')
-    add_list(ws, 'H', '"발급,미발급"', '현금영수증', '계좌이체·현금일 때만')
-    # 미취학은 원생 시트의 지금 값을 보여 준다. 입학 전 1·2월분처럼 받은 순간의 값은
-    # 앱으로 옮긴 뒤 앱이 지킨다(가져올 때 이 열의 값이 그대로 들어간다).
-    for r in range(2, ROWS + 2):
+    header_row(ws, PAYMENT_COLUMNS, PAY_ROWS)
+    add_list(ws, 'C', STUDENTS, '원생', '원생 시트의 이름에서 고릅니다', PAY_ROWS)
+    add_list(ws, 'E', f'"{KINDS}"', '수입구분', '비우면 수강료', PAY_ROWS)
+    add_list(ws, 'G', f'"{METHODS}"', '결제수단', '카드·계좌이체·현금', PAY_ROWS)
+    add_list(ws, 'H', '"발급,미발급"', '현금영수증', '계좌이체·현금일 때만', PAY_ROWS)
+    # 미취학은 원생 시트의 지금 값을 보여 준다. 동명이인은 계산 시트의 열쇠로 가린다.
+    # 입학 전 1·2월분처럼 받은 순간의 값은 앱으로 옮긴 뒤 앱이 지킨다(가져올 때 이 열의 값이 그대로 들어간다).
+    for r in range(2, PAY_ROWS + 2):
         ws.cell(row=r, column=9).value = (
-            f'=IF(C{r}="","",IFERROR(IF(INDEX(원생!$H:$H,MATCH(C{r},원생!$A:$A,0))="예","예",""),""))'
+            f'=IF(C{r}="","",IFERROR(IF(INDEX(원생!$H$2:$H${ROWS + 1},'
+            f'MATCH(계산!$A{r},계산!$E$2:$E${ROWS + 1},0))="예","예",""),""))'
         )
     ws.sheet_properties.tabColor = 'E8B27A'
+    return ws
+
+
+def calc_sheet(wb):
+    """
+    숨긴 계산 시트. 수납 한 줄마다 (A) 어느 원생인가, (B) 어느 달 수강료인가, (C) 수강료 금액을,
+    원생 한 줄마다 (E) 열쇠를 둔다. 월별 현황과 수납의 미취학 칸이 이것을 쓴다.
+
+    어느 원생인가는 앱의 가져오기와 같은 규칙이다 (utils/paymentImport):
+      구분이 있으면 이름+구분, 구분이 비었는데 그 이름이 한 명뿐이면 그 원생,
+      여럿이면 구분 없는 원생.
+    달은 수강월, 비었으면 받은 날의 달. 2026년 3월은 202603 같은 수로 둔다 — "2026-03" 같은
+    글자는 엑셀이 조건에서 날짜로 읽어 버려 SUMIFS가 어긋난다.
+    """
+    ws = wb.create_sheet('계산')
+    ws.sheet_state = 'hidden'
+    for i, name in enumerate(['원생 열쇠', '수강월', '수강료', '', '원생 시트 열쇠'], start=1):
+        ws.cell(row=1, column=i, value=name or None)
+    names = STUDENTS
+    notes = f'원생!$G$2:$G${ROWS + 1}'
+    for r in range(2, PAY_ROWS + 2):
+        name, note, paid, month, kind, amount = (f'수납!$C{r}', f'수납!$D{r}', f'수납!$A{r}', f'수납!$B{r}', f'수납!$E{r}', f'수납!$F{r}')
+        ws.cell(row=r, column=1, value=(
+            f'=IF({name}="","",{name}&"|"&IF({note}<>"",{note},'
+            f'IF(COUNTIF({names},{name})=1,INDEX({notes},MATCH({name},{names},0))&"","")))'
+        ))
+        ws.cell(row=r, column=2, value=(
+            f'=IFERROR(IF({month}="",YEAR({paid})*100+MONTH({paid}),'
+            f'IF(ISNUMBER({month}),YEAR({month})*100+MONTH({month}),'
+            f'VALUE(LEFT({month},4))*100+VALUE(MID({month},6,2)))),"")'
+        ))
+        ws.cell(row=r, column=3, value=f'=IF(OR({kind}="수강료",{kind}=""),N({amount}),0)')
+    for r in range(2, ROWS + 2):
+        ws.cell(row=r, column=5, value=f'=IF(원생!$A{r}="","",원생!$A{r}&"|"&원생!$G{r})')
     return ws
 
 
@@ -211,18 +248,13 @@ def status_sheet(wb):
         r = first + k
         src = k + 2  # 원생 시트의 줄
         ws.cell(row=r, column=1, value=f'=IF(원생!$A{src}="","",원생!$A{src}&IF(원생!$G{src}="",""," ("&원생!$G{src}&")"))')
-        ws.cell(row=r, column=2, value=f'=IF(원생!$A{src}="","",원생!$F{src})').number_format = '#,##0'
+        # N(): 수강료를 '150,000원'처럼 글자로 적었으면 0 — 모든 달이 빨갛게 되지 않게.
+        ws.cell(row=r, column=2, value=f'=IF(원생!$A{src}="","",N(원생!$F{src}))').number_format = '#,##0'
         for m in range(1, 13):
             col = 2 + m
-            # 끝의 *는 글자로만 맞춰 보게 한다. 없으면 엑셀이 "2026-03"을 날짜로 읽어 글자 칸과 어긋난다.
-            month = f'$B$1&"-"&TEXT({m},"00")&"*"'
-            # 이름과 구분이 같은 줄만 더한다 (동명이인). 수입구분이 비어 있으면 수강료다.
             formula = (
                 f'=IF(원생!$A{src}="","",'
-                f'SUMIFS(수납!$F:$F,수납!$C:$C,원생!$A{src},수납!$D:$D,IF(원생!$G{src}="","",원생!$G{src}),'
-                f'수납!$B:$B,{month},수납!$E:$E,"수강료")'
-                f'+SUMIFS(수납!$F:$F,수납!$C:$C,원생!$A{src},수납!$D:$D,IF(원생!$G{src}="","",원생!$G{src}),'
-                f'수납!$B:$B,{month},수납!$E:$E,""))'
+                f'SUMIFS(계산!$C:$C,계산!$A:$A,계산!$E{src},계산!$B:$B,$B$1*100+{m}))'
             )
             cell = ws.cell(row=r, column=col, value=formula)
             cell.number_format = '#,##0;-#,##0;-'
@@ -304,6 +336,7 @@ def build(out: Path):
     students_sheet(wb)
     payments_sheet(wb)
     status_sheet(wb)
+    calc_sheet(wb)
     wb.active = 0
     out.parent.mkdir(parents=True, exist_ok=True)
     wb.save(out)

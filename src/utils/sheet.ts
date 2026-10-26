@@ -15,9 +15,13 @@ const validDate = (y: number, m: number, d: number) => {
   return d <= new Date(y, m, 0).getDate();
 };
 
-/** '2026-03-05', '2026.3.5', '2026/03/05', '2026. 3. 5.', '2026년 3월 5일' → '2026-03-05'. */
+/**
+ * '2026-03-05', '2026.3.5', '2026/03/05', '2026. 3. 5.', '2026년 3월 5일' → '2026-03-05'.
+ * 날짜·시각 서식 칸이 붙이는 뒤의 시각('2026-03-05 0:00', '... 오전 12:00:00')은 버린다.
+ */
 export const readDate = (value: string | undefined): string | null => {
-  const match = /^(\d{4})\s*[-./년]\s*(\d{1,2})\s*[-./월]\s*(\d{1,2})\s*[.일]?\s*$/.exec(value?.trim() ?? '');
+  const text = (value?.trim() ?? '').replace(/\s+(오전|오후)?\s*\d{1,2}:\d{2}(:\d{2})?\s*(AM|PM)?$/i, '');
+  const match = /^(\d{4})\s*[-./년]\s*(\d{1,2})\s*[-./월]\s*(\d{1,2})\s*[.일]?\s*$/.exec(text);
   if (!match) return null;
   const [y, m, d] = match.slice(1).map(Number);
   return validDate(y, m, d) ? `${y}-${pad(m)}-${pad(d)}` : null;
@@ -56,7 +60,8 @@ export const readTime = (value: string | undefined): string | null => {
 
 /** '250,000원', '₩250000', '-50,000', '(50,000)' → 원 단위 정수. */
 export const readAmount = (value: string | undefined): number | null => {
-  let text = (value ?? '').trim();
+  // 통화 기호와 빈칸을 먼저 걷어 낸다. '₩-50,000'처럼 기호가 부호 앞에 오기도 한다.
+  let text = (value ?? '').replace(/[\s원₩]/g, '');
   if (!text) return null;
   let negative = false;
   if (/^\(.*\)$/.test(text)) {
@@ -67,7 +72,7 @@ export const readAmount = (value: string | undefined): number | null => {
     negative = true;
     text = text.slice(1);
   }
-  const digits = text.replace(/[,\s원₩]/g, '');
+  const digits = text.replace(/,/g, '');
   if (!/^\d+$/.test(digits)) return null;
   const amount = Number(digits);
   return negative ? -amount : amount;

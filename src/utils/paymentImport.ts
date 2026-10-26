@@ -1,6 +1,5 @@
 import Papa from 'papaparse';
 import { Payment, PaymentKind, PaymentMethod, Student } from '../types';
-import { createId } from './id';
 import { readAmount, readDate, readFlag, readMonth } from './sheet';
 import { KIND_LABEL, METHOD_LABEL } from './tax';
 
@@ -161,7 +160,7 @@ export const parsePaymentsCsv = (
     const student = matches[0];
 
     const payment: Payment = {
-      id: createId(),
+      id: '',
       studentId: student.id,
       paidOn,
       month,
@@ -183,7 +182,9 @@ export const parsePaymentsCsv = (
       return;
     }
     seen.add(key);
-    payments.push(payment);
+    // id를 내용에서 만든다. 같은 파일을 아이패드와 아이폰에서 따로 가져와도 같은 id라
+    // 동기화가 한 건으로 합친다. 무작위 id면 두 건이 되어 수입이 두 배로 잡힌다.
+    payments.push({ ...payment, id: `import:${key}` });
   });
 
   return { payments, duplicates, skipped };

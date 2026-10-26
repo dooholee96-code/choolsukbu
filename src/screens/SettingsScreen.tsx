@@ -414,7 +414,7 @@ const SettingsScreen: React.FC = () => {
             {'\n'}· 학원사업자 수입금액검토표(사업장현황신고 때 함께): 수입구분별 금액, 단가별
             수강연인원
             {'\n'}· 수납 장부: 받은 돈 한 건씩 — 종합소득세(5월)의 근거
-            {'\n'}· 미취학 아동 교육비: 보호자가 요청하는 교육비납입증명서에 옮길 금액
+            {'\n'}· 교육비 공제 대상 납입액: 미취학·초1·2 예체능 원생의 교육비납입증명서에 옮길 금액
             {'\n'}· 교육비 납입 증명서 일괄: 원생마다 한 장씩, 한 번에 인쇄하거나 PDF로 저장
             {'\n\n'}홈택스에 자동으로 제출하지는 않습니다. 숫자를 옮겨 적거나 세무사에게
             전달하세요. 시설·직원·경비처럼 수납 기록에 없는 칸은 직접 채웁니다.
@@ -460,16 +460,16 @@ const SettingsScreen: React.FC = () => {
               disabled={busy}
             />
             <Button
-              title="미취학 아동 교육비"
+              title="교육비 공제 대상 납입액"
               onPress={() =>
-                exportTax('미취학교육비', (payments, everyone) =>
+                exportTax('교육비공제대상', (payments, everyone) =>
                   buildPreschoolCsv(payments, everyone, taxYear)
                 )
               }
               disabled={busy}
             />
             <Button
-              title={certificates.printing ? '증명서 만드는 중…' : '납입 증명서 일괄 (미취학 원생)'}
+              title={certificates.printing ? '증명서 만드는 중…' : '납입 증명서 일괄 (공제 대상 원생)'}
               variant="secondary"
               onPress={() => certificates.printAll(taxYear, true)}
               disabled={busy || certificates.printing}

@@ -7,7 +7,7 @@ import { mergeSnapshots, SNAPSHOT_VERSION, type SyncSnapshot } from '../src/sync
 import { buildBackup, readBackup, restoreBackup } from '../src/sync/backup';
 import { hasChangesSince } from '../src/sync/device';
 
-const info = { ...emptyAcademy(), name: '숲속영어', owner: '이두호', bizNumber: '123-45-67890' };
+const info = { ...emptyAcademy(), name: '숲속영어', owner: '김시로', bizNumber: '123-45-67890' };
 
 test('적은 적이 없으면 null, 적으면 그대로 읽힌다 (앞뒤 공백은 뺀다)', async () => {
   const db = await openTestDb();

@@ -31,7 +31,7 @@ export const useCertificateBatch = () => {
           notify(
             '발급할 원생이 없습니다',
             preschoolOnly
-              ? `${year}년에 미취학으로 받은 돈 기록이 없습니다.`
+              ? `${year}년에 교육비 공제 대상으로 받은 돈 기록이 없습니다.`
               : `${year}년에 받은 돈 기록이 없습니다.`
           );
           return;

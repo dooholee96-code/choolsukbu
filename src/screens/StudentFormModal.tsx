@@ -656,23 +656,26 @@ const StudentFormModal: React.FC = () => {
                   : '[설정] 탭에서 수강료 기준을 정해 두면 학년·요일에 맞춰 채워집니다.'}
             </HintText>
 
-            {/* 미취학 아동의 학원비는 보호자의 교육비 공제 대상이라 연초에 자료를 낸다.
-                수납을 기록하는 순간의 값이 그 수납 건에 남는다 (types의 Student.preschool). */}
+            {/* 미취학 아동(과 2026년 납입분부터 초1·2 예체능)의 학원비는 보호자의 교육비 공제
+                대상이라 연초에 자료를 낸다. 수납을 기록하는 순간의 값이 그 수납 건에 남는다
+                (types의 Student.preschool). */}
             <ToggleRow
               onPress={() => setPreschool((on) => !on)}
               accessibilityRole="checkbox"
               accessibilityState={{ checked: preschool }}
-              accessibilityLabel="미취학 아동"
+              accessibilityLabel="교육비 공제 대상"
               style={{ marginTop: 8 }}
             >
               <ToggleBox $on={preschool}>
                 {preschool && <Ionicons name="checkmark" size={14} color="white" />}
               </ToggleBox>
-              <ToggleLabel>미취학 아동 (초등학교 입학 전)</ToggleLabel>
+              <ToggleLabel>교육비 공제 대상</ToggleLabel>
             </ToggleRow>
             <HintText>
-              교육비 공제 자료에 들어갑니다. 입학하면 꺼 주세요 — 그 전에 받은 수강료는 그대로
-              자료에 남습니다.
+              초등학교 입학 전 아이, 그리고 2026년 납입분부터는 초1·2학년(만 9세 미만)의
+              예체능(음악·미술·무용·체육) 수강료가 보호자의 교육비 공제 대상입니다. 교과 학원은
+              대상이 아닙니다. 대상에서 벗어나면 꺼 주세요. 그 전에 받은 수강료는 그대로 자료에
+              남습니다.
             </HintText>
 
             <Actions>

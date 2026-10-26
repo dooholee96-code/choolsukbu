@@ -140,9 +140,14 @@ export const parsePaymentsCsv = (
 
     const note = row[PAYMENT_HEADERS.note]?.trim() ?? '';
     const candidates = byName.get(squash(name)) ?? [];
+    // 구분이 비어 있으면 구분 없는 원생을 먼저 본다. 양식은 동명이인 중 한 명에게만 구분을
+    // 적어도 되게 안내하고, 엑셀의 월별 현황도 같은 방식으로 더한다.
+    const noteless = candidates.filter((s) => !s.note?.trim());
     const matches = note
       ? candidates.filter((s) => squash(s.note ?? '') === squash(note))
-      : candidates;
+      : candidates.length > 1 && noteless.length === 1
+        ? noteless
+        : candidates;
     if (matches.length === 0) {
       return skip(
         candidates.length > 0

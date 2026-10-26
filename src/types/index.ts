@@ -173,6 +173,15 @@ export interface AcademyInfo {
   feeRules?: FeeRule[];
   /** 기본 수업 시간(분). 새 원생의 끝나는 시각을 채운다. 비우면 60분. */
   classMinutes?: number;
+  /**
+   * '결석만 표시' 출석을 켠 날 'YYYY-MM-DD'. 비어 있으면 꺼져 있다 (등원을 하나씩 누른다).
+   *
+   * 켜 두면 결석으로 표시하지 않은 아이는 그 날 수업에 온 것으로 친다. 날이 지나면
+   * 지난날의 명단에서 결석이 아닌 아이를 시각 없는 정상 출석으로 남긴다 (data/presence).
+   * 켠 날짜를 남기는 이유: 켜기 전의 날들까지 출석으로 채우면, 그동안 등원을 누르지
+   * 않아 비어 있던 날이 사실과 다르게 전부 출석이 된다.
+   */
+  absenceOnlySince?: string | null;
   /** 동기화에서 최신을 가리는 근거. */
   updatedAt?: string;
 }

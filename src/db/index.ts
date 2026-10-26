@@ -10,7 +10,7 @@ import type { SQLiteDatabase } from 'expo-sqlite';
 let db: SQLiteDatabase | null = null;
 
 /** 스키마 버전. 컬럼을 바꿀 때 올리고 runMigrations에 분기를 추가한다. */
-export const DATABASE_VERSION = 7;
+export const DATABASE_VERSION = 8;
 
 export const initDB = async () => {
   if (!db) {
@@ -115,7 +115,12 @@ export const createSchema = async (database: SQLiteDatabase) => {
       subject TEXT,
       feeRules TEXT,
       classMinutes TEXT,
+      absenceOnlySince TEXT,
       updatedAt TEXT
+    );
+    -- '결석만 표시' 출석에서 이 기기가 이미 채운 날 (data/presence). 동기화하지 않는다.
+    CREATE TABLE IF NOT EXISTS presence_fill (
+      date TEXT PRIMARY KEY
     );
     CREATE INDEX IF NOT EXISTS idx_payment_month ON payment (month);
     CREATE INDEX IF NOT EXISTS idx_payment_paid_on ON payment (paidOn);
@@ -224,6 +229,12 @@ export const runMigrations = async (database: SQLiteDatabase) => {
   }
 
   // v7: 학원 정보(academy). 테이블은 createSchema가 만든다. 비어 있는 것이 곧 '아직 안 적음'이다.
+
+  // v8: '결석만 표시' 출석을 켠 날(academy.absenceOnlySince). 비어 있으면 꺼짐 — 지금까지와 같다.
+  // v7 기기에는 academy 테이블이 이미 있어서 createSchema가 컬럼을 붙여 주지 않는다.
+  if (currentVersion < 8) {
+    await addColumn(database, 'academy', 'absenceOnlySince');
+  }
 
   await database.execAsync(`PRAGMA user_version = ${DATABASE_VERSION};`);
 };

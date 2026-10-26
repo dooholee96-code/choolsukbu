@@ -431,7 +431,8 @@ const HistoryScreen: React.FC = () => {
               <RowName numberOfLines={1}>{item.student.name}</RowName>
               <RowMeta>{studentSubtitle(item.student)}</RowMeta>
               <RowMeta>
-                {formatTimeLabel(item.record.time)}
+                {/* 시각 없는 출석은 '결석만 표시'에서 날이 지나 채운 것이다 (data/presence). */}
+                {item.record.time ? formatTimeLabel(item.record.time) : '결석 없음'}
                 {/* 하원까지 찍은 날은 머문 구간이 통째로 보여야 조퇴를 알아본다. */}
                 {item.record.leaveTime ? ` – ${formatTimeLabel(item.record.leaveTime)}` : ''}
               </RowMeta>

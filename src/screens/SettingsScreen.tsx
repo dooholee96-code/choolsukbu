@@ -72,6 +72,11 @@ const Note = styled.Text`
   margin-bottom: ${({ theme }) => theme.spacing.medium}px;
 `;
 
+const Bold = styled.Text`
+  font-family: ${({ theme }) => theme.fonts.bold};
+  color: ${({ theme }) => theme.colors.textPrimary};
+`;
+
 const Stack = styled.View`
   gap: 10px;
 `;
@@ -122,6 +127,8 @@ const SettingsScreen: React.FC = () => {
     syncError,
     syncing,
     syncNow,
+    absenceOnlySince,
+    setAbsenceOnly,
   } = useData();
   const [busy, setBusy] = useState(false);
   const [taxYear, setTaxYear] = useState(defaultTaxYear);
@@ -292,6 +299,35 @@ const SettingsScreen: React.FC = () => {
           <Card>
             <SectionTitle>수강료 기준 · 수업 시간</SectionTitle>
             <FeeRulesSection />
+          </Card>
+
+          <Card>
+            <SectionTitle>출석 방식</SectionTitle>
+            {absenceOnlySince ? (
+              <Note>
+                지금은 <Bold>결석만 표시</Bold>합니다 ({absenceOnlySince}부터).
+                {'\n'}[오늘]에서 빠진 아이만 결석을 누르면 되고, 누르지 않은 아이는 날이
+                지나면 그 날 출석으로 남습니다(시각 없이). 공휴일처럼 쉬는 날은 [일정]에서
+                휴강으로 지정해 두어야 출석으로 채워지지 않습니다.
+              </Note>
+            ) : (
+              <Note>
+                지금은 <Bold>등원을 하나씩 누릅니다</Bold>. 누른 시각이 남고, 시간표에 맞춰
+                정상·예외가 정해집니다.
+                {'\n'}결석만 표시로 바꾸면 빠진 아이만 누르고, 나머지는 출석으로 칩니다.
+                바꾼 날부터 적용되고, 그 전 기록은 그대로입니다.
+              </Note>
+            )}
+            <Button
+              title={absenceOnlySince ? '등원을 하나씩 누르기로 바꾸기' : '결석만 표시로 바꾸기'}
+              variant="secondary"
+              disabled={busy}
+              onPress={() =>
+                run(async () => {
+                  await setAbsenceOnly(!absenceOnlySince);
+                })
+              }
+            />
           </Card>
 
           <Card>

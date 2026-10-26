@@ -9,6 +9,7 @@ import Screen from '../components/common/Screen';
 import GridRow from '../components/common/GridRow';
 import Button from '../components/common/Button';
 import PressableScale from '../components/common/PressableScale';
+import TaxAssistant from '../components/TaxAssistant';
 import { Payment } from '../types';
 import { chunk } from '../utils/array';
 import { getCurrentDate } from '../utils/date';
@@ -424,6 +425,8 @@ const PaymentsScreen: React.FC = () => {
           )}
         </Stats>
       </Summary>
+
+      <TaxAssistant />
 
       {loading && (
         <View style={{ paddingVertical: 16 }}>

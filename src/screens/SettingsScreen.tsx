@@ -23,6 +23,7 @@ import {
 import { confirm, notify } from '../utils/dialog';
 import LockSection from '../components/LockSection';
 import { useAppLockContext } from '../hooks/appLockContext';
+import { useCertificateBatch } from '../hooks/useCertificateBatch';
 import { logger } from '../utils/logger';
 import type { Payment, Student } from '../types';
 
@@ -70,6 +71,11 @@ const Note = styled.Text`
   line-height: 20px;
   color: ${({ theme }) => theme.colors.textSecondary};
   margin-bottom: ${({ theme }) => theme.spacing.medium}px;
+`;
+
+const Bold = styled.Text`
+  font-family: ${({ theme }) => theme.fonts.bold};
+  color: ${({ theme }) => theme.colors.textPrimary};
 `;
 
 const Stack = styled.View`
@@ -122,9 +128,12 @@ const SettingsScreen: React.FC = () => {
     syncError,
     syncing,
     syncNow,
+    absenceOnlySince,
+    setAbsenceOnly,
   } = useData();
   const [busy, setBusy] = useState(false);
   const [taxYear, setTaxYear] = useState(defaultTaxYear);
+  const certificates = useCertificateBatch();
 
   const run = useCallback(async (task: () => Promise<void>) => {
     setBusy(true);
@@ -295,6 +304,35 @@ const SettingsScreen: React.FC = () => {
           </Card>
 
           <Card>
+            <SectionTitle>출석 방식</SectionTitle>
+            {absenceOnlySince ? (
+              <Note>
+                지금은 <Bold>결석만 표시</Bold>합니다 ({absenceOnlySince}부터).
+                {'\n'}[오늘]에서 빠진 아이만 결석을 누르면 되고, 누르지 않은 아이는 날이
+                지나면 그 날 출석으로 남습니다(시각 없이). 공휴일처럼 쉬는 날은 [일정]에서
+                휴강으로 지정해 두어야 출석으로 채워지지 않습니다.
+              </Note>
+            ) : (
+              <Note>
+                지금은 <Bold>등원을 하나씩 누릅니다</Bold>. 누른 시각이 남고, 시간표에 맞춰
+                정상·예외가 정해집니다.
+                {'\n'}결석만 표시로 바꾸면 빠진 아이만 누르고, 나머지는 출석으로 칩니다.
+                바꾼 날부터 적용되고, 그 전 기록은 그대로입니다.
+              </Note>
+            )}
+            <Button
+              title={absenceOnlySince ? '등원을 하나씩 누르기로 바꾸기' : '결석만 표시로 바꾸기'}
+              variant="secondary"
+              disabled={busy}
+              onPress={() =>
+                run(async () => {
+                  await setAbsenceOnly(!absenceOnlySince);
+                })
+              }
+            />
+          </Card>
+
+          <Card>
           <LockSection onChanged={lock.refresh} />
           </Card>
 
@@ -332,6 +370,7 @@ const SettingsScreen: React.FC = () => {
             수강연인원
             {'\n'}· 수납 장부: 받은 돈 한 건씩 — 종합소득세(5월)의 근거
             {'\n'}· 미취학 아동 교육비: 보호자가 요청하는 교육비납입증명서에 옮길 금액
+            {'\n'}· 교육비 납입 증명서 일괄: 원생마다 한 장씩, 한 번에 인쇄하거나 PDF로 저장
             {'\n\n'}홈택스에 자동으로 제출하지는 않습니다. 숫자를 옮겨 적거나 세무사에게
             전달하세요. 시설·직원·경비처럼 수납 기록에 없는 칸은 직접 채웁니다.
           </Note>
@@ -383,6 +422,18 @@ const SettingsScreen: React.FC = () => {
                 )
               }
               disabled={busy}
+            />
+            <Button
+              title={certificates.printing ? '증명서 만드는 중…' : '납입 증명서 일괄 (미취학 원생)'}
+              variant="secondary"
+              onPress={() => certificates.printAll(taxYear, true)}
+              disabled={busy || certificates.printing}
+            />
+            <Button
+              title="납입 증명서 일괄 (받은 원생 전원)"
+              variant="secondary"
+              onPress={() => certificates.printAll(taxYear, false)}
+              disabled={busy || certificates.printing}
             />
           </Stack>
           </Card>

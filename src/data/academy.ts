@@ -52,6 +52,7 @@ export const getAcademy = async (db: SQLiteDatabase): Promise<AcademyInfo | null
     subject: row.subject ?? '',
     feeRules: parseRules(row.feeRules),
     classMinutes: minutes > 0 ? minutes : undefined,
+    absenceOnlySince: row.absenceOnlySince || null,
     updatedAt: row.updatedAt ?? undefined,
   };
 };
@@ -59,12 +60,13 @@ export const getAcademy = async (db: SQLiteDatabase): Promise<AcademyInfo | null
 /** updatedAt을 주면 그대로 쓴다 (동기화로 들어온 값). 안 주면 지금 시각. */
 export const saveAcademy = (db: SQLiteDatabase, info: AcademyInfo, updatedAt = stamp()) =>
   db.runAsync(
-    `INSERT INTO academy (id, name, owner, bizNumber, address, phone, subject, feeRules, classMinutes, updatedAt)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `INSERT INTO academy (id, name, owner, bizNumber, address, phone, subject, feeRules, classMinutes, absenceOnlySince, updatedAt)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(id) DO UPDATE SET
        name = excluded.name, owner = excluded.owner, bizNumber = excluded.bizNumber,
        address = excluded.address, phone = excluded.phone, subject = excluded.subject,
        feeRules = excluded.feeRules, classMinutes = excluded.classMinutes,
+       absenceOnlySince = excluded.absenceOnlySince,
        updatedAt = excluded.updatedAt;`,
     ID,
     info.name.trim(),
@@ -75,6 +77,7 @@ export const saveAcademy = (db: SQLiteDatabase, info: AcademyInfo, updatedAt = s
     info.subject.trim(),
     JSON.stringify(info.feeRules ?? []),
     info.classMinutes && info.classMinutes > 0 ? String(info.classMinutes) : null,
+    info.absenceOnlySince || null,
     updatedAt
   );
 

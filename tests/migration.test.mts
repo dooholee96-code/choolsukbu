@@ -164,3 +164,27 @@ test('옛 데이터베이스에도 수납 테이블과 미취학 칸이 생기�
   await runMigrations(wrap(raw));
   assert.equal((raw.prepare('PRAGMA user_version').get() as { user_version: number }).user_version, LATEST);
 });
+
+test('v7 기기의 학원 정보에 결석만 표시 칸이 붙고, 꺼진 채로 시작한다', async () => {
+  // v7 기기에는 academy 테이블이 이미 있어서 CREATE TABLE IF NOT EXISTS가 칸을 붙여 주지 않는다.
+  const raw = openV1();
+  raw.exec(`
+    CREATE TABLE academy (
+      id TEXT PRIMARY KEY, name TEXT, owner TEXT, bizNumber TEXT, address TEXT, phone TEXT,
+      subject TEXT, feeRules TEXT, classMinutes TEXT, updatedAt TEXT
+    );
+    INSERT INTO academy (id, name) VALUES ('self', '숲속영어');
+  `);
+  await createSchema(wrap(raw));
+  await runMigrations(wrap(raw));
+
+  const columns = (raw.prepare('PRAGMA table_info(academy)').all() as { name: string }[]).map((c) => c.name);
+  assert.ok(columns.includes('absenceOnlySince'));
+  const row = raw.prepare("SELECT name, absenceOnlySince FROM academy WHERE id = 'self'").get() as {
+    name: string;
+    absenceOnlySince: string | null;
+  };
+  assert.equal(row.name, '숲속영어', '적어 둔 학원 정보는 그대로');
+  assert.equal(row.absenceOnlySince, null, '지금까지처럼 등원을 하나씩 누른다');
+  assert.ok(raw.prepare("SELECT name FROM sqlite_master WHERE name = 'presence_fill'").get());
+});

@@ -24,6 +24,7 @@ import * as makeup from '../data/makeup';
 import * as exceptions from '../data/exceptions';
 import * as payments from '../data/payments';
 import * as academy from '../data/academy';
+import { fillPresence } from '../data/presence';
 
 /**
  * 화면이 보는 데이터의 유일한 출입구.
@@ -59,6 +60,11 @@ interface DataContextType {
    * 이력처럼 위의 상태에 담지 않고 그때그때 읽는 화면이 '다시 읽을 때'를 안다.
    */
   revision: number;
+  /**
+   * '결석만 표시' 출석을 켠 날. null이면 꺼져 있다 — 등원을 하나씩 누른다.
+   * 켜져 있으면 [오늘]은 결석만 받고, 표시하지 않은 아이는 날이 지나면 출석으로 남는다.
+   */
+  absenceOnlySince: string | null;
 
   addStudent: (student: Student) => Promise<void>;
   updateStudent: (student: Student) => Promise<void>;
@@ -106,6 +112,8 @@ interface DataContextType {
   loadAcademy: () => Promise<AcademyInfo | null>;
   /** 일부만 고친다. 다른 칸은 지금 저장된 값 그대로다. */
   patchAcademy: (patch: Partial<Omit<AcademyInfo, 'updatedAt'>>) => Promise<void>;
+  /** '결석만 표시' 출석을 켜거나 끈다. 켜면 오늘부터 적용된다. */
+  setAbsenceOnly: (on: boolean) => Promise<void>;
   /** 수강료가 비어 있는 재원생에게 기준표대로 채운다. 채운 수. */
   fillMissingFees: (rules: FeeRule[]) => Promise<number>;
 
@@ -148,6 +156,7 @@ type DataActions = Omit<
   | 'loaded'
   | 'today'
   | 'revision'
+  | 'absenceOnlySince'
   | 'lastSyncAt'
   | 'syncUnavailable'
   | 'syncError'
@@ -166,15 +175,39 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [loaded, setLoaded] = useState(false);
   const [today, setToday] = useState(getCurrentDate);
   const [revision, setRevision] = useState(0);
+  const [absenceOnlySince, setAbsenceOnlySince] = useState<string | null>(null);
 
   /** 지금 화면에 올라와 있는 데이터가 어느 날짜의 것인지 */
   const loadedDate = useRef(getCurrentDate());
+
+  /**
+   * 지난날 자동 출석을 마지막으로 채운 조건 ('오늘|켠 날'). 같으면 다시 채우지 않는다.
+   * 다시 읽기는 쓰기마다 일어나는데, 채울 것은 하루에 한 번(날이 바뀔 때)만 생긴다.
+   */
+  const presenceKey = useRef<string | null>(null);
+  /** 채운 것을 올리라고 부른다. useSync가 refreshData보다 나중에 만들어져서 자리만 둔다. */
+  const pushAfterFill = useRef<() => void>(() => {});
 
   const refreshData = useCallback(async () => {
     const date = getCurrentDate();
     loadedDate.current = date;
 
     try {
+      const info = await academy.getAcademy(db);
+      const since = info?.absenceOnlySince ?? null;
+      setAbsenceOnlySince(since);
+
+      const key = `${date}|${since ?? ''}`;
+      if (since && presenceKey.current !== key) {
+        // 실패해도 화면은 읽는다. 다음 날짜 바뀜이나 앱 재시작에 다시 시도한다.
+        const filled = await exclusive(() => fillPresence(db, since, date)).catch((error) => {
+          logger.error('fillPresence failed', error);
+          return -1;
+        });
+        if (filled >= 0) presenceKey.current = key;
+        if (filled > 0) pushAfterFill.current();
+      }
+
       // 화면이 쓰는 범위만 올린다. 출결 테이블 전체를 올리면 체크인 한 번의
       // 비용이 누적 이력에 비례해 늘어난다. 이력 조회는 필요할 때 따로 읽는다.
       const [list, records, pending, rules] = await Promise.all([
@@ -203,6 +236,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const sync = useSync(db, refreshData);
   const { schedulePush, syncNow } = sync;
+  pushAfterFill.current = schedulePush;
 
   /** 쓰기 뒤에 부르는 마무리. 화면을 새로 읽고, 잠잠해지면 올린다. */
   const commit = useCallback(async () => {
@@ -322,6 +356,10 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       loadAcademy: () => academy.getAcademy(db),
       patchAcademy: (patch) => write('patchAcademy', () => academy.patchAcademy(db, patch)),
+      setAbsenceOnly: (on) =>
+        write('setAbsenceOnly', () =>
+          academy.patchAcademy(db, { absenceOnlySince: on ? getCurrentDate() : null })
+        ),
       fillMissingFees: async (rules) => {
         const filled = await exclusive(() => students.fillMissingFees(db, rules));
         await commit();
@@ -368,6 +406,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       loaded,
       today,
       revision,
+      absenceOnlySince,
       ...actions,
       lastSyncAt,
       syncUnavailable,
@@ -382,6 +421,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       loaded,
       today,
       revision,
+      absenceOnlySince,
       actions,
       lastSyncAt,
       syncUnavailable,

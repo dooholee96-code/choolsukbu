@@ -270,7 +270,13 @@ const HomeScreen: React.FC = () => {
     syncNow,
     loaded,
     today,
+    absenceOnlySince,
   } = useData();
+  /**
+   * '결석만 표시' 출석. 등원 버튼을 숨기고 결석만 받는다. 누르지 않은 아이는 수업에 온
+   * 것으로 세고, 날이 지나면 출석으로 남는다 (data/presence).
+   */
+  const absenceOnly = Boolean(absenceOnlySince);
   const { columns, sizeClass } = useResponsive();
   const theme = useTheme();
   const navigation = useNavigation();
@@ -436,8 +442,12 @@ const HomeScreen: React.FC = () => {
     return { inClass: staying, leftToday: left };
   }, [checkedInOnSchedule, unexpectedArrivals, attendanceByStudent]);
 
-  /** 결석은 등원이 아니므로 출석 수에서 뺀다. */
-  const checkedInCount = checkedInOnSchedule.length + unexpectedArrivals.length;
+  /**
+   * 결석은 등원이 아니므로 출석 수에서 뺀다. '결석만 표시'에서는 아직 아무것도 누르지 않은
+   * 아이도 출석이다 — 빠진 아이만 누르는 방식이라 누르지 않은 것이 곧 왔다는 뜻이다.
+   */
+  const checkedInCount =
+    checkedInOnSchedule.length + unexpectedArrivals.length + (absenceOnly ? pending.length : 0);
 
   /**
    * 숫자가 바뀌면 살짝 부푼다. 카드가 옮겨 간 것과 숫자가 오른 것이 한 번에 읽힌다.
@@ -452,7 +462,7 @@ const HomeScreen: React.FC = () => {
     const all: Section[] = [
       {
         key: 'pending',
-        title: `등원 예정 — ${pending.length}`,
+        title: `${absenceOnly ? '오늘 수업' : '등원 예정'} — ${pending.length}`,
         data: chunk(pending, columns),
         checkable: true,
       },
@@ -476,7 +486,7 @@ const HomeScreen: React.FC = () => {
       },
     ];
     return all.filter((section) => section.data.length > 0);
-  }, [closed, pending, checkedInOnSchedule, unexpectedArrivals, absentStudents, columns]);
+  }, [closed, pending, checkedInOnSchedule, unexpectedArrivals, absentStudents, columns, absenceOnly]);
 
   const handleCheckIn = useCallback(
     async (student: Student) => {
@@ -646,7 +656,7 @@ const HomeScreen: React.FC = () => {
           startTime={entry?.startTime}
           endTime={entry?.endTime}
           isExtra={entry?.isExtra}
-          onCheckIn={checkable ? handleCheckIn : undefined}
+          onCheckIn={checkable && !absenceOnly ? handleCheckIn : undefined}
           onMarkAbsent={checkable ? handleMarkAbsent : undefined}
           onUndo={checkable ? undefined : handleUndo}
           onEditTime={checkable ? undefined : handleEditTime}
@@ -667,6 +677,7 @@ const HomeScreen: React.FC = () => {
       );
     },
     [
+      absenceOnly,
       rosterById,
       attendanceByStudent,
       handleCheckIn,
@@ -701,7 +712,9 @@ const HomeScreen: React.FC = () => {
   const emptyNotice =
     students.length === 0
       ? '등록된 원생이 없습니다.\n[원생] 탭에서 추가해 주세요.'
-      : '오늘 등원 예정인 원생이 없습니다.\n[일정]에서 추가할 수 있습니다.';
+      : absenceOnly
+        ? '오늘 수업이 있는 원생이 없습니다.\n[일정]에서 추가할 수 있습니다.'
+        : '오늘 등원 예정인 원생이 없습니다.\n[일정]에서 추가할 수 있습니다.';
 
   const header = (
     <Header style={board ? { marginBottom: 16 } : undefined}>
@@ -799,6 +812,72 @@ const HomeScreen: React.FC = () => {
         <LaneGap>{absentStudents.map((student) => renderCard(student, false, true))}</LaneGap>
       </TintGroup>
     );
+
+    if (absenceOnly) {
+      // 누를 것이 결석 하나뿐이라 칸도 둘이다 — 오늘 수업과 결석. 예전 방식으로 이미
+      // 등원·하원을 찍어 둔 아이는 수업 칸 아래에 그대로 보인다(취소할 수 있게).
+      const attended = [...inClass, ...leftToday];
+      return (
+        <Screen>
+          {header}
+          {closed ? (
+            closure
+          ) : (
+            <>
+              <SummaryBar>
+                <SummaryLead>
+                  <SummaryTitle style={{ marginBottom: 0 }}>오늘 출석</SummaryTitle>
+                  {count}
+                </SummaryLead>
+                <StatsContainer $spread={false} style={{ gap: 36 }}>
+                  <StatItem>
+                    <StatLabelRow>
+                      <StatDot $color={theme.colors.success} />
+                      <StatLabel>출석</StatLabel>
+                    </StatLabelRow>
+                    <BumpValue value={checkedInCount} ready={loaded} />
+                  </StatItem>
+                  <StatItem>
+                    <StatLabelRow>
+                      <StatDot $color={theme.colors.danger} />
+                      <StatLabel>결석</StatLabel>
+                    </StatLabelRow>
+                    <BumpValue value={absentStudents.length} ready={loaded} />
+                  </StatItem>
+                </StatsContainer>
+              </SummaryBar>
+
+              <Board>
+                <BoardLane title="오늘 수업" count={pending.length} tone="present">
+                  {pending.length > 0 ? (
+                    <LaneGap>{pending.map((student) => renderCard(student, true, true))}</LaneGap>
+                  ) : (
+                    <LaneEmpty>{roster.length === 0 ? emptyNotice : '모두 결석입니다.'}</LaneEmpty>
+                  )}
+                  {attended.length > 0 && (
+                    <TintGroup $color={theme.colors.primary}>
+                      <LaneGroupTitle $color={theme.colors.primaryStrong}>
+                        등원 기록 — {attended.length}
+                      </LaneGroupTitle>
+                      <LaneGap>{attended.map((student) => renderCard(student, false, true))}</LaneGap>
+                    </TintGroup>
+                  )}
+                </BoardLane>
+
+                <BoardLane title="결석" count={absentStudents.length} tone="done">
+                  {absentGroup || (
+                    <LaneEmpty>
+                      빠진 아이만 결석을 누르세요.{'\n'}누르지 않은 아이는 출석으로 남습니다.
+                    </LaneEmpty>
+                  )}
+                </BoardLane>
+              </Board>
+            </>
+          )}
+          {timePicker}
+        </Screen>
+      );
+    }
 
     return (
       <Screen>
@@ -921,22 +1000,39 @@ const HomeScreen: React.FC = () => {
               /* 금액은 홈에서 다루지 않는다. 수강료는 원생 탭의 토글과
                  이후 월계표 화면에서만 노출한다. */
               <SummaryCard>
-                <SummaryTitle>오늘 등원</SummaryTitle>
+                <SummaryTitle>{absenceOnly ? '오늘 출석' : '오늘 등원'}</SummaryTitle>
                 {count}
-                <StatsContainer $spread>
-                  <StatItem>
-                    <StatLabel>예정</StatLabel>
-                    <BumpValue value={roster.length} ready={loaded} />
-                  </StatItem>
-                  <StatItem>
-                    <StatLabel>등원</StatLabel>
-                    <BumpValue value={checkedInCount} ready={loaded} />
-                  </StatItem>
-                  <StatItem>
-                    <StatLabel>남음</StatLabel>
-                    <BumpValue value={pending.length} ready={loaded} />
-                  </StatItem>
-                </StatsContainer>
+                {absenceOnly ? (
+                  <StatsContainer $spread>
+                    <StatItem>
+                      <StatLabel>수업</StatLabel>
+                      <BumpValue value={roster.length} ready={loaded} />
+                    </StatItem>
+                    <StatItem>
+                      <StatLabel>출석</StatLabel>
+                      <BumpValue value={checkedInCount} ready={loaded} />
+                    </StatItem>
+                    <StatItem>
+                      <StatLabel>결석</StatLabel>
+                      <BumpValue value={absentStudents.length} ready={loaded} />
+                    </StatItem>
+                  </StatsContainer>
+                ) : (
+                  <StatsContainer $spread>
+                    <StatItem>
+                      <StatLabel>예정</StatLabel>
+                      <BumpValue value={roster.length} ready={loaded} />
+                    </StatItem>
+                    <StatItem>
+                      <StatLabel>등원</StatLabel>
+                      <BumpValue value={checkedInCount} ready={loaded} />
+                    </StatItem>
+                    <StatItem>
+                      <StatLabel>남음</StatLabel>
+                      <BumpValue value={pending.length} ready={loaded} />
+                    </StatItem>
+                  </StatsContainer>
+                )}
               </SummaryCard>
             )}
           </>

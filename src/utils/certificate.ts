@@ -59,7 +59,7 @@ export const summarizeCertificate = (rows: Payment[]) => ({
 const field = (value: string | undefined) =>
   value?.trim() ? escapeHtml(value.trim()) : '<span class="blank"></span>';
 
-export const buildCertificateHtml = ({
+const certificatePage = ({
   academy,
   student,
   payments,
@@ -84,38 +84,7 @@ export const buildCertificateHtml = ({
 
   const studentName = escapeHtml(student.name);
 
-  return `<!doctype html>
-<html lang="ko">
-<head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>교육비 납입 증명서 - ${studentName} (${year})</title>
-<style>
-  @page { size: A4; margin: 18mm 16mm; }
-  * { box-sizing: border-box; }
-  body {
-    font-family: 'Apple SD Gothic Neo', 'Noto Sans KR', 'Malgun Gothic', sans-serif;
-    color: #111; font-size: 12.5pt; line-height: 1.5; margin: 0;
-  }
-  h1 { text-align: center; font-size: 22pt; letter-spacing: 0.3em; margin: 0 0 4pt; }
-  .sub { text-align: center; color: #444; margin: 0 0 14pt; }
-  table { width: 100%; border-collapse: collapse; margin-bottom: 10pt; }
-  th, td { border: 1px solid #333; padding: 6pt 8pt; vertical-align: middle; }
-  th { background: #f1f1f1; font-weight: 600; white-space: nowrap; }
-  .section th.group { width: 18%; }
-  .num { text-align: right; white-space: nowrap; }
-  .blank { display: inline-block; min-width: 40mm; }
-  .list th { text-align: center; }
-  .total td { font-weight: 700; background: #fafafa; }
-  .note { font-size: 10.5pt; color: #333; margin: 4pt 0 0; }
-  .statement { text-align: center; margin: 22pt 0 10pt; font-size: 13pt; }
-  .date { text-align: center; margin-bottom: 18pt; }
-  .sign { text-align: right; font-size: 13pt; }
-  .sign .stamp { display: inline-block; margin-left: 10pt; color: #888; }
-  .foot { margin-top: 18pt; font-size: 9.5pt; color: #555; border-top: 1px solid #bbb; padding-top: 6pt; }
-</style>
-</head>
-<body>
+  return `<section class="page">
   <h1>교육비 납입 증명서</h1>
   <p class="sub">(학원 교육비 · ${year}년 1월 1일 ~ 12월 31일 납입분)</p>
 
@@ -172,6 +141,80 @@ export const buildCertificateHtml = ({
     주민등록번호·주소·관계는 이 증명서를 발급한 프로그램이 보관하지 않는 정보라 비워 두었습니다.
     제출 전에 직접 적어 주세요.
   </p>
-</body>
-</html>`;
+</section>`;
 };
+
+const STYLE = `<style>
+  @page { size: A4; margin: 18mm 16mm; }
+  * { box-sizing: border-box; }
+  body {
+    font-family: 'Apple SD Gothic Neo', 'Noto Sans KR', 'Malgun Gothic', sans-serif;
+    color: #111; font-size: 12.5pt; line-height: 1.5; margin: 0;
+  }
+  h1 { text-align: center; font-size: 22pt; letter-spacing: 0.3em; margin: 0 0 4pt; }
+  .sub { text-align: center; color: #444; margin: 0 0 14pt; }
+  table { width: 100%; border-collapse: collapse; margin-bottom: 10pt; }
+  th, td { border: 1px solid #333; padding: 6pt 8pt; vertical-align: middle; }
+  th { background: #f1f1f1; font-weight: 600; white-space: nowrap; }
+  .section th.group { width: 18%; }
+  .num { text-align: right; white-space: nowrap; }
+  .blank { display: inline-block; min-width: 40mm; }
+  .list th { text-align: center; }
+  .total td { font-weight: 700; background: #fafafa; }
+  .note { font-size: 10.5pt; color: #333; margin: 4pt 0 0; }
+  .statement { text-align: center; margin: 22pt 0 10pt; font-size: 13pt; }
+  .date { text-align: center; margin-bottom: 18pt; }
+  .sign { text-align: right; font-size: 13pt; }
+  .sign .stamp { display: inline-block; margin-left: 10pt; color: #888; }
+  .page + .page { break-before: page; page-break-before: always; }
+  .foot { margin-top: 18pt; font-size: 9.5pt; color: #555; border-top: 1px solid #bbb; padding-top: 6pt; }
+</style>`;
+
+const documentHtml = (title: string, pages: string[]) => `<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>${escapeHtml(title)}</title>
+${STYLE}
+</head>
+<body>${pages.join('\n')}</body>
+</html>`;
+
+export const buildCertificateHtml = (input: CertificateInput): string =>
+  documentHtml(`교육비 납입 증명서 - ${input.student.name} (${input.year})`, [certificatePage(input)]);
+
+/**
+ * 여러 원생의 증명서를 한 번에. 한 장씩 쪽이 나뉜다.
+ *
+ * 1월이면 보호자들이 한꺼번에 찾는다. 원생마다 화면을 열어 인쇄하면 서른 번을 눌러야 한다.
+ */
+export const buildCertificatesHtml = (
+  inputs: Omit<CertificateInput, 'applicant'>[],
+  year: number
+): string =>
+  documentHtml(
+    `교육비 납입 증명서 ${year}년 (${inputs.length}명)`,
+    inputs.map((input) => certificatePage(input))
+  );
+
+/**
+ * 일괄 발급 대상. 그 해 받은 돈이 있는 원생, 이름순.
+ *
+ * preschoolOnly면 미취학으로 받은 돈이 있는 원생만 — 교육비 공제를 받으려고 증명서가
+ * 꼭 필요한 쪽이다 (초등학생 이상은 학원비가 공제 대상이 아니다).
+ */
+export const certificateTargets = (
+  students: Student[],
+  payments: Payment[],
+  year: number,
+  preschoolOnly: boolean
+): Student[] =>
+  students
+    .filter((student) => {
+      const rows = certificatePayments(payments, student.id, year);
+      if (rows.length === 0) return false;
+      const { total, preschool } = summarizeCertificate(rows);
+      return preschoolOnly ? preschool > 0 : total !== 0;
+    })
+    .sort((a, b) => a.name.localeCompare(b.name, 'ko'));

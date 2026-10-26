@@ -65,7 +65,7 @@ export const isTimeWithinRange = (
 };
 
 /**
- * 'HH:mm' 을 'h:mm a' 표시용 문자열로. 파싱 실패 시 원본을 그대로 돌려준다.
+ * 'HH:mm' 을 '오후 4:00' 표시용 문자열로. 파싱 실패 시 원본을 그대로 돌려준다.
  * (이전에는 new Date(`2000-01-01T${time}`)가 Invalid Date가 되면
  *  date-fns의 format이 RangeError를 던져 카드 렌더링이 통째로 깨졌다.)
  */
@@ -146,5 +146,5 @@ export const formatTimeLabel = (time: string): string => {
   const minutes = toMinutes(time);
   if (minutes === null) return time ?? '';
 
-  return format(new Date(2000, 0, 1, Math.floor(minutes / 60), minutes % 60), 'h:mm a');
+  return format(new Date(2000, 0, 1, Math.floor(minutes / 60), minutes % 60), 'a h:mm', { locale: ko });
 };

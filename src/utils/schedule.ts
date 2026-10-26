@@ -41,7 +41,7 @@ export const hasVaryingTimes = (student: Student): boolean => {
 };
 
 /**
- * '월 2:00 PM – 4:00 PM' 형태의 줄. 요일마다 시간이 다를 때만 요일별로 나눈다.
+ * '월 오후 2:00 – 오후 4:00' 형태의 줄. 요일마다 시간이 다를 때만 요일별로 나눈다.
  * 같으면 한 줄로 합쳐야 카드가 쓸데없이 길어지지 않는다.
  */
 export const scheduleLines = (student: Student): string[] => {

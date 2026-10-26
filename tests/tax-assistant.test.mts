@@ -75,3 +75,26 @@ test('종합소득세는 4월 중순부터 5월 말까지', () => {
   assert.deepEqual(upcomingDeadlines('2027-04-20').map((d) => d.key), ['incometax-2027']);
   assert.deepEqual(upcomingDeadlines('2027-05-31').map((d) => d.daysLeft), [0]);
 });
+
+test('기한이 일요일이면 월요일로 미뤄 보여 준다', () => {
+  // 2026-05-31은 일요일이다. 2025년 귀속 종합소득세는 6월 1일까지였다.
+  const [income] = upcomingDeadlines('2026-05-29');
+  assert.equal(income.key, 'incometax-2026');
+  assert.equal(income.due, '2026-06-01');
+  assert.equal(deadlineLabel(income), '6월 1일까지 · D-3');
+  assert.ok(upcomingDeadlines('2026-05-31').some((d) => d.key === 'incometax-2026'), '일요일에도 아직 남아 있다');
+});
+
+test('증명서처럼 기간 일정은 주말이어도 그대로 둔다', () => {
+  // 2027-02-28은 일요일이다.
+  const cert = upcomingDeadlines('2027-02-20').find((d) => d.key === 'certificate-2027')!;
+  assert.equal(cert.due, '2027-02-28');
+});
+
+test('중간예납은 11월에 안내만 한다', () => {
+  assert.deepEqual(upcomingDeadlines('2026-10-26').map((d) => d.key), []);
+  const [prepay] = upcomingDeadlines('2026-11-02');
+  assert.equal(prepay.key, 'prepay-2026');
+  assert.equal(prepay.action, undefined, '누를 것이 없다');
+  assert.equal(deadlineLabel(prepay), '11월 30일까지 · D-28');
+});

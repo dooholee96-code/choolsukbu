@@ -293,7 +293,7 @@ const PaymentsScreen: React.FC = () => {
           {student.grade}
           {expected > 0 ? ` · 월 ${formatWon(expected)}` : ' · 수강료를 정하지 않음'}
           {status === 'partial' ? ` · ${formatWon(expected - paid)} 남음` : ''}
-          {student.preschool ? ' · 미취학' : ''}
+          {student.preschool ? ' · 교육비 공제' : ''}
         </Meta>
 
         {entry.payments.length > 0 && <View style={{ marginTop: 8 }}>

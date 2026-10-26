@@ -104,7 +104,7 @@ const shortDate = (dateKey: string) => `${Number(dateKey.slice(5, 7))}.${Number(
  *
  *   1. 다가오는 신고 일정 (utils/deadlines). 눌러서 바로 증명서를 뽑거나 신고 자료로 간다.
  *   2. 현금영수증을 끊어야 했는데 표시가 없는 수납. 학원은 의무발행업종이라 10만 원 이상을
- *      현금·계좌이체로 받으면 요청이 없어도 발급해야 하고, 빠뜨리면 가산세가 붙는다.
+ *      현금·계좌이체로 받으면 요청이 없어도 5일 안에 발급해야 하고, 빠뜨리면 20% 가산세다.
  *
  * 할 일이 없으면 아무것도 그리지 않는다. 늘 떠 있는 안내는 금방 안 읽힌다.
  */
@@ -174,32 +174,34 @@ const TaxAssistant: React.FC = () => {
               <When $color={tone}>{deadlineLabel(deadline)}</When>
             </TitleRow>
             <Detail>{deadline.detail}</Detail>
-            <Actions>
-              {deadline.action === 'certificates' ? (
-                <>
+            {deadline.action && (
+              <Actions>
+                {deadline.action === 'certificates' ? (
+                  <>
+                    <Button
+                      title={printing ? '만드는 중…' : `${year}년 공제 대상 원생 증명서`}
+                      size="compact"
+                      disabled={printing}
+                      onPress={() => printAll(year, true)}
+                    />
+                    <Button
+                      title="받은 원생 전원"
+                      size="compact"
+                      variant="secondary"
+                      disabled={printing}
+                      onPress={() => printAll(year, false)}
+                    />
+                  </>
+                ) : (
                   <Button
-                    title={printing ? '만드는 중…' : `${year}년 미취학 원생 증명서`}
-                    size="compact"
-                    disabled={printing}
-                    onPress={() => printAll(year, true)}
-                  />
-                  <Button
-                    title="받은 원생 전원"
+                    title={`${year}년 신고용 자료`}
                     size="compact"
                     variant="secondary"
-                    disabled={printing}
-                    onPress={() => printAll(year, false)}
+                    onPress={openExports}
                   />
-                </>
-              ) : (
-                <Button
-                  title={`${year}년 신고용 자료`}
-                  size="compact"
-                  variant="secondary"
-                  onPress={openExports}
-                />
-              )}
-            </Actions>
+                )}
+              </Actions>
+            )}
           </Box>
         );
       })}
@@ -211,9 +213,9 @@ const TaxAssistant: React.FC = () => {
             <Title>현금영수증 확인 {missing.length}건</Title>
           </TitleRow>
           <Detail>
-            {formatWon(CASH_RECEIPT_REQUIRED_FROM)} 이상을 현금·계좌이체로 받으면 요청이 없어도
-            현금영수증을 발급해야 합니다. 보호자 번호를 모르면 국세청 지정번호(010-000-1234)로
-            발급합니다. 이미 발급했다면 눌러서 표시해 주세요.
+            {formatWon(CASH_RECEIPT_REQUIRED_FROM)} 이상 현금·계좌이체는 요청이 없어도 5일 안에
+            발급합니다(빠뜨리면 20% 가산세). 번호를 모르면 010-000-1234로 발급하고, 이미 했다면
+            눌러서 표시해 주세요.
           </Detail>
           <View style={{ marginTop: 8 }}>
             {shown.map((payment) => (

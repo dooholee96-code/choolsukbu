@@ -5,6 +5,7 @@ import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { format } from 'date-fns';
+import { ko } from 'date-fns/locale';
 import { Ionicons } from '@expo/vector-icons';
 import { useData } from '../hooks/useData';
 import Button from '../components/common/Button';
@@ -469,7 +470,7 @@ const StudentFormModal: React.FC = () => {
               onPress={() => setDayPicker({ day, edge })}
               accessibilityLabel={label}
             >
-              <TimePickerText>{format(asDate, 'h:mm a')}</TimePickerText>
+              <TimePickerText>{format(asDate, 'a h:mm', { locale: ko })}</TimePickerText>
             </TimePickerButton>
             {isOpen && (
               <DateTimePicker value={asDate} mode="time" display="default" onChange={onChange} />
@@ -504,7 +505,7 @@ const StudentFormModal: React.FC = () => {
         ) : (
           <>
             <TimePickerButton onPress={() => setVisible(true)} accessibilityLabel={label}>
-              <TimePickerText>{format(value, 'h:mm a')}</TimePickerText>
+              <TimePickerText>{format(value, 'a h:mm', { locale: ko })}</TimePickerText>
             </TimePickerButton>
             {isVisible && (
               <DateTimePicker value={value} mode="time" display="default" onChange={onChange} />
@@ -576,7 +577,7 @@ const StudentFormModal: React.FC = () => {
               {DAYS.map((day) => (
                 <Chip
                   key={day}
-                  label={day}
+                  label={DAY_LABEL[day]}
                   selected={selectedDays.includes(day)}
                   onPress={() => toggleDay(day)}
                 />
@@ -656,23 +657,26 @@ const StudentFormModal: React.FC = () => {
                   : '[설정] 탭에서 수강료 기준을 정해 두면 학년·요일에 맞춰 채워집니다.'}
             </HintText>
 
-            {/* 미취학 아동의 학원비는 보호자의 교육비 공제 대상이라 연초에 자료를 낸다.
-                수납을 기록하는 순간의 값이 그 수납 건에 남는다 (types의 Student.preschool). */}
+            {/* 미취학 아동(과 2026년 납입분부터 초1·2 예체능)의 학원비는 보호자의 교육비 공제
+                대상이라 연초에 자료를 낸다. 수납을 기록하는 순간의 값이 그 수납 건에 남는다
+                (types의 Student.preschool). */}
             <ToggleRow
               onPress={() => setPreschool((on) => !on)}
               accessibilityRole="checkbox"
               accessibilityState={{ checked: preschool }}
-              accessibilityLabel="미취학 아동"
+              accessibilityLabel="교육비 공제 대상"
               style={{ marginTop: 8 }}
             >
               <ToggleBox $on={preschool}>
                 {preschool && <Ionicons name="checkmark" size={14} color="white" />}
               </ToggleBox>
-              <ToggleLabel>미취학 아동 (초등학교 입학 전)</ToggleLabel>
+              <ToggleLabel>교육비 공제 대상</ToggleLabel>
             </ToggleRow>
             <HintText>
-              교육비 공제 자료에 들어갑니다. 입학하면 꺼 주세요 — 그 전에 받은 수강료는 그대로
-              자료에 남습니다.
+              초등학교 입학 전 아이, 그리고 2026년 납입분부터는 초1·2학년(만 9세 미만)의
+              예체능(음악·미술·무용·체육) 수강료가 보호자의 교육비 공제 대상입니다. 교과 학원은
+              대상이 아닙니다. 대상에서 벗어나면 꺼 주세요. 그 전에 받은 수강료는 그대로 자료에
+              남습니다.
             </HintText>
 
             <Actions>

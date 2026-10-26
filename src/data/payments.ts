@@ -120,3 +120,38 @@ export const softDeletePayment = (db: SQLiteDatabase, paymentId: string) => {
     paymentId
   );
 };
+
+/**
+ * 가져온 수납 여러 건을 한 번에. 하나라도 실패하면 아무것도 남기지 않는다. 넣은 수.
+ *
+ * 가져온 수납의 id는 내용에서 나온다 (utils/paymentImport). 같은 id가 이미 살아 있으면
+ * 건너뛰고 — 미리 본 뒤 다른 기기에서 동기화로 들어온 경우 — 지운 것이면 되살린다.
+ */
+export const insertPayments = async (db: SQLiteDatabase, rows: Payment[]) => {
+  let added = 0;
+  await db.withTransactionAsync(async () => {
+    for (const payment of rows) {
+      const result = await db.runAsync(
+        `INSERT INTO payment (id, studentId, paidOn, month, amount, kind, method, cashReceipt, preschool, note, updatedAt)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET
+           cashReceipt = excluded.cashReceipt, preschool = excluded.preschool, note = excluded.note,
+           updatedAt = excluded.updatedAt, deletedAt = NULL
+         WHERE payment.deletedAt IS NOT NULL;`,
+        payment.id,
+        payment.studentId,
+        payment.paidOn,
+        payment.month,
+        Math.round(payment.amount),
+        payment.kind,
+        payment.method,
+        receiptFor(payment),
+        payment.preschool ? 1 : 0,
+        payment.note?.trim() || null,
+        stamp()
+      );
+      added += result.changes;
+    }
+  });
+  return added;
+};

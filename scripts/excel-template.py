@@ -1,0 +1,348 @@
+"""
+엑셀 양식(templates/출석부_엑셀양식.xlsx)을 만든다.
+
+    python3 scripts/excel-template.py
+
+openpyxl이 필요하다 (pip install openpyxl). 앱 빌드와는 상관없고, 양식을 고칠 때만 돌린다.
+
+양식의 '원생'·'수납' 시트 머리글은 앱의 가져오기 형식과 글자 하나까지 같아야 한다.
+  원생 → src/utils/csv.ts 의 STUDENT_HEADERS
+  수납 → src/utils/paymentImport.ts 의 PAYMENT_HEADERS
+머리글을 바꾸면 세 곳을 같이 고친다. tests/template.test.mts 가 어긋나면 실패한다.
+
+이 양식은 무료로 나눠 주는 입문용이다. 장부(원생·수납)와 달마다 낸 사람·안 낸 사람만 본다.
+신고 일정, 현금영수증 확인, 증명서 발급, 출결은 앱에만 있다.
+"""
+import sys
+from pathlib import Path
+
+from openpyxl import Workbook
+from openpyxl.comments import Comment
+from openpyxl.formatting.rule import FormulaRule
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+from openpyxl.utils import get_column_letter
+from openpyxl.worksheet.datavalidation import DataValidation
+
+OUT = Path(__file__).resolve().parent.parent / 'templates' / '출석부_엑셀양식.xlsx'
+ROWS = 500  # 원생 시트에 서식과 목록 고르기를 미리 깔아 둘 줄 수
+PAY_ROWS = 1000  # 수납 시트 (한 해 20명 × 12달이면 240줄)
+STUDENTS = f'원생!$A$2:$A${ROWS + 1}'
+
+FONT = '맑은 고딕'
+INK = '4B3B53'
+HEAD = '4A7585'
+SOFT = 'F6F2EC'
+LINE = 'E7DEE6'
+WARN = 'F6D5DA'
+GOOD = 'D7EBDF'
+
+head_font = Font(name=FONT, bold=True, color='FFFFFF', size=11)
+head_fill = PatternFill('solid', fgColor=HEAD)
+body_font = Font(name=FONT, color=INK, size=11)
+note_font = Font(name=FONT, color='776A7E', size=10)
+title_font = Font(name=FONT, bold=True, color=INK, size=16)
+thin = Side(style='thin', color=LINE)
+box = Border(left=thin, right=thin, top=thin, bottom=thin)
+
+STUDENT_COLUMNS = [
+    # 머리글, 너비, 서식, 설명
+    ('이름', 12, '@', '원생 이름'),
+    ('학년', 8, '@', '예: 7세, 초3, 중1'),
+    ('요일', 12, '@', '예: 월,수  또는  월수금'),
+    ('시작', 8, '@', '수업 시작 16:00'),
+    ('끝', 8, '@', '수업 끝 17:00'),
+    ('월 수강료', 12, '#,##0', '원'),
+    ('구분', 10, '@', '동명이인일 때만: 월수반, 강북초'),
+    ('미취학', 8, '@', '교육비 공제 대상이면 예: 초등학교 입학 전, 2026년 납입분부터는 초1·2 예체능도'),
+    ('퇴원일', 13, 'yyyy-mm-dd', '그만둔 날 (비우면 재원)'),
+]
+
+PAYMENT_COLUMNS = [
+    ('받은날', 13, 'yyyy-mm-dd', '돈을 받은 날'),
+    ('수강월', 10, '@', '어느 달 수강료인가 2026-03 (비우면 받은 달)'),
+    ('원생', 12, '@', '원생 시트의 이름'),
+    ('구분', 10, '@', '동명이인일 때만'),
+    ('수입구분', 11, '@', '비우면 수강료'),
+    ('금액', 12, '#,##0', '원. 환불은 -50000'),
+    ('결제수단', 10, '@', '카드·계좌이체·현금'),
+    ('현금영수증', 11, '@', '계좌이체·현금일 때 발급 여부'),
+    ('미취학', 8, '@', '원생 시트에서 자동'),
+    ('메모', 24, '@', ''),
+]
+
+KINDS = '수강료,특강비,입학금,교재대,모의고사비,기타수입'
+METHODS = '카드,계좌이체,현금'
+
+
+def header_row(ws, columns, rows=ROWS):
+    for i, (name, width, fmt, hint) in enumerate(columns, start=1):
+        cell = ws.cell(row=1, column=i, value=name)
+        cell.font = head_font
+        cell.fill = head_fill
+        cell.alignment = Alignment(horizontal='center', vertical='center')
+        cell.border = box
+        ws.column_dimensions[get_column_letter(i)].width = width
+        if hint:
+            cell.comment = Comment(hint, '출석부')
+        for r in range(2, rows + 2):
+            c = ws.cell(row=r, column=i)
+            c.number_format = fmt
+            c.font = body_font
+            c.border = box
+    ws.row_dimensions[1].height = 24
+    ws.freeze_panes = 'A2'
+
+
+def add_list(ws, col_letter, formula, prompt_title, prompt, rows=ROWS):
+    dv = DataValidation(type='list', formula1=formula, allow_blank=True)
+    dv.promptTitle = prompt_title
+    dv.prompt = prompt
+    dv.showInputMessage = True
+    dv.errorTitle = '목록에 없는 값'
+    dv.error = '목록에서 골라 주세요.'
+    ws.add_data_validation(dv)
+    dv.add(f'{col_letter}2:{col_letter}{rows + 1}')
+
+
+def guide(wb):
+    ws = wb.active
+    ws.title = '사용법'
+    ws.sheet_view.showGridLines = False
+    ws.column_dimensions['A'].width = 3
+    ws.column_dimensions['B'].width = 18
+    ws.column_dimensions['C'].width = 96
+    ws['B2'] = '출석부 엑셀 양식'
+    ws['B2'].font = title_font
+    ws['B3'] = '원생과 받은 돈을 적고, 달마다 누가 냈는지 봅니다. 나중에 출석부 앱으로 그대로 옮길 수 있습니다.'
+    ws['B3'].font = note_font
+
+    rows = [
+        ('1. 원생', '원생 시트에 한 줄에 한 명씩 적습니다. 요일은 "월,수"처럼, 시간은 "16:00"처럼 적습니다.'),
+        ('', '동명이인이 있으면 구분 칸에 "월수반"처럼 짧게 구별할 말을 적습니다.'),
+        ('2. 수납', '돈을 받을 때마다 한 줄씩 적습니다. 원생·수입구분·결제수단은 칸을 누르면 목록에서 고를 수 있습니다.'),
+        ('', '수강월은 "어느 달 수강료인가"입니다. 9월 말에 받은 10월분은 2026-10 으로 적습니다.'),
+        ('', '돌려준 돈은 지우지 말고 금액을 -50000 처럼 음수로 한 줄 더 적습니다.'),
+        ('', '계좌이체·현금으로 한 번에 10만 원 이상 받으면 달라는 말이 없어도 받은 날부터 5일 안에 현금영수증을 발급합니다.'),
+        ('', '학원은 현금영수증 의무발행업종입니다. 교습소·공부방·과외도 보통 그렇지만 사업자등록증의 업종코드로 확인하세요.'),
+        ('', '미취학 칸은 교육비 공제 대상 표시입니다. 초등학교 입학 전, 그리고 2026년 납입분부터는 초1·2학년 예체능(음악·미술·무용·체육)이면 예.'),
+        ('3. 월별 현황', '위쪽 노란 칸에 연도를 적으면 원생별로 달마다 낸 수강료가 나옵니다.'),
+        ('', '빨간 칸은 그 달 수강료보다 덜 받은 곳, 초록 칸은 다 받은 곳입니다.'),
+        ('', '새로 온 원생은 처음 낸 달부터, 그만둔 원생은 퇴원일이 든 달까지만 빨갛게 칠합니다. 이번 달은 아직 안 냈으면 빨갛습니다.'),
+        ('', '아래 표는 달마다 받은 돈을 결제수단별로 더한 것입니다(받은 날 기준).'),
+        ('앱으로 옮기기', '원생 시트를 열고 [파일 → 다른 이름으로 저장 → CSV UTF-8(쉼표로 분리)]로 저장합니다.'),
+        ('', '수납 시트도 같은 방법으로 따로 저장합니다(CSV는 한 번에 한 시트만 저장됩니다).'),
+        ('', '앱의 [설정 → 가져오기]에서 원생 명단을 먼저, 수납 기록을 그다음에 가져옵니다.'),
+        ('', '같은 파일을 두 번 가져와도 같은 기록은 한 번만 들어갑니다.'),
+        ('주의', '원생·수납 시트의 첫 줄(머리글)은 고치지 마세요. 앱이 이 글자로 칸을 알아봅니다.'),
+        ('', '열 순서를 바꾸거나 열을 더하는 것은 괜찮습니다. 앱은 머리글 이름으로 읽습니다.'),
+    ]
+    r = 5
+    for label, text in rows:
+        lab = ws.cell(row=r, column=2, value=label)
+        lab.font = Font(name=FONT, bold=True, color=INK)
+        lab.alignment = Alignment(vertical='top')
+        c = ws.cell(row=r, column=3, value=text)
+        c.font = body_font
+        c.alignment = Alignment(wrap_text=True, vertical='top')
+        r += 1
+
+    r += 1
+    ws.cell(row=r, column=2, value='앱에만 있는 것').font = Font(name=FONT, bold=True, color=HEAD)
+    for text in [
+        '아이패드로 등원·결석을 누르는 출결과 보충 관리',
+        '신고 일정 알림(사업장현황신고·종합소득세·중간예납)과 현금영수증 빠진 건 모아 보기',
+        '홈택스 신고용 숫자와 교육비 납입 증명서를 한 번에 뽑기',
+        '아이폰·아이패드 사이 자동 동기화와 앱 잠금',
+    ]:
+        r += 1
+        ws.cell(row=r, column=3, value='· ' + text).font = note_font
+
+
+def students_sheet(wb):
+    ws = wb.create_sheet('원생')
+    header_row(ws, STUDENT_COLUMNS)
+    add_list(ws, 'H', '"예"', '교육비 공제 대상', '입학 전, 또는 초1·2 예체능이면 예')
+    ws.sheet_properties.tabColor = HEAD
+    return ws
+
+
+def payments_sheet(wb):
+    ws = wb.create_sheet('수납')
+    header_row(ws, PAYMENT_COLUMNS, PAY_ROWS)
+    add_list(ws, 'C', STUDENTS, '원생', '원생 시트의 이름에서 고릅니다', PAY_ROWS)
+    add_list(ws, 'E', f'"{KINDS}"', '수입구분', '비우면 수강료', PAY_ROWS)
+    add_list(ws, 'G', f'"{METHODS}"', '결제수단', '카드·계좌이체·현금', PAY_ROWS)
+    add_list(ws, 'H', '"발급,미발급"', '현금영수증', '계좌이체·현금일 때만', PAY_ROWS)
+    # 미취학은 원생 시트의 지금 값을 보여 준다. 동명이인은 계산 시트의 열쇠로 가린다.
+    # 입학 전 1·2월분처럼 받은 순간의 값은 앱으로 옮긴 뒤 앱이 지킨다(가져올 때 이 열의 값이 그대로 들어간다).
+    for r in range(2, PAY_ROWS + 2):
+        ws.cell(row=r, column=9).value = (
+            f'=IF(C{r}="","",IFERROR(IF(INDEX(원생!$H$2:$H${ROWS + 1},'
+            f'MATCH(계산!$A{r},계산!$E$2:$E${ROWS + 1},0))="예","예",""),""))'
+        )
+    ws.sheet_properties.tabColor = 'E8B27A'
+    return ws
+
+
+def calc_sheet(wb):
+    """
+    숨긴 계산 시트. 수납 한 줄마다 (A) 어느 원생인가, (B) 어느 달 수강료인가, (C) 수강료 금액을,
+    원생 한 줄마다 (E) 열쇠를 둔다. 월별 현황과 수납의 미취학 칸이 이것을 쓴다.
+
+    어느 원생인가는 앱의 가져오기와 같은 규칙이다 (utils/paymentImport):
+      구분이 있으면 이름+구분, 구분이 비었는데 그 이름이 한 명뿐이면 그 원생,
+      여럿이면 구분 없는 원생.
+    달은 수강월, 비었으면 받은 날의 달. 2026년 3월은 202603 같은 수로 둔다 — "2026-03" 같은
+    글자는 엑셀이 조건에서 날짜로 읽어 버려 SUMIFS가 어긋난다.
+    """
+    ws = wb.create_sheet('계산')
+    ws.sheet_state = 'hidden'
+    for i, name in enumerate(['원생 열쇠', '수강월', '수강료', '', '원생 시트 열쇠'], start=1):
+        ws.cell(row=1, column=i, value=name or None)
+    names = STUDENTS
+    notes = f'원생!$G$2:$G${ROWS + 1}'
+    for r in range(2, PAY_ROWS + 2):
+        name, note, paid, month, kind, amount = (f'수납!$C{r}', f'수납!$D{r}', f'수납!$A{r}', f'수납!$B{r}', f'수납!$E{r}', f'수납!$F{r}')
+        ws.cell(row=r, column=1, value=(
+            f'=IF({name}="","",{name}&"|"&IF({note}<>"",{note},'
+            f'IF(COUNTIF({names},{name})=1,INDEX({notes},MATCH({name},{names},0))&"","")))'
+        ))
+        ws.cell(row=r, column=2, value=(
+            f'=IFERROR(IF({month}="",YEAR({paid})*100+MONTH({paid}),'
+            f'IF(ISNUMBER({month}),YEAR({month})*100+MONTH({month}),'
+            f'VALUE(LEFT({month},4))*100+VALUE(MID({month},6,2)))),"")'
+        ))
+        ws.cell(row=r, column=3, value=f'=IF(OR({kind}="수강료",{kind}=""),N({amount}),0)')
+    for r in range(2, ROWS + 2):
+        ws.cell(row=r, column=5, value=f'=IF(원생!$A{r}="","",원생!$A{r}&"|"&원생!$G{r})')
+    return ws
+
+
+def status_sheet(wb):
+    ws = wb.create_sheet('월별 현황')
+    ws.sheet_view.showGridLines = False
+    ws.column_dimensions['A'].width = 14
+    ws.column_dimensions['B'].width = 12
+    for m in range(12):
+        ws.column_dimensions[get_column_letter(3 + m)].width = 11
+
+    ws['A1'] = '연도'
+    ws['A1'].font = Font(name=FONT, bold=True, color=INK)
+    ws['B1'] = 2026
+    ws['B1'].font = Font(name=FONT, bold=True, color=INK, size=13)
+    ws['B1'].fill = PatternFill('solid', fgColor='FBE9B7')
+    ws['B1'].border = box
+    ws['C1'] = '← 연도를 바꾸면 아래가 다시 계산됩니다. 수강료(수입구분)만 셉니다.'
+    ws['C1'].font = note_font
+
+    head = ['원생', '월 수강료'] + [f'{m}월' for m in range(1, 13)]
+    for i, name in enumerate(head, start=1):
+        c = ws.cell(row=3, column=i, value=name)
+        c.font = head_font
+        c.fill = head_fill
+        c.alignment = Alignment(horizontal='center')
+        c.border = box
+
+    first, last = 4, 4 + ROWS - 1
+    for k in range(ROWS):
+        r = first + k
+        src = k + 2  # 원생 시트의 줄
+        ws.cell(row=r, column=1, value=f'=IF(원생!$A{src}="","",원생!$A{src}&IF(원생!$G{src}="",""," ("&원생!$G{src}&")"))')
+        # N(): 수강료를 '150,000원'처럼 글자로 적었으면 0 — 모든 달이 빨갛게 되지 않게.
+        ws.cell(row=r, column=2, value=f'=IF(원생!$A{src}="","",N(원생!$F{src}))').number_format = '#,##0'
+        for m in range(1, 13):
+            col = 2 + m
+            formula = (
+                f'=IF(원생!$A{src}="","",'
+                f'SUMIFS(계산!$C:$C,계산!$A:$A,계산!$E{src},계산!$B:$B,$B$1*100+{m}))'
+            )
+            cell = ws.cell(row=r, column=col, value=formula)
+            cell.number_format = '#,##0;-#,##0;-'
+        for col in range(1, 15):
+            c = ws.cell(row=r, column=col)
+            c.font = body_font
+            c.border = box
+
+    # 숨긴 도움 열: O = 퇴원일, P~AA = 그 달에 덜 받았으면 1.
+    # 덜 받음은 (수강료가 있고) 지난달까지이며, 퇴원일이 그 달 전이 아니고,
+    # 올해 한 번이라도 낸 뒤이거나 이번 달일 때만 센다. 새로 온 원생의 오기 전 달을 빨갛게 칠하지 않으려고.
+    ws.column_dimensions['O'].hidden = True
+    for m in range(1, 13):
+        ws.column_dimensions[get_column_letter(15 + m)].hidden = True
+    for k in range(ROWS):
+        r = first + k
+        src = k + 2
+        ws.cell(row=r, column=15, value=f'=IF(원생!$I{src}="","",원생!$I{src})')
+        for m in range(1, 13):
+            L = get_column_letter(2 + m)
+            start = f'DATE($B$1,{m},1)'
+            ws.cell(row=r, column=15 + m, value=(
+                f'=IF($A{r}="","",IF(AND($B{r}>0,{L}{r}<$B{r},{start}<=TODAY(),'
+                f'OR($O{r}="",$O{r}>={start}),'
+                f'OR(COUNTIF($C{r}:{L}{r},">0")>0,{start}=DATE(YEAR(TODAY()),MONTH(TODAY()),1))),1,0))'
+            ))
+
+    rng = f'C{first}:N{last}'
+    ws.conditional_formatting.add(
+        rng,
+        FormulaRule(formula=[f'P{first}=1'], fill=PatternFill('solid', fgColor=WARN)),
+    )
+    ws.conditional_formatting.add(
+        rng,
+        FormulaRule(
+            formula=[f'AND($A{first}<>"",$B{first}>0,C{first}>=$B{first})'],
+            fill=PatternFill('solid', fgColor=GOOD),
+        ),
+    )
+
+    # 월별 합계 (받은 날 기준, 결제수단별). 신고와 같은 기준이다.
+    top = last + 3
+    ws.cell(row=top, column=1, value='월별 받은 돈 (받은 날 기준, 수입구분 전체)').font = Font(name=FONT, bold=True, color=INK)
+    labels = ['카드', '계좌이체', '현금', '합계', '덜 받은 원생 수']
+    for i, name in enumerate(head[2:], start=3):
+        c = ws.cell(row=top + 1, column=i, value=name)
+        c.font = head_font
+        c.fill = head_fill
+        c.alignment = Alignment(horizontal='center')
+    for j, label in enumerate(labels):
+        r = top + 2 + j
+        c = ws.cell(row=r, column=1, value=label)
+        c.font = Font(name=FONT, bold=True, color=INK)
+        for m in range(1, 13):
+            col = 2 + m
+            lo = f'DATE($B$1,{m},1)'
+            hi = f'DATE($B$1,{m + 1},1)' if m < 12 else 'DATE($B$1+1,1,1)'
+            if label in ('카드', '계좌이체', '현금'):
+                f = f'=SUMIFS(수납!$F:$F,수납!$A:$A,">="&{lo},수납!$A:$A,"<"&{hi},수납!$G:$G,"{label}")'
+            elif label == '합계':
+                L = get_column_letter(col)
+                f = f'=SUM({L}{top + 2}:{L}{top + 4})'
+            else:
+                L = get_column_letter(col)
+                F = get_column_letter(15 + m)
+                f = f'=IF(DATE($B$1,{m},1)>TODAY(),"",SUM({F}{first}:{F}{last}))'
+            cell = ws.cell(row=r, column=col, value=f)
+            cell.number_format = '#,##0;-#,##0;-'
+            cell.font = body_font
+            cell.border = box
+    ws.freeze_panes = 'C4'
+    ws.sheet_properties.tabColor = '7FBFA1'
+    return ws
+
+
+def build(out: Path):
+    wb = Workbook()
+    guide(wb)
+    students_sheet(wb)
+    payments_sheet(wb)
+    status_sheet(wb)
+    calc_sheet(wb)
+    wb.active = 0
+    out.parent.mkdir(parents=True, exist_ok=True)
+    wb.save(out)
+    return out
+
+
+if __name__ == '__main__':
+    target = Path(sys.argv[1]) if len(sys.argv) > 1 else OUT
+    print(build(target))

@@ -11,7 +11,8 @@ const StyledChip = styled(PressableScale)<{ $selected: boolean }>`
   background-color: ${({ theme, $selected }) =>
     $selected ? theme.colors.primaryStrong : theme.colors.cardBackground};
   padding-vertical: 10px;
-  padding-horizontal: 16px;
+  /* 요일 칩 일곱 개(월~일)가 아이폰 폭(390)에서 한 줄에 들어가는 너비 */
+  padding-horizontal: 13px;
   border-radius: 20px;
   margin-right: 8px;
   margin-bottom: 8px;

@@ -302,7 +302,7 @@ const CertificateModal: React.FC = () => {
                   </Line>
                   {preschool !== 0 && (
                     <Line>
-                      <LineText>그중 취학 전 납입 (교육비 공제)</LineText>
+                      <LineText>그중 교육비 공제 대상</LineText>
                       <LineText>{formatWon(preschool)}</LineText>
                     </Line>
                   )}

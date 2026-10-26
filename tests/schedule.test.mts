@@ -57,8 +57,8 @@ test('요일별 시간이 없으면 기본 시간으로 떨어진다', () => {
 test('시간이 같으면 한 줄, 다르면 요일별로 나눈다', () => {
   assert.equal(hasVaryingTimes(plain), false);
   assert.equal(hasVaryingTimes(varied), true);
-  assert.deepEqual(scheduleLines(plain), ['2:00 PM – 4:00 PM']);
-  assert.deepEqual(scheduleLines(varied), ['월 2:00 PM – 4:00 PM', '수 5:00 PM – 7:00 PM']);
+  assert.deepEqual(scheduleLines(plain), ['오후 2:00 – 오후 4:00']);
+  assert.deepEqual(scheduleLines(varied), ['월 오후 2:00 – 오후 4:00', '수 오후 5:00 – 오후 7:00']);
 });
 
 test('명단이 그 요일의 시간을 쓴다', () => {

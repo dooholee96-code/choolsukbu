@@ -130,6 +130,8 @@ const SettingsScreen: React.FC = () => {
     syncNow,
     absenceOnlySince,
     setAbsenceOnly,
+    previewPaymentImport,
+    importPayments,
   } = useData();
   const [busy, setBusy] = useState(false);
   const [taxYear, setTaxYear] = useState(defaultTaxYear);
@@ -277,6 +279,49 @@ const SettingsScreen: React.FC = () => {
       });
     });
 
+  /**
+   * 수납 기록 가져오기. 엑셀 양식의 '수납' 시트를 CSV로 저장한 것, 또는 앱이 내보낸 수납 장부.
+   * 먼저 읽어서 몇 건이 들어가는지 보여 주고, 확인을 받은 뒤에 저장한다 — 받은 돈은 신고
+   * 자료가 되므로 잘못 들어가면 지우는 것도 일이다.
+   */
+  const importPaymentFile = () =>
+    run(async () => {
+      const text = await pickCsvText();
+      if (text === null) return;
+
+      const { payments: rows, duplicates, skipped } = await previewPaymentImport(text);
+      const skippedNote = skipped.length
+        ? `\n형식이 맞지 않아 건너뛸 줄 ${skipped.length}개` +
+          skipped
+            .slice(0, 3)
+            .map((s) => `\n · ${s.row}행: ${s.reason}`)
+            .join('') +
+          (skipped.length > 3 ? '\n · …' : '')
+        : '';
+      const dupNote = duplicates ? `\n이미 있는 기록 ${duplicates}건은 건너뜁니다.` : '';
+
+      if (rows.length === 0) {
+        notify('가져올 수납이 없습니다', (dupNote + skippedNote).trim() || '파일이 비어 있거나 형식이 다릅니다.');
+        return;
+      }
+
+      const total = rows.reduce((sum, p) => sum + p.amount, 0);
+      confirm({
+        title: '수납 기록 가져오기',
+        message:
+          `${rows.length}건, 합계 ${total.toLocaleString('ko-KR')}원을 가져옵니다.` + dupNote + skippedNote,
+        confirmLabel: '가져오기',
+        onConfirm: async () => {
+          try {
+            const added = await importPayments(rows);
+            notify('가져오기 완료', `수납 ${added}건을 기록했습니다.`);
+          } catch {
+            notify('실패', '수납 기록을 가져오지 못했습니다. 아무것도 저장되지 않았습니다.');
+          }
+        },
+      });
+    });
+
   return (
     <Screen>
       <ScrollView
@@ -369,7 +414,7 @@ const SettingsScreen: React.FC = () => {
             {'\n'}· 학원사업자 수입금액검토표(사업장현황신고 때 함께): 수입구분별 금액, 단가별
             수강연인원
             {'\n'}· 수납 장부: 받은 돈 한 건씩 — 종합소득세(5월)의 근거
-            {'\n'}· 미취학 아동 교육비: 보호자가 요청하는 교육비납입증명서에 옮길 금액
+            {'\n'}· 교육비 공제 대상 납입액: 미취학·초1·2 예체능 원생의 교육비납입증명서에 옮길 금액
             {'\n'}· 교육비 납입 증명서 일괄: 원생마다 한 장씩, 한 번에 인쇄하거나 PDF로 저장
             {'\n\n'}홈택스에 자동으로 제출하지는 않습니다. 숫자를 옮겨 적거나 세무사에게
             전달하세요. 시설·직원·경비처럼 수납 기록에 없는 칸은 직접 채웁니다.
@@ -415,16 +460,16 @@ const SettingsScreen: React.FC = () => {
               disabled={busy}
             />
             <Button
-              title="미취학 아동 교육비"
+              title="교육비 공제 대상 납입액"
               onPress={() =>
-                exportTax('미취학교육비', (payments, everyone) =>
+                exportTax('교육비공제대상', (payments, everyone) =>
                   buildPreschoolCsv(payments, everyone, taxYear)
                 )
               }
               disabled={busy}
             />
             <Button
-              title={certificates.printing ? '증명서 만드는 중…' : '납입 증명서 일괄 (미취학 원생)'}
+              title={certificates.printing ? '증명서 만드는 중…' : '납입 증명서 일괄 (공제 대상 원생)'}
               variant="secondary"
               onPress={() => certificates.printAll(taxYear, true)}
               disabled={busy || certificates.printing}
@@ -469,14 +514,18 @@ const SettingsScreen: React.FC = () => {
           <Card>
           <SectionTitle>가져오기</SectionTitle>
           <Note>
-            원생 명단만 가져옵니다. 내보내기로 만든 파일과 같은 형식이어야 합니다
-            {'\n'}(name, grade, scheduledDays, scheduledStartTime, scheduledEndTime, dayTimes,
-            fee, note, withdrawnAt, preschool).
-            {'\n'}이름·학년·구분이 모두 같은 원생은 건너뜁니다. 동명이인은 구분(note)을 적어
-            주세요.
-            {'\n'}출결 기록은 덮어쓸 위험이 커서 가져오기를 지원하지 않습니다.
+            출석부 엑셀 양식의 원생·수납 시트를 하나씩 CSV UTF-8로 저장해 가져옵니다. 앱이 내보낸
+            원생 명단과 수납 장부도 됩니다.
+            {'\n'}· 원생 명단을 먼저, 수납 기록을 그다음에 가져옵니다.
+            {'\n'}· 이미 있는 원생(이름·학년·구분이 같음)과 수납은 건너뜁니다. 같은 파일을 두 번
+            가져와도 됩니다.
+            {'\n'}· 동명이인은 구분 칸으로 가립니다.
+            {'\n'}· 출결 기록은 덮어쓸 위험이 커서 가져오지 않습니다.
           </Note>
-          <Button title="원생 명단 가져오기" variant="secondary" onPress={importRoster} disabled={busy} />
+          <Stack>
+            <Button title="원생 명단 가져오기" variant="secondary" onPress={importRoster} disabled={busy} />
+            <Button title="수납 기록 가져오기" variant="secondary" onPress={importPaymentFile} disabled={busy} />
+          </Stack>
           </Card>
 
         </Content>

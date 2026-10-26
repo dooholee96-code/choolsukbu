@@ -1,9 +1,8 @@
 import Papa from 'papaparse';
-import { Attendance, DayOfWeek, MakeUp, ScheduleException, Student } from '../types';
+import { Attendance, MakeUp, ScheduleException, Student } from '../types';
 import { createId } from './id';
 import { parseDayTimes, serializeDayTimes } from './schedule';
-
-const VALID_DAYS: DayOfWeek[] = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+import { readAmount, readDate, readDays, readFlag, readTime } from './sheet';
 
 export interface ParseCSVResult {
   students: Student[];
@@ -11,26 +10,31 @@ export interface ParseCSVResult {
   skipped: { row: number; reason: string }[];
 }
 
-const isTimeString = (value: unknown): value is string =>
-  typeof value === 'string' && /^\d{1,2}:\d{2}$/.test(value.trim());
-
-/** 켜졌다고 볼 글자. 엑셀에서 손으로 적는 칸이라 몇 가지를 받는다. 나머지는 전부 '아니오'. */
-const asFlag = (value: string | undefined): boolean =>
-  ['1', 'true', 'y', 'yes', 'o', '예', '네', '미취학'].includes(
-    (value ?? '').trim().toLowerCase()
-  );
-
-/** 'YYYY-MM-DD'만 받는다. 형식이 다르면 퇴원하지 않은 것으로 본다. */
-const asDateKey = (value: string | undefined): string | null => {
-  const trimmed = value?.trim() ?? '';
-  return /^\d{4}-\d{2}-\d{2}$/.test(trimmed) ? trimmed : null;
+/**
+ * 원생 명단 머리글. 왼쪽이 엑셀 양식(templates/)의 한글 머리글이고, 오른쪽이 앱이
+ * 내보내는 영문 머리글이다. 둘 다 받아서 엑셀 양식을 그대로 CSV로 저장해 가져올 수 있다.
+ * 양식의 머리글을 바꾸면 여기도 같이 바꾼다 (tests/import.test.mts가 지킨다).
+ */
+export const STUDENT_HEADERS: Record<string, string> = {
+  이름: 'name',
+  학년: 'grade',
+  요일: 'scheduledDays',
+  시작: 'scheduledStartTime',
+  끝: 'scheduledEndTime',
+  '요일별 시간': 'dayTimes',
+  '월 수강료': 'fee',
+  구분: 'note',
+  퇴원일: 'withdrawnAt',
+  미취학: 'preschool',
 };
 
 /**
  * 원생 명단 CSV를 파싱한다.
+ * 머리글은 영문(아래) 또는 엑셀 양식의 한글(STUDENT_HEADERS)이다.
  * 기대 헤더: name, grade, scheduledDays, scheduledStartTime, scheduledEndTime,
  *            dayTimes(선택), fee(선택), note(선택), withdrawnAt(선택), preschool(선택)
- * scheduledDays는 'Mon,Wed,Fri' 처럼 쉼표로 잇는다.
+ * scheduledDays는 'Mon,Wed,Fri' 또는 '월,수,금' · '월수금'. 시각·날짜·금액은 엑셀이 바꿔 놓는
+ * 흔한 모양까지 받는다 (utils/sheet).
  * dayTimes는 'Mon=14:00-16:00|Wed=17:00-19:00' 형태로, 기본 시간과 다른 요일만 적는다.
  * note는 동명이인 구분용 한 마디, withdrawnAt은 'YYYY-MM-DD' 퇴원일, preschool은 미취학
  * 아동 표시('예'·'1'·'true'·'y'면 켬)다.
@@ -44,7 +48,9 @@ export const parseCSV = (csvData: string): Promise<ParseCSVResult> => {
   return new Promise((resolve, reject) => {
     Papa.parse<Record<string, string | undefined>>(csvData, {
       header: true,
-      skipEmptyLines: true,
+      skipEmptyLines: 'greedy',
+      // 엑셀 양식은 한글 머리글을 쓴다. 앱이 내보내는 영문 머리글도 그대로 받는다.
+      transformHeader: (header) => STUDENT_HEADERS[header.replace(/^\uFEFF/, '').trim()] ?? header.trim(),
       complete: (results) => {
         const students: Student[] = [];
         const skipped: ParseCSVResult['skipped'] = [];
@@ -58,24 +64,21 @@ export const parseCSV = (csvData: string): Promise<ParseCSVResult> => {
             return;
           }
 
-          const scheduledDays = (row.scheduledDays ?? '')
-            .split(',')
-            .map((day) => day.trim())
-            .filter((day): day is DayOfWeek => VALID_DAYS.includes(day as DayOfWeek));
+          const scheduledDays = readDays(row.scheduledDays);
 
           if (scheduledDays.length === 0) {
             skipped.push({ row: rowNumber, reason: 'scheduledDays를 해석할 수 없습니다.' });
             return;
           }
 
-          const start = row.scheduledStartTime?.trim();
-          const end = row.scheduledEndTime?.trim();
-          if (!isTimeString(start) || !isTimeString(end)) {
+          const start = readTime(row.scheduledStartTime);
+          const end = readTime(row.scheduledEndTime);
+          if (!start || !end) {
             skipped.push({ row: rowNumber, reason: '수업 시간 형식이 HH:mm이 아닙니다.' });
             return;
           }
 
-          const parsedFee = Number((row.fee ?? '').replace(/[^0-9]/g, ''));
+          const parsedFee = readAmount(row.fee) ?? 0;
 
           students.push({
             id: createId(),
@@ -87,8 +90,8 @@ export const parseCSV = (csvData: string): Promise<ParseCSVResult> => {
             dayTimes: parseDayTimes(row.dayTimes),
             fee: parsedFee > 0 ? parsedFee : undefined,
             note: row.note?.trim() || null,
-            withdrawnAt: asDateKey(row.withdrawnAt),
-            preschool: asFlag(row.preschool),
+            withdrawnAt: readDate(row.withdrawnAt),
+            preschool: readFlag(row.preschool),
           });
         });
 

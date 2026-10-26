@@ -23,6 +23,7 @@ import {
 import { confirm, notify } from '../utils/dialog';
 import LockSection from '../components/LockSection';
 import { useAppLockContext } from '../hooks/appLockContext';
+import { useCertificateBatch } from '../hooks/useCertificateBatch';
 import { logger } from '../utils/logger';
 import type { Payment, Student } from '../types';
 
@@ -132,6 +133,7 @@ const SettingsScreen: React.FC = () => {
   } = useData();
   const [busy, setBusy] = useState(false);
   const [taxYear, setTaxYear] = useState(defaultTaxYear);
+  const certificates = useCertificateBatch();
 
   const run = useCallback(async (task: () => Promise<void>) => {
     setBusy(true);
@@ -368,6 +370,7 @@ const SettingsScreen: React.FC = () => {
             수강연인원
             {'\n'}· 수납 장부: 받은 돈 한 건씩 — 종합소득세(5월)의 근거
             {'\n'}· 미취학 아동 교육비: 보호자가 요청하는 교육비납입증명서에 옮길 금액
+            {'\n'}· 교육비 납입 증명서 일괄: 원생마다 한 장씩, 한 번에 인쇄하거나 PDF로 저장
             {'\n\n'}홈택스에 자동으로 제출하지는 않습니다. 숫자를 옮겨 적거나 세무사에게
             전달하세요. 시설·직원·경비처럼 수납 기록에 없는 칸은 직접 채웁니다.
           </Note>
@@ -419,6 +422,18 @@ const SettingsScreen: React.FC = () => {
                 )
               }
               disabled={busy}
+            />
+            <Button
+              title={certificates.printing ? '증명서 만드는 중…' : '납입 증명서 일괄 (미취학 원생)'}
+              variant="secondary"
+              onPress={() => certificates.printAll(taxYear, true)}
+              disabled={busy || certificates.printing}
+            />
+            <Button
+              title="납입 증명서 일괄 (받은 원생 전원)"
+              variant="secondary"
+              onPress={() => certificates.printAll(taxYear, false)}
+              disabled={busy || certificates.printing}
             />
           </Stack>
           </Card>

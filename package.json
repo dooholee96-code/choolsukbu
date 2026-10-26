@@ -1,6 +1,9 @@
 {
   "name": "localattendanceapp",
   "version": "1.0.0",
+  "engines": {
+    "node": ">=20"
+  },
   "main": "index.ts",
   "dependencies": {
     "@expo/metro-runtime": "~57.0.16",

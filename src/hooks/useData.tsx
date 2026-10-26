@@ -25,6 +25,7 @@ import * as exceptions from '../data/exceptions';
 import * as payments from '../data/payments';
 import * as academy from '../data/academy';
 import { fillPresence } from '../data/presence';
+import { parsePaymentsCsv, type PaymentImportResult } from '../utils/paymentImport';
 
 /**
  * 화면이 보는 데이터의 유일한 출입구.
@@ -103,6 +104,13 @@ interface DataContextType {
   ) => Promise<void>;
   removeException: (exceptionId: string) => Promise<void>;
 
+  /**
+   * 수납 기록 CSV(엑셀 양식의 '수납' 시트, 또는 앱이 내보낸 수납 장부)를 읽어 본다.
+   * 아직 저장하지 않는다 — 몇 건이 들어가고 몇 줄을 건너뛰는지 먼저 보여 주고 묻는다.
+   */
+  previewPaymentImport: (text: string) => Promise<PaymentImportResult>;
+  /** 미리 본 수납을 저장한다. 넣은 수. */
+  importPayments: (rows: Payment[]) => Promise<number>;
   /** 받은 수강료 한 건. 원생의 미취학 표시는 부르는 쪽이 받는 순간의 값으로 채운다. */
   recordPayment: (payment: Payment) => Promise<void>;
   updatePayment: (payment: Payment) => Promise<void>;
@@ -348,6 +356,18 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       removeException: (exceptionId) =>
         write('removeException', () => exceptions.softDeleteException(db, exceptionId)),
 
+      previewPaymentImport: async (text) => {
+        const [list, existing] = await Promise.all([
+          students.listStudents(db),
+          payments.listPaidBetween(db, '0000-01-01', '9999-12-31'),
+        ]);
+        return parsePaymentsCsv(text, list, existing);
+      },
+      importPayments: async (rows) => {
+        const added = await exclusive(() => payments.insertPayments(db, rows));
+        await commit();
+        return added;
+      },
       recordPayment: (payment) => write('recordPayment', () => payments.insertPayment(db, payment)),
       updatePayment: (payment) =>
         write('updatePayment', () => payments.updatePaymentRow(db, payment)),

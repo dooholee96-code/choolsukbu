@@ -120,3 +120,11 @@ export const softDeletePayment = (db: SQLiteDatabase, paymentId: string) => {
     paymentId
   );
 };
+
+/** 가져온 수납 여러 건을 한 번에. 하나라도 실패하면 아무것도 남기지 않는다. */
+export const insertPayments = async (db: SQLiteDatabase, rows: Payment[]) => {
+  await db.withTransactionAsync(async () => {
+    for (const row of rows) await insertPayment(db, row);
+  });
+  return rows.length;
+};

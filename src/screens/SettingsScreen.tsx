@@ -130,6 +130,8 @@ const SettingsScreen: React.FC = () => {
     syncNow,
     absenceOnlySince,
     setAbsenceOnly,
+    previewPaymentImport,
+    importPayments,
   } = useData();
   const [busy, setBusy] = useState(false);
   const [taxYear, setTaxYear] = useState(defaultTaxYear);
@@ -272,6 +274,49 @@ const SettingsScreen: React.FC = () => {
             );
           } catch {
             notify('실패', '원생을 가져오지 못했습니다.');
+          }
+        },
+      });
+    });
+
+  /**
+   * 수납 기록 가져오기. 엑셀 양식의 '수납' 시트를 CSV로 저장한 것, 또는 앱이 내보낸 수납 장부.
+   * 먼저 읽어서 몇 건이 들어가는지 보여 주고, 확인을 받은 뒤에 저장한다 — 받은 돈은 신고
+   * 자료가 되므로 잘못 들어가면 지우는 것도 일이다.
+   */
+  const importPaymentFile = () =>
+    run(async () => {
+      const text = await pickCsvText();
+      if (text === null) return;
+
+      const { payments: rows, duplicates, skipped } = await previewPaymentImport(text);
+      const skippedNote = skipped.length
+        ? `\n형식이 맞지 않아 건너뛸 줄 ${skipped.length}개` +
+          skipped
+            .slice(0, 3)
+            .map((s) => `\n · ${s.row}행: ${s.reason}`)
+            .join('') +
+          (skipped.length > 3 ? '\n · …' : '')
+        : '';
+      const dupNote = duplicates ? `\n이미 있는 기록 ${duplicates}건은 건너뜁니다.` : '';
+
+      if (rows.length === 0) {
+        notify('가져올 수납이 없습니다', (dupNote + skippedNote).trim() || '파일이 비어 있거나 형식이 다릅니다.');
+        return;
+      }
+
+      const total = rows.reduce((sum, p) => sum + p.amount, 0);
+      confirm({
+        title: '수납 기록 가져오기',
+        message:
+          `${rows.length}건, 합계 ${total.toLocaleString('ko-KR')}원을 가져옵니다.` + dupNote + skippedNote,
+        confirmLabel: '가져오기',
+        onConfirm: async () => {
+          try {
+            const added = await importPayments(rows);
+            notify('가져오기 완료', `수납 ${added}건을 기록했습니다.`);
+          } catch {
+            notify('실패', '수납 기록을 가져오지 못했습니다. 아무것도 저장되지 않았습니다.');
           }
         },
       });
@@ -469,14 +514,18 @@ const SettingsScreen: React.FC = () => {
           <Card>
           <SectionTitle>가져오기</SectionTitle>
           <Note>
-            원생 명단만 가져옵니다. 내보내기로 만든 파일과 같은 형식이어야 합니다
-            {'\n'}(name, grade, scheduledDays, scheduledStartTime, scheduledEndTime, dayTimes,
-            fee, note, withdrawnAt, preschool).
-            {'\n'}이름·학년·구분이 모두 같은 원생은 건너뜁니다. 동명이인은 구분(note)을 적어
-            주세요.
+            엑셀 양식(출석부 엑셀 양식.xlsx)의 시트를 각각 CSV(UTF-8)로 저장해 가져옵니다. 앱에서
+            내보낸 원생 명단·수납 장부도 그대로 가져올 수 있습니다.
+            {'\n'}· 원생 명단: 이름·학년·구분이 모두 같은 원생은 건너뜁니다. 동명이인은 구분을
+            적어 주세요.
+            {'\n'}· 수납 기록: 원생을 이름(과 구분)으로 찾으므로 원생 명단을 먼저 가져옵니다.
+            받은날·원생·금액·수입구분·결제수단·수강월이 모두 같은 줄은 이미 있는 것으로 봅니다.
             {'\n'}출결 기록은 덮어쓸 위험이 커서 가져오기를 지원하지 않습니다.
           </Note>
-          <Button title="원생 명단 가져오기" variant="secondary" onPress={importRoster} disabled={busy} />
+          <Stack>
+            <Button title="원생 명단 가져오기" variant="secondary" onPress={importRoster} disabled={busy} />
+            <Button title="수납 기록 가져오기" variant="secondary" onPress={importPaymentFile} disabled={busy} />
+          </Stack>
           </Card>
 
         </Content>

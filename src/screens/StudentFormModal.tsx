@@ -5,6 +5,7 @@ import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { format } from 'date-fns';
+import { ko } from 'date-fns/locale';
 import { Ionicons } from '@expo/vector-icons';
 import { useData } from '../hooks/useData';
 import Button from '../components/common/Button';
@@ -469,7 +470,7 @@ const StudentFormModal: React.FC = () => {
               onPress={() => setDayPicker({ day, edge })}
               accessibilityLabel={label}
             >
-              <TimePickerText>{format(asDate, 'h:mm a')}</TimePickerText>
+              <TimePickerText>{format(asDate, 'a h:mm', { locale: ko })}</TimePickerText>
             </TimePickerButton>
             {isOpen && (
               <DateTimePicker value={asDate} mode="time" display="default" onChange={onChange} />
@@ -504,7 +505,7 @@ const StudentFormModal: React.FC = () => {
         ) : (
           <>
             <TimePickerButton onPress={() => setVisible(true)} accessibilityLabel={label}>
-              <TimePickerText>{format(value, 'h:mm a')}</TimePickerText>
+              <TimePickerText>{format(value, 'a h:mm', { locale: ko })}</TimePickerText>
             </TimePickerButton>
             {isVisible && (
               <DateTimePicker value={value} mode="time" display="default" onChange={onChange} />
@@ -576,7 +577,7 @@ const StudentFormModal: React.FC = () => {
               {DAYS.map((day) => (
                 <Chip
                   key={day}
-                  label={day}
+                  label={DAY_LABEL[day]}
                   selected={selectedDays.includes(day)}
                   onPress={() => toggleDay(day)}
                 />

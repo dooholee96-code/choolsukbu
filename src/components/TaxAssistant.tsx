@@ -213,10 +213,9 @@ const TaxAssistant: React.FC = () => {
             <Title>현금영수증 확인 {missing.length}건</Title>
           </TitleRow>
           <Detail>
-            {formatWon(CASH_RECEIPT_REQUIRED_FROM)} 이상을 현금·계좌이체로 받으면 요청이 없어도
-            받은 날부터 5일 안에 현금영수증을 발급해야 하고, 빠뜨리면 그 금액의 20%가 가산세입니다.
-            보호자 번호를 모르면 국세청 지정번호(010-000-1234)로 발급합니다. 이미 발급했다면 눌러서
-            표시해 주세요.
+            {formatWon(CASH_RECEIPT_REQUIRED_FROM)} 이상 현금·계좌이체는 요청이 없어도 5일 안에
+            발급합니다(빠뜨리면 20% 가산세). 번호를 모르면 010-000-1234로 발급하고, 이미 했다면
+            눌러서 표시해 주세요.
           </Detail>
           <View style={{ marginTop: 8 }}>
             {shown.map((payment) => (

@@ -458,7 +458,7 @@ const StudentCard: React.FC<StudentCardProps> = ({
       </StatusTag>
     ) : null;
 
-  /** 등원 시각. 보드에서는 '등원 4:05 PM'을 한 줄로, 목록에서는 두 줄로. */
+  /** 등원 시각. 보드에서는 '등원 오후 4:05'를 한 줄로, 목록에서는 두 줄로. */
   const arrival = attendance ? (
     onEditTime ? (
       <TimeButton

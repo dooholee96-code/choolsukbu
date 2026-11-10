@@ -1,3 +1,18 @@
-# Expo HAS CHANGED
+# 작업 안내 (사람과 AI 공용)
 
-Read the exact versioned docs at https://docs.expo.dev/versions/v57.0.0/ before writing any code.
+출석부(choolsukbu) — 작은 학원용 출결·수납 iPad 앱. Expo SDK 57 + React Native + expo-sqlite, 서버 없음, 동기화는 사용자 iCloud. 저장소 설명·화면·데이터 구조·운영은 전부 `README.md` 에 있다. 이 파일은 작업 전에 반드시 지킬 것만 모은 색인이다.
+
+- **Expo 문서는 설치된 버전으로 읽는다**: https://docs.expo.dev/versions/v57.0.0/ . SDK 는 올리지 않는다(README '운영' 절). 올려야 할 때는 한 SDK 씩.
+- **데이터가 가장 중요하다.** SQLite 스키마를 바꾸면 마이그레이션을 쓰고 기존 데이터가 남는지 테스트한다. 아동 정보가 들어올 수 있으므로 서버 전송 기능은 넣지 않는다.
+- **판정·집계 로직은 화면 밖에**(`src/db/`, `src/utils/`)의 순수 함수로 두고 `tests/` 에 테스트를 붙인다. 출결 판정·수납·세무 집계 규칙을 바꾸면 테스트를 먼저 고친다.
+- 사용자에게 보이는 글은 쉬운 한국어. 테스트 데이터·예시 이름에도 실제 인물 이름을 쓰지 않는다.
+- 번들 ID 와 서명은 README 'iPad에 설치하기' 절. 인증서·프로비저닝 파일은 커밋하지 않는다.
+
+## 공통 규칙 (이시로스튜디오 모든 저장소)
+
+- **5~10년 운영 원칙.** 단순·표준·문서화·저의존성을 고른다. 사람이 혼자, 또는 다른 AI 도구로도 읽고 고칠 수 있어야 한다. 새 의존성·도구는 유지 비용을 먼저 따진다. 문서는 코드 옆에 두고, 코드를 바꾸는 PR 이 문서도 함께 고친다.
+- **실명 금지.** 코드·커밋·문서·문구 어디에도 개인 실명·소속·직업을 넣지 않는다. 표시명은 '아기토끼 시로' 또는 '이시로스튜디오'. 커밋 작성자는 `시로 <231594769+dooholee96-code@users.noreply.github.com>`.
+- **변경 전 확인.** 코드 변경·PR 은 소유자에게 먼저 확인하고, 변경은 PR 로 한다. 작업을 마치면 바뀐 점 요약과 '다음 할 일' 한 줄을 적는다.
+- **릴리스.** `CHANGELOG.md` 맨 위 한 줄 + `vX.Y.Z` 태그(머지한 뒤 Releases 에서 만든다).
+- **검증.** `npm test`, `npm run typecheck`. 네이티브 설정을 건드렸으면 `npm run check:native`. 화면이 바뀌면 iPad 에서 확인한 뒤 완료로 본다.
+- 계정·도메인·정기 점검은 허브 저장소(shiroleestudio/shiroleestudio.github.io)의 `STUDIO.md`.
